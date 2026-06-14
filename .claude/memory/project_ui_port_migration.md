@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu SvelteKit UI + Python BFF migrated into the v3 tree at services/ui-neu/ (DONE 2026-06-14, branch feat/ui-neu-migration off Tier-12). Next = wire it into v3 build/contract & port against the v3 backend.
+description: UI port — neu UI migrated to services/ui-neu/; arch DECIDED (Option A, no BFF: frontend→v3, image-proxy→v3 router, themes static, drop arm_contracts). Phase 0 (image-proxy v3 router) DONE on feat/ui-neu-image-proxy. 6-phase foundation plan; ~75 missing routes backlogged.
 metadata:
   type: project
 ---
@@ -58,16 +58,45 @@ suite (1280 green on the feature branch, same as before).
   PR #17) + the stack tip merge + the ui-neu migration. Rebuild after a new tier lands by
   re-merging the new stack tip. See [[project_wolfy_pr_stack_state]].
 
-## NEXT STEPS (porting, not moving)
-1. **Decide the BFF's fate in v3 arch** — the neu BFF (`backend/services/`: `arm_client.py`,
-   `transcoder_client.py`, `themes.py`, `image_cache.py`, `system_cache.py`) duplicates parts
-   of the v3 FastAPI. v3's principle is **v3 owns the contract**; the UI adapts to v3. Either
-   keep the BFF as a thin proxy or re-home its logic into the v3 backend. (Big open arch
-   question — likely a brainstorm.)
-2. Point the BFF/frontend at the v3 backend's OpenAPI contract (field names differ — see the
-   BC-S5–S13 breaking-change entries; the UI adapts to v3, not vice-versa).
-3. Wire `services/ui-neu` into the v3 compose/build as needed; decide CI scope.
-4. Open the wolfy PR for `feat/ui-neu-migration` when ready (the branch is pushed).
+## ARCHITECTURE DECIDED (brainstorm 2026-06-14) — Option A: NO BFF
+Spec: `../arm-ai/arm-v3/docs/superpowers/specs/2026-06-14-ui-neu-port-foundation-design.md`.
+The whole neu Python BFF gets **deleted**. End-state:
+- **Frontend → v3 only**, nginx static + `/api/` reverse-proxy to arm-backend (mirrors the
+  existing Vue `services/ui` exactly — one contract, under `openapi-drift` CI).
+- **Themes** ship as **static** assets (built-ins now; user-upload backlogged).
+- **Image-proxy/cache** → a small **v3 router** (the one runtime piece; unauthenticated,
+  allowlist-guarded). This consolidation is what lets the BFF be deleted.
+- **Aggregations** → client-side fan-out (consistent with B14).
+- **`arm_contracts` dropped**; survivors (e.g. `PATTERN_TOKENS`) → `arm_common`; frontend types
+  from v3 OpenAPI. **Auth:** frontend owns the JWT (login phase early).
+- **Verified route inventory:** EXISTS 16 · FIELD-MISMATCH 38 · MISSING ~75 · BFF-OWNED 10. v3
+  natively covers ~12%. Foundation repoints the ~54 EXISTS+FIELD-MISMATCH; the ~75 MISSING are a
+  prioritized **backlog** (file-browser, maintenance, folder-import, TVDB, transcoder-model
+  reconciliation, job operator verbs, etc. — each its own future spec). Foundation scope is the
+  walking skeleton only; cutover/delete-Vue is OUT of scope (decide later).
+
+## 6-PHASE FOUNDATION PLAN (each its own stacked tier off the one below)
+Phase 0 image-proxy v3 router → Phase 1 v3 client + auth/login → Phase 2 nginx + static themes +
+delete demo/system-cache → Phase 3 repoint EXISTS → Phase 4 adapters + repoint FIELD-MISMATCH →
+Phase 5 delete the BFF + drop arm_contracts.
+
+### Phase 0 — DONE (2026-06-14)
+Branch `feat/ui-neu-image-proxy` off `feat/ui-neu-migration` (Phase-0 tier), pushed to origin +
+wolfy. 5 commits: ARM_IMAGE_CACHE_PATH setting → ported image_cache (100% cov) → GET
+/api/images/proxy (unauth, **SSRF-hardened**: redirects off, streaming 2MB cap, JSONResponse,
+no SVG; 100% cov) → main.py wiring + startup_scan → OpenAPI snapshot regen. Full suite 1303
+green. Plan: `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase0-image-proxy-plan.md`.
+PR not opened yet. **The image-proxy now lives in v3 — do NOT re-port it from the BFF.**
+
+## NEXT STEPS
+1. Phase 1 — v3 OpenAPI client in SvelteKit + login/JWT store (brainstorm/plan when reached).
+2. Open the wolfy PRs for the migration + Phase 0 tiers when ready (branches pushed).
+3. **Deferred (owner directive):** wiring `ui-neu` into v3 compose/CI/test — a later structural
+   pass. NOTE: the migrated `ui-neu` Python is **NOT ruff-clean to v3's config** — a
+   `pre-commit run --all-files` reformats ~100 ui-neu files + leaves ~7 unfixable ruff errors
+   (all under `services/ui-neu/`). When wiring CI, either clean ui-neu or exclude it from the v3
+   ruff/mypy scope. For Phase-N PRs, run pre-commit **scoped to changed files**, never
+   `--all-files` (it rewrites vendored BFF code that's slated for deletion).
 
 ## References
 - UI AI-context: `/home/upb/src/arm-ai/arm-ui/` (specs/plans/memory).
