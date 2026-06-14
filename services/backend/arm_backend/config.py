@@ -26,10 +26,10 @@ class Settings(BaseSettings):
     # owning drive's ripper was offline).
     RAW_ROOT: str = "/raw"
 
-    # Optional .env override for the OMDB key. When set, takes precedence over
-    # config.omdb_api_key on every identify call — useful in dev where the
-    # secret lives in .env and the Config row stays empty.
-    OMDB_API_KEY: str | None = None
+    # Sandbox root for ISO-import scanning. ISOs the operator drops here can be
+    # validated via POST /api/jobs/iso/scan. Fixed container path like
+    # MEDIA_ROOT/RAW_ROOT; bind-mount a host dir here in compose.
+    ISO_INGRESS_ROOT: str = "/ingress"
 
     # Comma-separated list of `Origin` header values the WS endpoint accepts
     # from browser clients. Service-token connections (rippers, transcoders)

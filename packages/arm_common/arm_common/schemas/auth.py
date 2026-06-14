@@ -41,14 +41,20 @@ class ConfigView(BaseModel):
 
     tmdb_api_key: str | None
     omdb_api_key: str | None
+    tvdb_api_key: str | None
     makemkv_key: str | None
     musicbrainz_user_agent: str | None
     auto_transcode_on_idle: bool
     auto_rip_on_insert: bool
     block_on_miss: bool
+    ripping_paused: bool
     default_retention_policy: RetentionPolicy
     notification_apprise_urls: list[str]
     notifications_enabled: bool
+    metadata_provider: str
+    makemkv_key_valid: bool | None = None
+    makemkv_key_state: str | None = None
+    makemkv_key_checked_at: datetime | None = None
     updated_by_user_id: str | None
     updated_at: datetime | None
 
@@ -56,14 +62,17 @@ class ConfigView(BaseModel):
 class ConfigUpdateRequest(BaseModel):
     tmdb_api_key: str | None = None
     omdb_api_key: str | None = None
+    tvdb_api_key: str | None = None
     makemkv_key: str | None = None
     musicbrainz_user_agent: str | None = None
     auto_transcode_on_idle: bool | None = None
     auto_rip_on_insert: bool | None = None
     block_on_miss: bool | None = None
+    ripping_paused: bool | None = None
     default_retention_policy: RetentionPolicy | None = None
     notification_apprise_urls: list[str] | None = None
     notifications_enabled: bool | None = None
+    metadata_provider: str | None = None
 
 
 class DiagnosticsServiceView(BaseModel):

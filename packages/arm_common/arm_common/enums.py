@@ -29,6 +29,11 @@ class DriveMediaStatus(StrEnum):
     UNKNOWN = "unknown"  # CDS_NO_INFO, or ioctl unsupported on a probed device
 
 
+class DriveMode(StrEnum):
+    AUTO = "auto"  # ripper auto-rips on disc insert
+    MANUAL = "manual"  # ripper waits for an explicit manual.trigger
+
+
 class JobStatus(StrEnum):
     CREATED = "created"
     AWAITING_USER_ID = "awaiting_user_id"
@@ -145,3 +150,21 @@ class VideoCodec(StrEnum):
     H264 = "h264"
     H265 = "h265"
     AV1 = "av1"
+
+
+class MakemkvKeyState(StrEnum):
+    """Outcome of the ripper's disc-free `makemkvcon info disc:9999` probe.
+    Stored on the Config singleton and read by test-key / preflight / config view.
+
+    VALID                   — clean probe, key accepted.
+    UNREGISTERED_OR_EXPIRED — MSG:5052/5055 (evaluation expired / no valid key).
+    BINARY_EXPIRED          — MSG:5021 (60-day kill-switch; no key overrides it).
+    FORMAT_INVALID          — configured key fails the M-/T- serial regex (pre-probe).
+    PROBE_FAILED            — binary missing / timeout / undeterminable (→ valid=null).
+    """
+
+    VALID = "valid"
+    UNREGISTERED_OR_EXPIRED = "unregistered_or_expired"
+    BINARY_EXPIRED = "binary_expired"
+    FORMAT_INVALID = "format_invalid"
+    PROBE_FAILED = "probe_failed"

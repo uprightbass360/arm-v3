@@ -21,8 +21,10 @@ from arm_backend.db import get_session
 from arm_backend.path_template import TemplateValidationError
 from arm_backend.routers._params import JobIdParam
 from arm_backend.routers.logs import per_job_log_path
+from arm_backend.seeders import CONFIG_SINGLETON_ID
 from arm_backend.ws import WSHub
 from arm_common import (
+    Config,
     DiscFingerprint,
     Drive,
     DriveMediaStatus,
@@ -502,6 +504,13 @@ async def manual_trigger(
     if drive is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown drive_id: {req.drive_id}")
 
+    cfg = (await db.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one_or_none()
+    if cfg is not None and cfg.ripping_paused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ripping is paused; no new jobs accepted",
+        )
+
     in_flight = (
         await db.execute(
             select(Job).where(col(Job.drive_id) == req.drive_id).where(col(Job.status) == JobStatus.RIPPING)
@@ -550,18 +559,48 @@ async def update_job(
     req: JobUpdateRequest,
     _: User = Depends(require_jwt),
     db: AsyncSession = Depends(get_session),
+    hub: WSHub = Depends(_get_hub),
 ) -> Job:
-    """Edit user-controlled fields on a Job. Currently `poster_url_manual`
-    only — title/year are owned by the identify/resolve flow.
-    """
+    """Edit user-controlled fields on a Job + optional per-track operator edits.
+    Job title/year stay behind identify/resolve; track `status` stays ripper-owned
+    (not in TrackEditRequest)."""
     job = (await db.execute(select(Job).where(col(Job.id) == job_id))).scalar_one_or_none()
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown job_id: {job_id}")
 
-    fields = req.model_dump(exclude_unset=True)
-    for key, value in fields.items():
+    job_fields = req.model_dump(exclude_unset=True, exclude={"tracks"})
+    for key, value in job_fields.items():
         setattr(job, key, value)
     db.add(job)
+
+    edited_track_ids: list[str] = []
+    if req.tracks is not None:
+        rows = list((await db.execute(select(Track).where(col(Track.job_id) == job_id))).scalars().all())
+        by_id = {t.id: t for t in rows}
+        # Duplicate track_ids in req.tracks → last-wins (idempotent setattr); a
+        # repeated track.updated event is benign. Callers needn't deduplicate.
+        for edit in req.tracks:
+            track = by_id.get(edit.track_id)
+            if track is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"unknown track_id {edit.track_id} for job {job_id}",
+                )
+            for key, value in edit.model_dump(exclude_unset=True, exclude={"track_id"}).items():
+                setattr(track, key, value)
+            db.add(track)
+            edited_track_ids.append(track.id)
+
+    await db.flush()
+    for tid in edited_track_ids:
+        await hub.emit(
+            topic="ripper.events",
+            event_type="track.updated",
+            payload={"track_id": tid, "job_id": job_id},
+            job_id=job_id,
+            track_id=tid,
+            session=db,
+        )
     await db.commit()
     await db.refresh(job)
     return job

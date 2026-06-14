@@ -19,20 +19,28 @@ from arm_backend.gpu_probe import load_configured_gpus
 from arm_backend.log_tailer import LogTailer
 from arm_backend.metadata import MetadataDispatcher
 from arm_backend.notification_dispatcher import (
-    NotificationDispatcher,
+    MessageDispatcher,
     _RealAppriseNotifier,
 )
+from arm_backend.notifications.apprise_listener import AppriseListener
+from arm_backend.notifications.inbox_listener import InboxListener
 from arm_backend.routers import (
     auth,
     config as config_router,
     diagnostics,
     drives,
     health,
+    iso as iso_router,
     jobs,
     logs as logs_router,
+    metadata as metadata_router,
+    naming as naming_router,
+    notifications as notifications_router,
     rip_presets,
     ripper,
     sessions,
+    settings as settings_router,
+    system as system_router,
     transcode_presets,
     transcoder,
     transcodes,
@@ -119,7 +127,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             raise RuntimeError("session_signing_key missing — seeders should have populated it")
         app.state.signing_key = cfg.session_signing_key
     http = httpx.AsyncClient(timeout=httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=10.0))
-    app.state.dispatcher = MetadataDispatcher(http, omdb_api_key_override=settings.OMDB_API_KEY)
+    app.state.http = http
+    app.state.started_at = datetime.now(UTC)
+    app.state.dispatcher = MetadataDispatcher(http)
     app.state.ws_hub = WSHub()
 
     # GPU probe — truncate-and-fill the gpus table so the dispatcher's first
@@ -158,10 +168,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Phase 11 — outbound Apprise notifications. Off out of the box; the
     # dispatcher polls but no-ops until the user enables notifications in
     # the UI and saves at least one valid Apprise URL.
-    notification_dispatcher = NotificationDispatcher(
+    notifier = _RealAppriseNotifier()
+    app.state.notifier = notifier
+    notification_dispatcher = MessageDispatcher(
         settings=settings,
         db_factory=SessionLocal,
-        notifier=_RealAppriseNotifier(),
+        listeners=[AppriseListener(notifier), InboxListener()],
     )
     notification_task = asyncio.create_task(notification_dispatcher.run())
     app.state.notification_dispatcher = notification_dispatcher
@@ -207,7 +219,13 @@ app.include_router(transcoder.router)
 app.include_router(transcodes.router)
 app.include_router(config_router.router)
 app.include_router(diagnostics.router)
+app.include_router(metadata_router.router)
+app.include_router(naming_router.router)
+app.include_router(notifications_router.router)
+app.include_router(iso_router.router)
 app.include_router(logs_router.router)
+app.include_router(settings_router.router)
+app.include_router(system_router.router)
 app.include_router(ws_router)
 
 

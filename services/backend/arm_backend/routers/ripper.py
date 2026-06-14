@@ -29,6 +29,7 @@ from arm_common import (
     DriveStatus,
     Job,
     JobStatus,
+    MakemkvKeyState,
     RipPreset,
     Session,
     TrackStatus,
@@ -38,6 +39,7 @@ from arm_common.schemas import (
     IdentifyRequest,
     JobCompleteRequest,
     JobView,
+    MakemkvKeyStatusReport,
     RegisterRequest,
     RipperConfigView,
     RipperHeartbeatRequest,
@@ -129,6 +131,36 @@ async def heartbeat(req: RipperHeartbeatRequest, session: AsyncSession = Depends
     await session.commit()
 
 
+def _valid_from_state(state: MakemkvKeyState) -> bool | None:
+    if state == MakemkvKeyState.VALID:
+        return True
+    if state == MakemkvKeyState.PROBE_FAILED:
+        return None
+    return False
+
+
+@router.post(
+    "/makemkv-key-status",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_service_token)],
+)
+async def makemkv_key_status(
+    req: MakemkvKeyStatusReport,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    """A ripper reports its disc-free makemkv probe outcome. Global fact —
+    written to the Config singleton (last writer wins across multiple rippers,
+    by design). test-key / preflight / config-view read it back."""
+    cfg = (await session.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one_or_none()
+    if cfg is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="config singleton missing")
+    cfg.makemkv_key_state = req.state.value
+    cfg.makemkv_key_valid = _valid_from_state(req.state)
+    cfg.makemkv_key_checked_at = datetime.now(timezone.utc)
+    session.add(cfg)
+    await session.commit()
+
+
 @router.post("/register", response_model=Drive, dependencies=[Depends(require_service_token)])
 async def register(req: RegisterRequest, session: AsyncSession = Depends(get_session)) -> Drive:
     stmt = (
@@ -167,6 +199,12 @@ async def identify(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown drive_id: {req.drive_id}")
 
     cfg = (await session.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one()
+
+    if cfg.ripping_paused:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="ripping is paused; no new jobs accepted",
+        )
 
     scan = req.scan_result
     job = Job(
