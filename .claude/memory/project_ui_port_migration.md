@@ -1,55 +1,76 @@
 ---
 name: project_ui_port_migration
-description: UI port — migrating the neu SvelteKit UI into the v3 tree. Backend target ready (integration/ui-port-target, no blockers). NEXT STEP = decide what/where/how to import the UI code (open questions below); not started yet.
+description: UI port — neu SvelteKit UI + Python BFF migrated into the v3 tree at services/ui-neu/ (DONE 2026-06-14, branch feat/ui-neu-migration off Tier-12). Next = wire it into v3 build/contract & port against the v3 backend.
 metadata:
   type: project
 ---
 
 **Goal:** port the **neu SvelteKit UI** to run against the ARM v3 backend, retaining its
-featureset. As of 2026-06-14 the decision is to **migrate the UI code into a new location
-in the v3 tree** (this repo) rather than keep it in its separate repo.
+featureset. The decision (2026-06-14) was to **migrate the UI code into the v3 tree** rather
+than keep it in its separate repo.
+
+## STATUS: code migrated (2026-06-14) — DONE
+The snapshot import is complete. Remaining work is wiring/porting, not moving.
+
+- **Location:** `services/ui-neu/` (new path; coexists with the existing Vue `services/ui/`
+  during the port — cut over / delete the Vue SPA once SvelteKit reaches parity).
+- **Branch:** `feat/ui-neu-migration`, based off the stack tip `feat/track-operator-editing`
+  (Tier-12 / B19, `5f60cd21`). Commit `47cb01ad`. Pushed to **origin** AND **wolfy**
+  (`feat/ui-neu-migration`); PR not opened yet. It is the next stacked tier on the wolfy line.
+- **Integration branch rebuilt:** `integration/ui-port-target` re-merged the migration
+  (`ee643103`), suite **1287 green**, pushed to origin. (Feature branch alone: 1280 green —
+  the 7-test delta is the integration branch's extra merge content, expected.)
+
+### Resolved decisions (the 4 open questions, answered 2026-06-14)
+1. **What:** frontend + Python BFF — both `frontend/` (SvelteKit) and `backend/` (FastAPI BFF).
+2. **Where:** new path `services/ui-neu/` (user named it "ui-neu").
+3. **Branch:** new feature branch off the stack tip (not on the throwaway integration branch).
+4. **How:** plain copy snapshot, no git history.
+
+### What was copied / cleaned
+- Source: `/home/upb/src/automatic-ripping-machine-ui` @ `5f2425c` (its own git repo).
+- Kept (317 files, 5.3M): `frontend/` (SvelteKit src), `backend/` (BFF), `components/contracts/`,
+  `Dockerfile`, `docker-compose.yml`, `requirements*.txt`, `pyproject.toml`, `scripts/`,
+  `docs/`, `design_handoff_notifications_settings/`, `tests/`, README/LICENSE/VERSION/CHANGELOG,
+  `.dockerignore`/`.env.example`/`.gitignore` (service .gitignore force-added — v3 root
+  `.gitignore:171` has a literal `.gitignore` rule that ignores all nested ones).
+- **`components/contracts/` was a git submodule** (`automatic-ripping-machine-contracts`);
+  vendored as plain files — dropped its `.git` gitlink and the repo `.gitmodules`. The
+  Dockerfile/compose build it via `additional_contexts: contracts: ./components/contracts`.
+- Dropped: build/cache artifacts (node_modules, .svelte-kit, build, coverage, __pycache__,
+  .pytest_cache), 12M of `screenshots/`, and neu's repo-level AI/CI tooling (`.claude`,
+  `.superpowers`, `.github`, pre-commit, release-please, sonar, codecov).
+- Renamed `CLAUDE.md` -> `CLAUDE.neu.md` so it does NOT override v3's session instructions.
+
+### Inert to v3 tooling (verified)
+`services/ui-neu` is NOT a uv-workspace member and NOT in root `pyproject.toml` `testpaths`
+(scoped to the 4 existing service test dirs), so `uv run pytest` from root does not collect
+its tests and `uv sync` does not pull its deps. The migration is a no-op for the v3 backend
+suite (1280 green on the feature branch, same as before).
 
 ## Backend target — READY (no blockers)
 - A UI-port blocker audit (2026-06-14) found **NO fundamental backend feature blockers.**
-  The audit's one false alarm (notifications) is actually built + stacked (Tier-3/#8); it
-  only looked missing because the audit checked *bare* `wolfy/main`. Auth/login is ready
-  (JWT + `password_must_change`, no `/me` needed). Themes (B9 unbuilt) + image-proxy (B13
-  deferred) degrade gracefully in the UI. Transcoder/config/drives/tracks/naming shipped
-  with field-rename adapters (BC-S5–S13). Dashboard composes client-side (B14 wontfix).
-- **The assembled backend target is `integration/ui-port-target`** (on origin, `570311a3`):
-  new `wolfy/main` (incl. the merged rc2 fix PR #17) + a clean merge of the stack tip
-  (`feat/track-operator-editing`, all 11 tiers #6–#16). Full suite **1287 green**. The UI
-  port runs against THIS (bare wolfy/main lacks the unmerged tiers). Rebuild after a new
-  tier lands by re-merging the new stack tip. See [[project_wolfy_pr_stack_state]].
+  False alarm (notifications) is built + stacked (Tier-3/#8). Auth ready (JWT +
+  `password_must_change`). Themes (B9 unbuilt) + image-proxy (B13 deferred) degrade
+  gracefully. Transcoder/config/drives/tracks/naming shipped with field-rename adapters
+  (BC-S5–S13). Dashboard composes client-side (B14 wontfix).
+- `integration/ui-port-target` (origin, now `ee643103`) = `wolfy/main` (incl. merged rc2 fix
+  PR #17) + the stack tip merge + the ui-neu migration. Rebuild after a new tier lands by
+  re-merging the new stack tip. See [[project_wolfy_pr_stack_state]].
 
-## The UI source to migrate
-- `/home/upb/src/automatic-ripping-machine-ui/` — its **own git repo** (HEAD `5f2425c`).
-  - `frontend/` (262M incl. node_modules/.venv — SvelteKit + Tailwind 4; `frontend/src/`).
-  - `backend/` (1.1M — a Python **BFF** the SvelteKit app talks to; `backend/services/`:
-    `arm_client.py` (proxies to ARM), `transcoder_client.py`, `themes.py`, `image_cache.py`,
-    `system_cache.py`). The frontend hits the BFF, the BFF proxies to ARM v3.
-  - UI AI-context lives at `/home/upb/src/arm-ai/arm-ui/` (specs/plans/memory).
-- This v3 tree already has `services/ui/` = the **current Vue 3 SPA** (the thing being
-  replaced/superseded by the SvelteKit port).
+## NEXT STEPS (porting, not moving)
+1. **Decide the BFF's fate in v3 arch** — the neu BFF (`backend/services/`: `arm_client.py`,
+   `transcoder_client.py`, `themes.py`, `image_cache.py`, `system_cache.py`) duplicates parts
+   of the v3 FastAPI. v3's principle is **v3 owns the contract**; the UI adapts to v3. Either
+   keep the BFF as a thin proxy or re-home its logic into the v3 backend. (Big open arch
+   question — likely a brainstorm.)
+2. Point the BFF/frontend at the v3 backend's OpenAPI contract (field names differ — see the
+   BC-S5–S13 breaking-change entries; the UI adapts to v3, not vice-versa).
+3. Wire `services/ui-neu` into the v3 compose/build as needed; decide CI scope.
+4. Open the wolfy PR for `feat/ui-neu-migration` when ready (the branch is pushed).
 
-## OPEN DECISIONS — resolve before importing (asked, not yet answered):
-1. **What code:** the SvelteKit `frontend/` only, or frontend + the Python `backend/` BFF?
-   (v3's arch has no BFF today — the Vue SPA talks straight to FastAPI. Porting the BFF too
-   is a bigger arch question; the BFF's themes/image_cache services overlap v3 wontfix/defer
-   decisions. Likely: frontend-first, decide BFF separately — but CONFIRM.)
-2. **Where:** replace `services/ui/` (the Vue SPA), or a fresh path (`services/ui-svelte/`
-   / `services/web/`) alongside it during transition? (Replacing is cleaner long-term;
-   alongside lets both coexist while porting.)
-3. **Which branch:** a real feature branch (off the stack tip `feat/track-operator-editing`,
-   as the next stacked tier — OR off `integration/ui-port-target`). NOT the throwaway
-   integration branch directly. (Currently checked out on `integration/ui-port-target`.)
-4. **Copy vs history-preserving:** straight file copy into the new path (typical for a port)
-   vs. preserving the UI repo's git history (cross-repo, heavier). Exclude
-   `node_modules/.venv/.worktrees/.pytest_cache/.coverage` from whatever moves.
-
-## Workflow notes
-- This is a cross-repo, hard-to-reverse structural change — confirm what/where/how before
-  moving. Use brainstorming if the scope (frontend-only vs frontend+BFF, and the
-  arch-fit of a BFF in v3) needs design.
-- The port itself is a distinct workstream from the backend stack; once the code is in the
-  tree it becomes part of this repo's build.
+## References
+- UI AI-context: `/home/upb/src/arm-ai/arm-ui/` (specs/plans/memory).
+- Breaking-change log (UI adapts to v3): `/home/upb/src/arm-ai/arm-v3/docs/neu-ui-port-breaking-changes.md`.
+- This is a cross-repo structural change; the port is a distinct workstream from the
+  backend stack. See [[project_wolfy_pr_stack_state]].
