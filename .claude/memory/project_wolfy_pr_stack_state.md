@@ -70,12 +70,21 @@ split-and-collapse as a FINISHING step when the UI work is done** (squash all `s
 into the one UI PR; move image-proxy+snapshot+gitignore onto the backend line). Do NOT reorganize or
 open the UI PRs now.
 
-**NEXT WORK (decided 2026-06-15): P1 — job operator verbs** (cancel/start/pause/force-complete/
-skip-finalize/fix-permissions/crc-submit) — highest-value MISSING backend; backend/contract unit.
-Shipping it lets the UI un-stub those `notAvailable` fns
-(`grep notAvailable( services/ui-neu/frontend/src/lib/api/jobs.ts`) + surface operator buttons (some
-already reachable on `ripped` jobs, currently throw-caught). UI state + Tier-C carry-forward backlog:
-[[project_ui_port_migration]].
+**P1 operator verbs — DONE 2026-06-15, and it turned out UI-ONLY (no backend).** Investigation
+showed the "7 operator verbs" are arm-neu concepts v3's job model lacks: v3 has no waiting/paused job
+state; cancel = the existing `abandon` endpoint; pause = global `Config.ripping_paused`. So instead
+of building neu-shaped endpoints (the bend-v3-to-neu anti-pattern), the `feat/ui-neu-operator-verbs`
+tier (UI unit, off the Tier-C tip) re-pointed cancel→live `abandonJob` and turned the rest into
+disabled `ComingSoon` controls. **Nothing landed on the backend stack** (this P1 added no backend).
+The genuine backend GAPS are deferred to own future specs, each with an unresolved design Q:
+**CRC-submit** (outbound 1337server; crc64 stored as DiscFingerprint), **force-complete** (arm-neu's
+own acknowledged footgun; unclear v3 jobs get stuck), **permission-fix** (ripper-unprivileged
+invariant → likely a ripper-side WS command). See [[project_ui_port_migration]].
+
+**NEXT WORK (open):** open the wolfy PR chain (the backend #6–#16 + Tier-12 still PR-less; the UI
+units per the two-unit model above), and/or pick another MISSING-subsystem backend tier
+(file-browser API, maintenance/orphan cleanup, folder-import, TVDB, logs) — each un-stubs + un-flags
+its UI screen. Or Phase 2 (nginx/static-themes, make ui-neu servable) / the deferred CI-wiring pass.
 
 **Note:** `integration/ui-port-target` (above) predates the UI sub-chain; live UI work now lives on
 the `feat/ui-neu-*` branches (green: svelte-check 0, Vitest 954, backend 1303).

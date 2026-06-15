@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (frontend en-masse repoint + login, 3-PR sub-chain A/B/C) ALL DONE — stack GREEN (svelte-check 0, Vitest 954, backend 1303). Screens files/setup/logs flagged OFF (MISSING v3). NEXT = open the wolfy PR chain + backlog tiers (MISSING endpoints). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (en-masse repoint + login, A/B/C) + operator-verbs tier ALL DONE — stack GREEN (svelte-check 0, Vitest 953, backend 1303). Screens files/setup/logs flagged OFF; deferred operator actions are ComingSoon controls; cancel→live abandon. NEXT = open the wolfy PR chain + backlog tiers (MISSING endpoints: CRC-submit/force-complete/permission-fix each need own spec). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
 metadata:
   type: project
 ---
@@ -135,9 +135,18 @@ retype consumers → fix: flag `/logs` OFF + `transcoder_enabled` always true. P
 `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierC-repoint-plan.md`.
 Spec: `...-phase1-tierC-repoint-design.md`. Each domain got implementer + 2-stage review.
 
-**The whole Phase-1 3-PR sub-chain is GREEN and pushed (no PRs opened yet):**
+**The whole Phase-1 sub-chain is GREEN and pushed (no PRs opened yet):**
 `feat/ui-neu-migration → feat/ui-neu-image-proxy (Phase 0) → feat/ui-neu-fe-client (A) →
-feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C)`.
+feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C) → feat/ui-neu-operator-verbs`.
+
+**Operator-verbs tier — DONE (2026-06-15).** Branch `feat/ui-neu-operator-verbs` off the Tier-C tip,
+pushed origin + wolfy. UI-only (no backend — confirmed P1 "operator verbs" are arm-neu concepts v3
+doesn't have): added a reusable **`ComingSoon.svelte`** (disabled button + "Coming soon" badge);
+re-pointed **cancel → live `abandonJob`** (DiscReviewWidget); made Start (DiscReviewWidget),
+Fix-Permissions (JobActions), CRC submit+lookup (CrcLookup) **disabled ComingSoon** controls; CrcLookup
+also dropped dead mount-rejecting lookup UI and kept the live `updateJobTitle` poster-URL apply.
+`jobs.ts` `notAvailable` stubs untouched (scaffolding). svelte-check 0, Vitest 953, backend 1303.
+Spec/plan: `...2026-06-15-ui-operator-verbs-repoint-{design,plan}.md`.
 
 **Feature-flagged OFF (MISSING v3 backend):** files, setup, **logs** (v3 logs are job-id-scoped, no
 filename browser). ON: dashboard, notifications, settings, transcoder.
@@ -146,10 +155,14 @@ filename browser). ON: dashboard, notifications, settings, transcoder.
 - **`notAvailable` stub pattern + `_stub.ts`**: MISSING api fns throw "<feature> is not yet available
   in v3"; their screens are flagged off. `grep notAvailable(` finds the ~75 MISSING surface. When a
   backend backlog tier lands, un-stub the fn + flip the flag.
-- **Operator-verb stubs on otherwise-live screens** (jobs: cancel/start/pause/force-complete/
-  skip-finalize/fix-permissions/crc-submit/retranscode/tvdb/multi-title/per-job naming+transcode).
-  Buttons can be reachable (e.g. "Fix Permissions" on `ripped` jobs) → click throws caught error.
-  Hide these until the **P1 operator-verbs** backend tier lands.
+- **Operator-verb buttons — RESOLVED 2026-06-15** (the `feat/ui-neu-operator-verbs` tier): cancel
+  re-pointed to live `abandonJob`; Start/Fix-Permissions/CRC-submit+lookup are now disabled
+  `ComingSoon` controls (no longer throw-on-click). The genuine backend GAPS deferred to own future
+  specs (each has an unresolved design Q): **CRC-submit** (outbound 1337server integration; crc64 is
+  stored as a DiscFingerprint), **force-complete** (arm-neu's own "footgun needs rationalization";
+  unclear v3 jobs get stuck), **permission-fix** (collides with ripper-unprivileged invariant; likely
+  a ripper-side WS-command, not a backend endpoint). v3 has NO waiting/paused job state (start/pause
+  are arm-neu concepts; pause = global Config.ripping_paused).
 - **Home-screen lane logic is stale**: `+page.svelte`/`+layout.svelte` branch on legacy arm-neu job
   statuses (`transcoding`/`waiting`/`identifying`/…) absent from v3's `JobStatus` enum — dead
   comparisons, inert "scanning/waiting/finishing" lanes. Compiles fine; needs a consumer-logic pass.
