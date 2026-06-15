@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI migrated to services/ui-neu/; arch DECIDED (Option A, no BFF: frontend→v3, image-proxy→v3 router, themes static, drop arm_contracts). Phase 0 (image-proxy v3 router) DONE on feat/ui-neu-image-proxy. 6-phase foundation plan; ~75 missing routes backlogged.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy v3 router) + Phase 1 Tier A (v3 types + authed client) DONE. Phase 1 = frontend en-masse repoint + login as a 3-PR sub-chain (A done; B login, C repoint next). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
 metadata:
   type: project
 ---
@@ -75,10 +75,11 @@ The whole neu Python BFF gets **deleted**. End-state:
   reconciliation, job operator verbs, etc. — each its own future spec). Foundation scope is the
   walking skeleton only; cutover/delete-Vue is OUT of scope (decide later).
 
-## 6-PHASE FOUNDATION PLAN (each its own stacked tier off the one below)
-Phase 0 image-proxy v3 router → Phase 1 v3 client + auth/login → Phase 2 nginx + static themes +
-delete demo/system-cache → Phase 3 repoint EXISTS → Phase 4 adapters + repoint FIELD-MISMATCH →
-Phase 5 delete the BFF + drop arm_contracts.
+## FOUNDATION PLAN (each its own stacked tier off the one below)
+Phase 0 image-proxy v3 router (DONE) → **Phase 1 (collapses orig Phases 1+3+4): frontend
+en-masse repoint + login** → Phase 2 nginx + static themes + delete demo/system-cache → Phase 5
+delete the BFF + drop arm_contracts. (Orig Phases 3+4 — repoint EXISTS + adapters — were folded
+into Phase 1.)
 
 ### Phase 0 — DONE (2026-06-14)
 Branch `feat/ui-neu-image-proxy` off `feat/ui-neu-migration` (Phase-0 tier), pushed to origin +
@@ -87,6 +88,36 @@ wolfy. 5 commits: ARM_IMAGE_CACHE_PATH setting → ported image_cache (100% cov)
 no SVG; 100% cov) → main.py wiring + startup_scan → OpenAPI snapshot regen. Full suite 1303
 green. Plan: `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase0-image-proxy-plan.md`.
 PR not opened yet. **The image-proxy now lives in v3 — do NOT re-port it from the BFF.**
+
+### Phase 1 — frontend en-masse repoint + login (IN PROGRESS; own 3-PR sub-chain)
+Spec: `../arm-ai/arm-v3/docs/superpowers/specs/2026-06-14-ui-neu-port-phase1-frontend-repoint-design.md`.
+Decided shape: components bind **directly to v3 wire types** (no translation layer); regenerate
+`api.gen.ts` from v3 OpenAPI + rewrite all ~65 consumer files to v3 names; FIELD-MISMATCH deltas
+absorbed inside `api/*.ts` module bodies; whole-screen feature-flag the ~75 MISSING screens; full
+login (localStorage JWT, 401→redirect, `password_must_change`). Delivered as a **3-PR stacked
+sub-chain** off the Phase 0 tip: **Tier A** (v3 types + authed client) → **Tier B** (login +
+feature-flags) → **Tier C** (repoint api modules + components + tests; stack goes GREEN here).
+**Red build across Tiers A–B is ACCEPTED** (owner-approved) — the 65 consumers don't typecheck
+until C; do NOT gate Tiers A/B on `svelte-check`.
+
+**Tier A — DONE (2026-06-14).** Branch `feat/ui-neu-fe-client` off `feat/ui-neu-image-proxy`,
+pushed origin + wolfy. 4 commits: regenerate api.gen.ts from v3 snapshot (codegen.sh repointed +
+vendoring path-drift fixed) → **`.gitignore` src/lib recovery** (see below) → consolidated authed
+`client.ts` (shared request/handle core, `get/post/patch/del`, `buildQuery`, localStorage token
+store, 401 hook; keeps `apiFetch`/`apiFormPost`; 24 client tests green) → codegen.sh comment fix.
+Plan: `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierA-client-plan.md`.
+Backend suite still 1303 green (frontend changes inert). PR not opened. NEXT = Tier B (login).
+
+### ⚠️ CRITICAL MIGRATION DEFECT found + fixed in Tier A — root `.gitignore` `lib/` swallowed src/lib
+The migration commit (`47cb01ad`) **silently dropped the ENTIRE SvelteKit `src/lib/` tree** —
+only 1 of 212 files was tracked. Cause: the root `.gitignore`'s Python-packaging rule **`lib/`
+(line ~17)** matches `services/ui-neu/frontend/src/lib/`. Fixed on `feat/ui-neu-fe-client` with a
+negation (`!services/ui-neu/frontend/src/lib/` + `/**`) and committed the 211 recovered files.
+**The fix lives on the Phase-1 branch, NOT on main** — so on a fresh `main` checkout `src/lib` is
+still ignored; it merges to wolfy/main via the PR chain. Also note **`.gitignore` line ~171 is a
+literal `.gitignore`** rule (ignores all nested `.gitignore` files — why Phase-0's service
+`.gitignore` needed `git add -f`). When creating new `services/ui-neu/...` files, **verify
+`git check-ignore` doesn't swallow them** (esp. anything under a `lib/` or `build/` path).
 
 ## NEXT STEPS
 1. Phase 1 — v3 OpenAPI client in SvelteKit + login/JWT store (brainstorm/plan when reached).
