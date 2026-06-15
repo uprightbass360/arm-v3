@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy v3 router) + Phase 1 Tier A (v3 types + authed client) DONE. Phase 1 = frontend en-masse repoint + login as a 3-PR sub-chain (A done; B login, C repoint next). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy v3 router) + Phase 1 Tiers A (v3 types + authed client) & B (login + feature-flags) DONE. Phase 1 = frontend en-masse repoint as a 3-PR sub-chain (A,B done; C repoint = stack goes green, next). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
 metadata:
   type: project
 ---
@@ -106,7 +106,28 @@ vendoring path-drift fixed) → **`.gitignore` src/lib recovery** (see below) �
 `client.ts` (shared request/handle core, `get/post/patch/del`, `buildQuery`, localStorage token
 store, 401 hook; keeps `apiFetch`/`apiFormPost`; 24 client tests green) → codegen.sh comment fix.
 Plan: `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierA-client-plan.md`.
-Backend suite still 1303 green (frontend changes inert). PR not opened. NEXT = Tier B (login).
+Backend suite still 1303 green (frontend changes inert). PR not opened.
+
+**Tier B — DONE (2026-06-14).** Branch `feat/ui-neu-fe-auth` off `feat/ui-neu-fe-client`, pushed
+origin + wolfy. 6 commits: auth api module (`api/auth.ts` login/logout/changePassword) → auth
+store (`stores/auth.ts` localStorage JWT state + `passwordMustChange`; `applyLogin`/`logoutLocal`/
+`initAuth`/`clearPasswordMustChange`) → feature-flag module (`features.ts`: whole-screen flags,
+**files + setup OFF** = MISSING backends; `isScreenEnabled`) → `/login` + forced `/change-password`
+routes → root-layout wiring (`+layout.ts` auth guard [unauth→/login] + feature-flag the MISSING
+`/api/setup/status` redirect; `+layout.svelte` 401→`logoutLocal`+redirect, nav feature-gating,
+logout button) → review fix: **bare-render auth routes** (login/change-password skip the app chrome
++ `dashboard.start()` poll, fixing a 401-self-loop) + client-side new≠current check. 40 frontend
+tests green; backend still 1303. Plan:
+`../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierB-auth-plan.md`.
+PR not opened. NEXT = **Tier C** (repoint all ~17 `api/*.ts` bodies to v3 + rewrite the ~65
+consumer/component files to v3 type names + update Vitest; **stack goes GREEN here**).
+
+**Known Tier-B UX limitation (documented, deferred):** `password_must_change` is enforced only by
+the login page's one-time redirect + the backend (which 403s every endpoint except `/auth/password`
+while the flag is set — broken-but-safe). The client guard does NOT force a flagged user who
+navigates directly to `/` onto `/change-password`, and the flag isn't persisted (resets to false on
+reload). Acceptable to ship; revisit if the UX bites (would need flag persistence or a `/me` probe;
+v3 has no `/me`).
 
 ### ⚠️ CRITICAL MIGRATION DEFECT found + fixed in Tier A — root `.gitignore` `lib/` swallowed src/lib
 The migration commit (`47cb01ad`) **silently dropped the ENTIRE SvelteKit `src/lib/` tree** —
