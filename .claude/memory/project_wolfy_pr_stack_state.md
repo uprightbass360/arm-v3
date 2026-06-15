@@ -36,3 +36,46 @@ All of #6–#16 are **DRAFT, unmerged**; Tier-12 (`feat/track-operator-editing`)
 **Layer-aware test trap (cost me a re-cascade):** a test authored at a low layer that asserts behavior introduced at a HIGHER layer breaks at the top. The fix goes at the LOW layer (so it flows up), made layer-agnostic. Example: the tvdb round-trip test must assert the stored value + field-presence, NOT cleartext — because secret-masking at #13 turns the GET value into `<hidden>`.
 
 Workflow per batch: brainstorming → writing-plans → subagent-driven-development (or hybrid: subagents for isolated fixes, inline for git surgery) → finishing-a-development-branch. Specs/plans live in `../arm-ai/arm-v3/docs/superpowers/{specs,plans}/`. Backlog + BC log (`neu-ui-port-breaking-changes.md`, BC-N*/BC-S*) in `../arm-ai/arm-v3/docs/`. See [[wolfy-pr-workflow]] for the push mechanics.
+
+---
+
+## UI PORT — delivery model (decided 2026-06-15): TWO units, by concern, NOT by tier
+
+The UI port is built as a 5-branch stacked sub-chain on wolfy
+(`feat/ui-neu-migration → -image-proxy → -fe-client → -fe-auth → -fe-repoint`, all pushed, **NO PRs
+opened**) — but that topology is just the build path. **At delivery it collapses into TWO units**
+(owner directive: "push backend/contract changes separate from the UI updates; the UI is PR'd as one
+unit"):
+
+1. **Backend/contract unit → rides the backend stack** (normal per-tier flow). Everything v3-backend
+   or wire-contract, NOT frontend:
+   - the **image-proxy** (Phase 0): `services/backend/arm_backend/{config,image_cache,main}.py` +
+     `routers/images.py` + 2 tests (6 files) — an `arm_backend` router, NOT a UI tier.
+   - the **`services/ui/openapi.snapshot.json`** regen (the `/api/images/proxy` add).
+   - the **root `.gitignore` fix** (`!services/ui-neu/frontend/src/lib/` negation recovering the
+     swallowed src/lib) — repo infra; must land **before/with** the UI so its files are trackable.
+   - future MISSING-endpoint backend tiers (operator verbs, file-browser API, …).
+2. **UI unit → ONE single PR.** All **~540 `services/ui-neu/` files** (migration snapshot + auth +
+   en-masse repoint) collapsed into one reviewable PR, based on a backend that already carries the
+   contract unit.
+
+**Split maps cleanly onto directories** (verified 2026-06-15): whole sub-chain = 6 backend files +
+1 snapshot + 1 `.gitignore` + ~540 `services/ui-neu/` files. **Ordering constraint:** the UI's
+`api.gen.ts` was generated from a snapshot that includes `/api/images/proxy`, and the `.gitignore`
+fix makes the 540 files committable — so the **contract unit must be in the UI PR's base before the
+UI PR is clean.** Backend/contract first, UI PR second.
+
+**HOLD STRATEGY (decided):** keep building backlog tiers on the current stacked branches; **do the
+split-and-collapse as a FINISHING step when the UI work is done** (squash all `services/ui-neu/`
+into the one UI PR; move image-proxy+snapshot+gitignore onto the backend line). Do NOT reorganize or
+open the UI PRs now.
+
+**NEXT WORK (decided 2026-06-15): P1 — job operator verbs** (cancel/start/pause/force-complete/
+skip-finalize/fix-permissions/crc-submit) — highest-value MISSING backend; backend/contract unit.
+Shipping it lets the UI un-stub those `notAvailable` fns
+(`grep notAvailable( services/ui-neu/frontend/src/lib/api/jobs.ts`) + surface operator buttons (some
+already reachable on `ripped` jobs, currently throw-caught). UI state + Tier-C carry-forward backlog:
+[[project_ui_port_migration]].
+
+**Note:** `integration/ui-port-target` (above) predates the UI sub-chain; live UI work now lives on
+the `feat/ui-neu-*` branches (green: svelte-check 0, Vitest 954, backend 1303).
