@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy v3 router) + Phase 1 Tiers A (v3 types + authed client) & B (login + feature-flags) DONE. Phase 1 = frontend en-masse repoint as a 3-PR sub-chain (A,B done; C repoint = stack goes green, next). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (frontend en-masse repoint + login, 3-PR sub-chain A/B/C) ALL DONE — stack GREEN (svelte-check 0, Vitest 954, backend 1303). Screens files/setup/logs flagged OFF (MISSING v3). NEXT = open the wolfy PR chain + backlog tiers (MISSING endpoints). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
 metadata:
   type: project
 ---
@@ -119,8 +119,44 @@ logout button) → review fix: **bare-render auth routes** (login/change-passwor
 + `dashboard.start()` poll, fixing a 401-self-loop) + client-side new≠current check. 40 frontend
 tests green; backend still 1303. Plan:
 `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierB-auth-plan.md`.
-PR not opened. NEXT = **Tier C** (repoint all ~17 `api/*.ts` bodies to v3 + rewrite the ~65
-consumer/component files to v3 type names + update Vitest; **stack goes GREEN here**).
+PR not opened.
+
+**Tier C — DONE (2026-06-15). 🎉 STACK IS GREEN — Phase 1 complete.** Branch
+`feat/ui-neu-fe-repoint` off `feat/ui-neu-fe-auth`, pushed origin + wolfy. Drove svelte-check
+from **215 errors → 0**; full Vitest **954 green**; backend still **1303**. 8 commits, bottom-up by
+domain: drives (template + `notAvailable` stub helper) → jobs (largest: JobView/JobDetailView,
+**bulk-PATCH `{tracks:[...]}`** for track edits, 18 MISSING operator verbs stubbed) → test-fix
+(drives/nav regressions an implementer mislabeled "pre-existing") → settings (**v3 config fan-out**:
+`/api/config`+`/schema`+`/infra`; transcode-presets) → notifications (`inbox_id`) + transcoder
+(`TranscodeTaskView` task-model) → **dashboard client-side composition** (`Promise.allSettled`
+fan-out over config/jobs/drives/transcodes/notifications, replacing the dead BFF aggregation; sticky
++ two-strike resilience preserved) → stub MISSING domains (files/maintenance/import/logs/setup) +
+retype consumers → fix: flag `/logs` OFF + `transcoder_enabled` always true. Plan:
+`../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierC-repoint-plan.md`.
+Spec: `...-phase1-tierC-repoint-design.md`. Each domain got implementer + 2-stage review.
+
+**The whole Phase-1 3-PR sub-chain is GREEN and pushed (no PRs opened yet):**
+`feat/ui-neu-migration → feat/ui-neu-image-proxy (Phase 0) → feat/ui-neu-fe-client (A) →
+feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C)`.
+
+**Feature-flagged OFF (MISSING v3 backend):** files, setup, **logs** (v3 logs are job-id-scoped, no
+filename browser). ON: dashboard, notifications, settings, transcoder.
+
+**Tier-C carry-forward backlog (non-blocking, recorded for the relevant future tiers):**
+- **`notAvailable` stub pattern + `_stub.ts`**: MISSING api fns throw "<feature> is not yet available
+  in v3"; their screens are flagged off. `grep notAvailable(` finds the ~75 MISSING surface. When a
+  backend backlog tier lands, un-stub the fn + flip the flag.
+- **Operator-verb stubs on otherwise-live screens** (jobs: cancel/start/pause/force-complete/
+  skip-finalize/fix-permissions/crc-submit/retranscode/tvdb/multi-title/per-job naming+transcode).
+  Buttons can be reachable (e.g. "Fix Permissions" on `ripped` jobs) → click throws caught error.
+  Hide these until the **P1 operator-verbs** backend tier lands.
+- **Home-screen lane logic is stale**: `+page.svelte`/`+layout.svelte` branch on legacy arm-neu job
+  statuses (`transcoding`/`waiting`/`identifying`/…) absent from v3's `JobStatus` enum — dead
+  comparisons, inert "scanning/waiting/finishing" lanes. Compiles fine; needs a consumer-logic pass.
+- **`testMetadataKey`** tests the *stored* key, not the unsaved form value (v3 has no inline-key
+  param). Minor settings UX note.
+- **`DriveCard.svelte:216`** pre-existing svelte warning (`settingsRef` not `$state`); + tsconfig
+  `node` types warning — the 2 accepted pre-existing warnings.
 
 **Known Tier-B UX limitation (documented, deferred):** `password_must_change` is enforced only by
 the login page's one-time redirect + the backend (which 403s every endpoint except `/auth/password`
