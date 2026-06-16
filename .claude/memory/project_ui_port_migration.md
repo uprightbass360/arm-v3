@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF) FULLY REALIZED — the BFF is DELETED (Phase 2, 2026-06-16); ui-neu is pure static SvelteKit served by nginx → v3, zero .py. Phases 0/1(A,B,C)/operator-verbs/dashboard-lanes/bff-prune ALL DONE — green (svelte-check 0, Vitest 956, backend 1303). NEXT = wire ui-neu into compose/CI (now simple — no BFF), per-drive manual-start, backlog backends, open the wolfy PR chain. CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the UI branch only (main still ignores it).
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF) FULLY REALIZED — the BFF is DELETED (Phase 2, 2026-06-16); ui-neu is pure static SvelteKit served by nginx → v3, zero .py. Phases 0/1(A,B,C)/operator-verbs/dashboard-lanes/bff-prune(+CSP/self-host-font fix) ALL DONE — green (svelte-check 0, Vitest 956, backend 1303); browser-verified (SPA boots, login renders, /api proxy works). NEXT = wire ui-neu into compose/CI (now simple — no BFF), QUEUED themes-serve-static (browser test found /api/themes 404), per-drive manual-start, backlog backends, open the wolfy PR chain. CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the UI branch only (main still ignores it).
 metadata:
   type: project
 ---
@@ -154,6 +154,21 @@ config verified by inspection vs `services/ui` (proxy target/WS-path/cert-paths/
 against the real v3 backend); **container build/run NOT validated this tier** — deferred to the
 CI/compose wiring pass. Plan: `...2026-06-16-ui-neu-phase2-bff-prune-nginx-plan.md`.
 
+**Phase 2 CSP/font fix — DONE (2026-06-16, commit `2b76f467` on the bff-prune branch).** A real
+**Playwright browser** smoke-test against the live v3 backend (the container Phase 2 deferred — built
++ ran ui-neu nginx on `:8082`, joined `armv3_default`) caught the strict CSP **blanking the SPA**:
+(1) `script-src 'self'` blocked SvelteKit's adapter-static SPA-fallback inline bootstrap/hydration
+scripts — **CSP hashes only cover PRERENDERED pages** (svelte docs + kit #9368; a hash also disables
+`unsafe-inline`), so a non-prerendered SPA fallback REQUIRES `script-src 'self' 'unsafe-inline'`;
+(2) `app.css` `@import`'d Rajdhani from `fonts.googleapis.com` (CSP-blocked) → **self-hosted** the
+woff2 (latin+latin-ext, 500/700) in `frontend/static/fonts/` + local `@font-face`, added `font-src
+'self'`. In-browser verified: SPA boots, **auth guard redirects `/`→`/login`, login form renders,
+`POST /api/auth/login` proxies to the backend** (chain works; `admin/admin` 401s because this dev
+stack's admin pw was already rotated — `password_must_change=f`). Made the standalone
+`docker-compose.yml` runnable (external `armv3_default` net, repo-root certs, `:8082`).
+**Lesson:** the Vue `services/ui` "no inline scripts" CSP does NOT transfer to SvelteKit-static —
+its bundle has unavoidable inline scripts. The browser test was essential; curl couldn't catch CSP.
+
 **Dashboard-lanes tier — DONE (2026-06-16).** Branch `feat/ui-neu-dashboard-lanes` off the
 operator-verbs tip, pushed origin + wolfy. UI-only correctness fix: the home screen sorted active
 jobs into lanes using arm-neu statuses that don't exist in v3, so every lane misfired. Remapped the
@@ -225,12 +240,22 @@ literal `.gitignore`** rule (ignores all nested `.gitignore` files — why Phase
    nginx ui-neu service to `docker-compose.yml.example` (alongside/with the Vue `arm-ui`), and add
    the frontend's `svelte-check`/Vitest (+ optionally the Docker build) to CI. This also gives the
    container build/run validation Phase 2 deferred.
-2. **Per-drive "Start rip"** — surface v3's `POST /api/jobs/manual {drive_id}` as a DriveCard action
+2. **QUEUED — Themes: serve built-ins statically** (gap exposed by the Phase-2 browser test:
+   `GET /api/themes/blue` → 404; degrades to default theme, app still works). The BFF served 5
+   `/api/themes` endpoints; the frontend (`src/lib/api/themes.ts` + `stores/colorScheme.ts`
+   `loadThemesFromApi()`/`fetchTheme(id)`) calls **`GET /api/themes` (list), `GET /api/themes/{id}`,
+   `GET /api/themes/{id}/css`** on startup/selection, plus **`POST`/`DELETE`** for user upload.
+   Per the foundation spec (Option A, §3): **built-in themes ship STATIC** (read = nginx static GET;
+   reshape the theme loader's fetch paths to static URLs, e.g. `/themes/<id>.json|.css`), and
+   **user upload/delete is BACKLOGGED** (needs a small write endpoint — a v3 router or BFF-less
+   alternative). The **54 built-in theme files** (`.json`/`.css`) are recoverable from git at
+   `52809ac0~1:services/ui-neu/backend/themes/builtin/` (deleted with the BFF). Own spec/plan.
+3. **Per-drive "Start rip"** — surface v3's `POST /api/jobs/manual {drive_id}` as a DriveCard action
    (small, real v3 capability; not yet in `jobs.ts`).
-3. **Backlog backend tiers** (each un-stubs + un-flags its UI screen): file-browser API, maintenance/
+4. **Backlog backend tiers** (each un-stubs + un-flags its UI screen): file-browser API, maintenance/
    orphan cleanup, folder-import, TVDB, logs-by-filename, setup wizard; and the deferred operator
    gaps (CRC-submit / force-complete / permission-fix — each needs its own spec).
-4. **Open the wolfy PR chain** per the two-unit delivery model (see [[project_wolfy_pr_stack_state]]):
+5. **Open the wolfy PR chain** per the two-unit delivery model (see [[project_wolfy_pr_stack_state]]):
    backend/contract unit (image-proxy + snapshot + gitignore) separate from the single UI PR.
 
 ## References
