@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (en-masse repoint + login, A/B/C) + operator-verbs + dashboard-lanes tiers ALL DONE — stack GREEN (svelte-check 0, Vitest 956, backend 1303). Screens files/setup/logs flagged OFF; deferred operator actions are ComingSoon; cancel→live abandon; dashboard lanes remapped to v3 JobStatus. NEXT = open the wolfy PR chain + backlog tiers (per-drive manual-start; MISSING endpoints CRC-submit/force-complete/permission-fix each need own spec). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF) FULLY REALIZED — the BFF is DELETED (Phase 2, 2026-06-16); ui-neu is pure static SvelteKit served by nginx → v3, zero .py. Phases 0/1(A,B,C)/operator-verbs/dashboard-lanes/bff-prune ALL DONE — green (svelte-check 0, Vitest 956, backend 1303). NEXT = wire ui-neu into compose/CI (now simple — no BFF), per-drive manual-start, backlog backends, open the wolfy PR chain. CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the UI branch only (main still ignores it).
 metadata:
   type: project
 ---
@@ -135,10 +135,24 @@ retype consumers → fix: flag `/logs` OFF + `transcoder_enabled` always true. P
 `../arm-ai/arm-v3/docs/superpowers/plans/2026-06-14-ui-neu-port-phase1-tierC-repoint-plan.md`.
 Spec: `...-phase1-tierC-repoint-design.md`. Each domain got implementer + 2-stage review.
 
-**The whole Phase-1 sub-chain is GREEN and pushed (no PRs opened yet):**
+**The whole UI sub-chain is GREEN and pushed (no PRs opened yet):**
 `feat/ui-neu-migration → feat/ui-neu-image-proxy (Phase 0) → feat/ui-neu-fe-client (A) →
 feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C) → feat/ui-neu-operator-verbs →
-feat/ui-neu-dashboard-lanes`.
+feat/ui-neu-dashboard-lanes → feat/ui-neu-bff-prune`.
+
+**Phase 2 (prune BFF + nginx serving) — DONE (2026-06-16). 🎉 The BFF is GONE — Option A fully
+realized.** Branch `feat/ui-neu-bff-prune` off the dashboard-lanes tip, pushed origin + wolfy.
+Net **−23,384 lines** (232 files). 4 commits: scrub stale arm_contracts doc comments → retarget
+vite dev proxy `:8888`→`https://localhost:8443` → **nginx serving layer** (new Dockerfile [node
+build → nginx static, consumes the COMMITTED `api.gen.ts`, NOT codegen-in-build], `nginx.conf`
+[strict CSP `img-src 'self'`; `/api`+`/ws`→`arm-backend:8443`; SPA fallback], `docker-entrypoint.sh`
+CA-merge, nginx-shaped `docker-compose.yml`) → **delete the BFF** (`backend/` 57 + `tests/` 48 +
+`components/contracts/` 65 + `dump_openapi.py` + `pyproject/requirements*` + BFF `VERSION`).
+**`services/ui-neu/` now has ZERO `.py`** — pure static SvelteKit served by nginx, structurally
+identical to `services/ui`. svelte-check 0, Vitest 956, backend 1303, `npm run build` OK. Serving
+config verified by inspection vs `services/ui` (proxy target/WS-path/cert-paths/CSP all cross-checked
+against the real v3 backend); **container build/run NOT validated this tier** — deferred to the
+CI/compose wiring pass. Plan: `...2026-06-16-ui-neu-phase2-bff-prune-nginx-plan.md`.
 
 **Dashboard-lanes tier — DONE (2026-06-16).** Branch `feat/ui-neu-dashboard-lanes` off the
 operator-verbs tip, pushed origin + wolfy. UI-only correctness fix: the home screen sorted active
@@ -204,15 +218,20 @@ literal `.gitignore`** rule (ignores all nested `.gitignore` files — why Phase
 `.gitignore` needed `git add -f`). When creating new `services/ui-neu/...` files, **verify
 `git check-ignore` doesn't swallow them** (esp. anything under a `lib/` or `build/` path).
 
-## NEXT STEPS
-1. Phase 1 — v3 OpenAPI client in SvelteKit + login/JWT store (brainstorm/plan when reached).
-2. Open the wolfy PRs for the migration + Phase 0 tiers when ready (branches pushed).
-3. **Deferred (owner directive):** wiring `ui-neu` into v3 compose/CI/test — a later structural
-   pass. NOTE: the migrated `ui-neu` Python is **NOT ruff-clean to v3's config** — a
-   `pre-commit run --all-files` reformats ~100 ui-neu files + leaves ~7 unfixable ruff errors
-   (all under `services/ui-neu/`). When wiring CI, either clean ui-neu or exclude it from the v3
-   ruff/mypy scope. For Phase-N PRs, run pre-commit **scoped to changed files**, never
-   `--all-files` (it rewrites vendored BFF code that's slated for deletion).
+## NEXT STEPS (UI-side options — all green/pushed, no PRs opened)
+1. **Wire `ui-neu` into root compose + repo CI** (the deferred structural pass) — now much simpler:
+   the BFF is gone, so `services/ui-neu/` is pure TS/Svelte (zero `.py`), and the old
+   "ui-neu Python isn't ruff-clean" caveat is **MOOT** (that code is deleted). CI wiring = add the
+   nginx ui-neu service to `docker-compose.yml.example` (alongside/with the Vue `arm-ui`), and add
+   the frontend's `svelte-check`/Vitest (+ optionally the Docker build) to CI. This also gives the
+   container build/run validation Phase 2 deferred.
+2. **Per-drive "Start rip"** — surface v3's `POST /api/jobs/manual {drive_id}` as a DriveCard action
+   (small, real v3 capability; not yet in `jobs.ts`).
+3. **Backlog backend tiers** (each un-stubs + un-flags its UI screen): file-browser API, maintenance/
+   orphan cleanup, folder-import, TVDB, logs-by-filename, setup wizard; and the deferred operator
+   gaps (CRC-submit / force-complete / permission-fix — each needs its own spec).
+4. **Open the wolfy PR chain** per the two-unit delivery model (see [[project_wolfy_pr_stack_state]]):
+   backend/contract unit (image-proxy + snapshot + gitignore) separate from the single UI PR.
 
 ## References
 - UI AI-context: `/home/upb/src/arm-ai/arm-ui/` (specs/plans/memory).
