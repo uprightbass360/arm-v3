@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (en-masse repoint + login, A/B/C) + operator-verbs tier ALL DONE — stack GREEN (svelte-check 0, Vitest 953, backend 1303). Screens files/setup/logs flagged OFF; deferred operator actions are ComingSoon controls; cancel→live abandon. NEXT = open the wolfy PR chain + backlog tiers (MISSING endpoints: CRC-submit/force-complete/permission-fix each need own spec). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF: frontend→v3). Phase 0 (image-proxy) + Phase 1 (en-masse repoint + login, A/B/C) + operator-verbs + dashboard-lanes tiers ALL DONE — stack GREEN (svelte-check 0, Vitest 956, backend 1303). Screens files/setup/logs flagged OFF; deferred operator actions are ComingSoon; cancel→live abandon; dashboard lanes remapped to v3 JobStatus. NEXT = open the wolfy PR chain + backlog tiers (per-drive manual-start; MISSING endpoints CRC-submit/force-complete/permission-fix each need own spec). CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the Phase-1 branch only.
 metadata:
   type: project
 ---
@@ -137,7 +137,22 @@ Spec: `...-phase1-tierC-repoint-design.md`. Each domain got implementer + 2-stag
 
 **The whole Phase-1 sub-chain is GREEN and pushed (no PRs opened yet):**
 `feat/ui-neu-migration → feat/ui-neu-image-proxy (Phase 0) → feat/ui-neu-fe-client (A) →
-feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C) → feat/ui-neu-operator-verbs`.
+feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C) → feat/ui-neu-operator-verbs →
+feat/ui-neu-dashboard-lanes`.
+
+**Dashboard-lanes tier — DONE (2026-06-16).** Branch `feat/ui-neu-dashboard-lanes` off the
+operator-verbs tip, pushed origin + wolfy. UI-only correctness fix: the home screen sorted active
+jobs into lanes using arm-neu statuses that don't exist in v3, so every lane misfired. Remapped the
+4 `+page.svelte` `$derived` lanes to v3 `JobStatus` (waiting=`awaiting_user_id`+`ripped_awaiting_identify`,
+scanning=`created`, active=`ripping`, finishing=`identified`+`ripped`+`ripped_partial` — all 7
+non-terminal partitioned, no gaps/overlaps; `active_jobs` is already terminal-filtered) and stripped
+the pause banner's nonexistent per-job "Start Ripping" sentence. svelte-check 0, Vitest 956, backend
+1303. Plan: `...2026-06-16-ui-dashboard-lane-logic-plan.md`.
+**Deferred (recorded):** v3 HAS a per-DRIVE manual start — `POST /api/jobs/manual` `{drive_id,
+session_id?}` (gated: 409 if globally paused / drive already ripping, 400 if no disc). NOT in the
+UI's `jobs.ts` yet; surfacing it as a per-drive "Start rip" action is a small future tier. Per-JOB
+pause/resume is NOT possible in v3 (no Job pause field; `JobUpdateRequest` is `extra="forbid"`,
+only `poster_url_manual`+`tracks`) — would be a backend feature reintroducing a concept v3 omitted.
 
 **Operator-verbs tier — DONE (2026-06-15).** Branch `feat/ui-neu-operator-verbs` off the Tier-C tip,
 pushed origin + wolfy. UI-only (no backend — confirmed P1 "operator verbs" are arm-neu concepts v3
@@ -163,9 +178,9 @@ filename browser). ON: dashboard, notifications, settings, transcoder.
   unclear v3 jobs get stuck), **permission-fix** (collides with ripper-unprivileged invariant; likely
   a ripper-side WS-command, not a backend endpoint). v3 has NO waiting/paused job state (start/pause
   are arm-neu concepts; pause = global Config.ripping_paused).
-- **Home-screen lane logic is stale**: `+page.svelte`/`+layout.svelte` branch on legacy arm-neu job
-  statuses (`transcoding`/`waiting`/`identifying`/…) absent from v3's `JobStatus` enum — dead
-  comparisons, inert "scanning/waiting/finishing" lanes. Compiles fine; needs a consumer-logic pass.
+- **Home-screen lane logic — RESOLVED 2026-06-16** (the `feat/ui-neu-dashboard-lanes` tier):
+  `+page.svelte`'s 4 lanes remapped to real v3 `JobStatus` (was inert against legacy arm-neu
+  statuses). See the dashboard-lanes tier note above.
 - **`testMetadataKey`** tests the *stored* key, not the unsaved form value (v3 has no inline-key
   param). Minor settings UX note.
 - **`DriveCard.svelte:216`** pre-existing svelte warning (`settingsRef` not `$state`); + tsconfig
