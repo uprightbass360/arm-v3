@@ -24,6 +24,7 @@
 	import { get } from 'svelte/store';
 	import NotificationsTab from '$lib/components/notifications/NotificationsTab.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import RipPresetsSection from '$lib/components/RipPresetsSection.svelte';
 
 	let settings = $state<SettingsData | null>(null);
 	let settingsLoading = $state(true);
@@ -149,7 +150,7 @@
 	}
 
 	// --- Tab state ---
-	const allTabs = ['ripping', 'music', 'transcoding', 'notifications', 'appearance', 'drives', 'system'] as const;
+	const allTabs = ['ripping', 'rip-presets', 'music', 'transcoding', 'notifications', 'appearance', 'drives', 'system'] as const;
 	type Tab = typeof allTabs[number];
 	const validTabs = $derived(
 		$transcoderEnabled ? allTabs : (allTabs.filter(t => t !== 'transcoding') as readonly Tab[])
@@ -1311,6 +1312,7 @@
 		<div class="mb-2 overflow-x-auto overflow-y-hidden border-b border-primary/20 dark:border-primary/20">
 			<nav class="-mb-px flex gap-4" aria-label="Settings tabs">
 				<button type="button" onclick={() => setTab('ripping')} class={tabClass('ripping')}>Ripping</button>
+				<button type="button" onclick={() => setTab('rip-presets')} class={tabClass('rip-presets')}>Rip Presets</button>
 				<button type="button" onclick={() => setTab('music')} class={tabClass('music')}>Music</button>
 				{#if $transcoderEnabled}
 				<button type="button" onclick={() => setTab('transcoding')} class={tabClass('transcoding')}>Transcoding</button>
@@ -1791,6 +1793,11 @@
 				</div>
 				{@render armSettingsSection('ripping')}
 			</section>
+		{/if}
+
+		<!-- Rip Presets Tab -->
+		{#if activeTab === 'rip-presets'}
+			<RipPresetsSection />
 		{/if}
 
 		<!-- Music Tab -->
