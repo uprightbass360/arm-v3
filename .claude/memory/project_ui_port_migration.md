@@ -1,6 +1,6 @@
 ---
 name: project_ui_port_migration
-description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF) FULLY REALIZED — the BFF is DELETED (Phase 2, 2026-06-16); ui-neu is pure static SvelteKit served by nginx → v3, zero .py. Phases 0/1(A,B,C)/operator-verbs/dashboard-lanes/bff-prune(+CSP/font fix) DONE + browser-verified. NOW in VUE-PARITY port (ui-neu lacks Vue features; audit found Tier-C wrongly stubbed live v3 endpoints — un-stub+build-UI): Tier 1 (identify/resolve + apply-session) DONE on feat/ui-neu-identify-apply (svelte-check 0, Vitest 983, backend 1303). NEXT vue-parity = T2 presets+sessions CRUD → T3 manual-trigger → T4 drive-default-session → T5 diagnostics (decomposition spec). Also queued: themes-serve-static, wire ui-neu into compose/CI (now simple — no BFF), open the wolfy PR chain. CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the UI branch only.
+description: UI port — neu UI at services/ui-neu/; arch Option A (no BFF) FULLY REALIZED — the BFF is DELETED (Phase 2, 2026-06-16); ui-neu is pure static SvelteKit served by nginx → v3, zero .py. Phases 0/1(A,B,C)/operator-verbs/dashboard-lanes/bff-prune(+CSP/font fix) DONE + browser-verified. NOW in VUE-PARITY port (ui-neu lacks Vue features; audit found Tier-C wrongly stubbed live v3 endpoints — un-stub+build-UI): Tier 1 (identify/resolve + apply-session) + Tier 2a (rip-preset CRUD) DONE (svelte-check 0, Vitest 1007, backend 1303). NEXT vue-parity = T2b transcode-preset CRUD → T2c sessions CRUD → T3 manual-trigger → T4 drive-default-session → T5 diagnostics (decomposition spec; T2 split into a/b/c, all /settings sub-sections w/ list+inline-form). Also queued: themes-serve-static, wire ui-neu into compose/CI (now simple — no BFF), open the wolfy PR chain. CRITICAL: root .gitignore lib/ rule swallowed src/lib — fixed on the UI branch only.
 metadata:
   type: project
 ---
@@ -138,7 +138,8 @@ Spec: `...-phase1-tierC-repoint-design.md`. Each domain got implementer + 2-stag
 **The whole UI sub-chain is GREEN and pushed (no PRs opened yet):**
 `feat/ui-neu-migration → feat/ui-neu-image-proxy (Phase 0) → feat/ui-neu-fe-client (A) →
 feat/ui-neu-fe-auth (B) → feat/ui-neu-fe-repoint (C) → feat/ui-neu-operator-verbs →
-feat/ui-neu-dashboard-lanes → feat/ui-neu-bff-prune → feat/ui-neu-identify-apply`.
+feat/ui-neu-dashboard-lanes → feat/ui-neu-bff-prune → feat/ui-neu-identify-apply →
+feat/ui-neu-rip-presets`.
 
 ## VUE-PARITY PORT (ui-neu lacks Vue features) — started 2026-06-16
 Audit (2026-06-16) found the **Vue `services/ui` is the feature-complete v3 client**; ui-neu (~60%)
@@ -161,8 +162,25 @@ replacing the shallow search→PATCH; poster `poster_url_manual` quick-edit KEPT
 search" tab; Apply-session button). svelte-check 0, Vitest **983**, backend 1303, build OK.
 Holistic review traced the 409 body-shape + resolve metadata contracts against the REAL backend (the
 risk unit tests can't catch). Spec/plan: `...2026-06-16-ui-neu-tier1-identify-apply-session-{design,plan}.md`.
-**NEXT vue-parity tiers:** T2 presets+sessions CRUD → T3 manual-trigger → T4 drive-default-session →
-T5 diagnostics (see the decomposition).
+
+**Tier 2 is SPLIT into 3 sub-tiers (presets first), all as `/settings` sub-sections with a
+list + inline-expanding-form pattern (no routes/modals); built-in presets/sessions name-only-editable:**
+- **T2a rip-preset CRUD — DONE (2026-06-17).** Branch `feat/ui-neu-rip-presets` off the Tier-1 tip,
+  pushed origin+wolfy. `ripPresets.ts` CRUD + `TrackFiltersEditor.svelte` (track_filters_json keys
+  `min_duration_seconds`/`max_duration_seconds`/`title_indices`/`title_indices_exclude`, verbatim
+  from Vue + verified vs arm_common `TrackFilters`) + `RipPresetForm.svelte` (create/custom-edit/
+  builtin-name-only; media_type immutable on edit; TrackFiltersEditor only when track_selection=custom)
+  + `RipPresetsSection.svelte` (new "Rip Presets" tab in `/settings`; list+inline form+delete-confirm;
+  Delete hidden for built-ins). svelte-check 0, Vitest **1007**, backend 1303. Establishes the
+  list+inline-form+built-in pattern T2b/T2c reuse. Spec/plan: `...2026-06-17-ui-neu-tier2a-rip-presets-{design,plan}.md`.
+- **T2b transcode-preset CRUD — NEXT.** Extract+complete ui-neu's PARTIAL version (settings.ts has
+  list+create only); same pattern. Fields (from Vue TranscodePresetForm): tool/preset_ref/container/
+  hw_preference/extra_args. v3 `/api/transcode-presets` full CRUD exists.
+- **T2c sessions CRUD** — list/create/edit/clone/delete + live `/api/sessions/preview` template
+  expansion + built-in name-only; picks rip-preset + optional transcode-preset (needs T2a+T2b).
+
+**NEXT non-T2 vue-parity tiers:** T3 manual-trigger → T4 drive-default-session → T5 diagnostics
+(see the decomposition).
 
 **Phase 2 (prune BFF + nginx serving) — DONE (2026-06-16). 🎉 The BFF is GONE — Option A fully
 realized.** Branch `feat/ui-neu-bff-prune` off the dashboard-lanes tip, pushed origin + wolfy.
