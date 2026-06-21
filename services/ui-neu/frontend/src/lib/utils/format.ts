@@ -120,6 +120,7 @@ export function statusAccentVar(status: string | null | undefined): string {
 		case 'waiting_transcode':
 		case 'pending':
 		case 'awaiting_user_id': // v3 JobStatus
+		case 'awaiting_review': // v3 JobStatus — held for the timed review gate
 		case 'ripped_partial': // v3 JobStatus — partial success
 		case 'ripped_awaiting_identify': // v3 JobStatus
 			return 'var(--color-status-waiting)';
@@ -153,6 +154,7 @@ export function statusColor(status: string | null | undefined): string {
 		case 'created': // v3 JobStatus — disc inserted, not yet identified
 			return 'status-scanning';
 		case 'awaiting_user_id': // v3 JobStatus — needs manual identification
+		case 'awaiting_review': // v3 JobStatus — held for the timed review gate
 		case 'ripped_awaiting_identify': // v3 JobStatus — ripped, still needs ID
 			return 'status-warning';
 		case 'identified': // v3 JobStatus — identified, queued/ready to rip
@@ -197,6 +199,7 @@ const STATUS_LABELS: Record<string, string> = {
 	// v3 JobStatus values (packages/arm_common enums.py)
 	created: 'Created',
 	awaiting_user_id: 'Awaiting ID',
+	awaiting_review: 'Ready — review',
 	identified: 'Identified',
 	ripped: 'Ripped',
 	ripped_partial: 'Ripped (partial)',
