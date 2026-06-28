@@ -112,11 +112,14 @@ from arm_common.schemas.transcoder import (
     TranscodeWorkerView,
 )
 from arm_common.schemas.system import (
+    MemoryInfo,
     PathStatus,
     PathsResponse,
     PreflightCheck,
     PreflightResponse,
     StatsResponse,
+    StorageRoot,
+    SystemResourcesResponse,
     SystemVersionResponse,
 )
 from arm_common.schemas.settings import (
@@ -217,6 +220,7 @@ __all__ = [
     "SdfStatusReport",
     "ManualTriggerRequest",
     "ManualTriggerResponse",
+    "MemoryInfo",
     "MkdirRequest",
     "MoveRequest",
     "NamingPreviewItem",
@@ -266,6 +270,8 @@ __all__ = [
     "SettingsGroup",
     "SettingsSchemaResponse",
     "StatsResponse",
+    "StorageRoot",
+    "SystemResourcesResponse",
     "SystemVersionResponse",
     "TemplatePreviewRequest",
     "TemplatePreviewResponse",
