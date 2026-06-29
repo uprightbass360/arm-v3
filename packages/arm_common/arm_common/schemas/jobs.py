@@ -101,6 +101,7 @@ class TranscodeProgressSummary(BaseModel):
     state: Literal["transcoding", "done", "done_partial", "failed"]
     tasks_total: int
     tasks_done: int
+    tasks_failed: int
     percent: float
 
 
