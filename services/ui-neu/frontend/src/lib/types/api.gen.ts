@@ -3231,6 +3231,10 @@ export type TranscodeProgressSummary = {
      */
     tasks_done: number;
     /**
+     * Tasks Failed
+     */
+    tasks_failed: number;
+    /**
      * Percent
      */
     percent: number;
@@ -3281,6 +3285,10 @@ export type TranscodeTaskView = {
      * Session Application Id
      */
     session_application_id: string;
+    /**
+     * Job Id
+     */
+    job_id?: string | null;
     /**
      * Source Track Id
      */
