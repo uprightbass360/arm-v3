@@ -77,6 +77,7 @@ from arm_common.schemas.ripper import (
     RipperHeartbeatRequest,
     ScanResult,
     ScanTitle,
+    SdfStatusReport,
     TrackUpdateRequest,
 )
 from arm_common.schemas.sessions import (
@@ -216,6 +217,7 @@ __all__ = [
     "JobNamingPreviewResponse",
     "KeydbStatusReport",
     "MakemkvKeyStatusReport",
+    "SdfStatusReport",
     "ManualTriggerRequest",
     "ManualTriggerResponse",
     "MemoryInfo",
