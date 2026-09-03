@@ -289,20 +289,41 @@ emit_ripper_block() {
     restart: unless-stopped
     depends_on:
       - arm-backend
-    devices:
-      - "/dev/sr${n}:/dev/sr${n}"
-      # MakeMKV reads the disc via SCSI-generic ioctls, not the block device.
-      # /dev/${sg} is the sg node paired with /dev/sr${n} by \`lsscsi -g\` (NOT
-      # lexicographically). Re-run devtools/setup-dev.sh if the pairing moves.
-      - "/dev/${sg}:/dev/${sg}"
+    # Deliberately NOT a \`devices:\` bind. Docker resolves \`devices:\` at
+    # container-CREATE time, so an absent drive (USB unplugged, host booted
+    # without it) fails creation before the restart policy can engage — the
+    # container stays Exited(255) until someone recreates it by hand
+    # (moby#46608, docker/for-linux#1356). A create-time bind also copies the
+    # node into the container's private /dev tmpfs, so a drive replugged
+    # later never appears inside a running container (moby#19763).
+    #
+    # Instead: grant the device cgroup the optical majors and bind the host's
+    # /dev read-only. Nodes that appear after start are then visible AND
+    # openable live, so a replug needs no restart. \`b 11\` is sr* (block),
+    # \`c 21\` is sg* (SCSI generic — MakeMKV reads the disc through it, not
+    # the block device). \`/dev/${sg}\` is the node \`lsscsi -g\` paired with
+    # /dev/sr${n}, recorded here for operator reference only.
+    #
+    # Still unprivileged: the cgroup rule permits open(), and the node's
+    # own root:cdrom 0660 is satisfied by group_add below — no CAP_SYS_ADMIN.
+    device_cgroup_rules:
+      - "b 11:* rmw"
+      - "c 21:* rmw"
     # Unprivileged: MakeMKV (SCSI generic) + the pydvdid CRC64 off the block
     # device (PyCdlib) both need only \`cdrom\` group membership. No mount, so
     # no CAP_SYS_ADMIN and no AppArmor exception.
     group_add:
       - "\${CDROM_GID:-44}"
     environment:
-      ARM_DRIVE_DEV: /dev/sr${n}
+      ARM_DRIVE_DEV: /host-dev/sr${n}
+      # Stable hardware id. The ripper re-resolves its node from
+      # /host-dev/disk/by-id on every poll, so a drive that comes back as a
+      # different srN after a replug is still followed correctly (and two
+      # drives can't swap slots behind each other's backs).
       ARM_DRIVE_SERIAL: "${serial}"
+      # Where the host's /dev is mounted; drive_resolve.py scans
+      # \$ARM_DEV_ROOT/disk/by-id for the serial above.
+      ARM_DEV_ROOT: /host-dev
       ARM_BACKEND_URL: https://arm-backend:8443
       ARM_SERVICE_TOKEN: \${ARM_SERVICE_TOKEN}
       ARM_LOG_LEVEL: \${ARM_LOG_LEVEL:-info}
@@ -310,6 +331,11 @@ emit_ripper_block() {
       PGID: \${PGID:-1000}
       CDROM_GID: \${CDROM_GID:-44}
     volumes:
+      # Host /dev, so hotplugged nodes appear live (see device_cgroup_rules
+      # above). Read-only: the ripper only open()s existing nodes, and ro
+      # still permits O_RDWR on the device itself — the flag governs the
+      # mount namespace (no mknod/unlink), not the device's own semantics.
+      - /dev:/host-dev:ro
       - ./arm/raw:/raw
       - ./arm/logs:/logs
       - ./arm/certs/arm-ca.crt:/etc/ssl/arm/arm-ca.crt:ro

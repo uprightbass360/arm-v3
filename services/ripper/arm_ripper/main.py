@@ -10,6 +10,7 @@ from arm_common import DriveMediaStatus, JobStatus, configure_service_logging
 from arm_ripper.backend_client import BackendClient, JobView
 from arm_ripper.config import settings
 from arm_ripper.drive_poll import DriveState, InsertDetector, read_drive_status
+from arm_ripper.drive_resolve import resolve_drive_device
 from arm_ripper.drive_status import probe_drive_media
 from arm_ripper.job_controller import JobController
 from arm_ripper.makemkv_key import refresh_makemkv_key
@@ -161,9 +162,20 @@ async def poll_loop(controller: JobController) -> None:
     detector = InsertDetector(not_ready_rearm_polls=settings.ARM_NOT_READY_REARM_POLLS)
     last_state: DriveState | None = None
     active_task: asyncio.Task[None] | None = None
+    last_device: str | None = None
     while True:
+        # Re-resolve every poll rather than once at startup: with the drive
+        # exposed via the host /dev bind (not a create-time `devices:` bind),
+        # a replugged drive reappears — possibly under a new srN — while this
+        # process keeps running. Cheap: a readlink over /dev/disk/by-id.
+        device = resolve_drive_device(settings.ARM_DRIVE_DEV, settings.ARM_DRIVE_SERIAL)
+        if device != last_device:
+            if last_device is not None:
+                logger.info("drive node moved %s -> %s (serial=%s)", last_device, device, settings.ARM_DRIVE_SERIAL)
+            last_device = device
+
         try:
-            state = read_drive_status(settings.ARM_DRIVE_DEV)
+            state = read_drive_status(device)
         except OSError as exc:
             logger.warning("ioctl failed: %s", exc)
             state = DriveState.NO_INFO
@@ -178,7 +190,9 @@ async def poll_loop(controller: JobController) -> None:
         # detector.update() must run every poll to track the NOT_READY
         # streak; only act on the True edge when no rip is already running.
         if detector.update(state) and active_task is None:
-            active_task = asyncio.create_task(controller.handle_disc_inserted(settings.ARM_DRIVE_DEV))
+            # Hand the pipeline the node we just polled, not the configured
+            # one — they differ after a renumbering replug.
+            active_task = asyncio.create_task(controller.handle_disc_inserted(device))
 
         await asyncio.sleep(settings.POLL_INTERVAL_SECONDS)
 
@@ -204,7 +218,14 @@ async def amain() -> None:
     # Boot probe is also skipped — there's no crashed rip to recover.
     iso_path = settings.ARM_MANUAL_TRIGGER_ISO
     iso_mode = iso_path is not None
-    device_path: str = iso_path if iso_path is not None else settings.ARM_DRIVE_DEV
+    # Register under the node the drive currently occupies (serial-resolved),
+    # so the backend's Drive row matches what we will actually open. The
+    # service's own identity/log name stays keyed to the configured srN.
+    device_path: str = (
+        iso_path
+        if iso_path is not None
+        else resolve_drive_device(settings.ARM_DRIVE_DEV, settings.ARM_DRIVE_SERIAL)
+    )
     try:
         drive_id = await register_with_retry(client, device_path)
         async with WSClient(
