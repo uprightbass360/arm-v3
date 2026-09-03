@@ -163,6 +163,7 @@ async def poll_loop(controller: JobController) -> None:
     last_state: DriveState | None = None
     active_task: asyncio.Task[None] | None = None
     last_device: str | None = None
+    drive_available = True
     while True:
         # Re-resolve every poll rather than once at startup: with the drive
         # exposed via the host /dev bind (not a create-time `devices:` bind),
@@ -176,7 +177,20 @@ async def poll_loop(controller: JobController) -> None:
 
         try:
             state = read_drive_status(device)
+            if not drive_available:
+                logger.info("drive device back: %s", device)
+                drive_available = True
+        except FileNotFoundError:
+            # Drive unplugged. Log the transition only: the poll runs every
+            # POLL_INTERVAL_SECONDS, so warning per-tick buries the journal
+            # (~43k lines overnight) for a condition that is one event.
+            if drive_available:
+                logger.warning("drive device absent: %s — polling until it returns", device)
+                drive_available = False
+            state = DriveState.NO_INFO
         except OSError as exc:
+            # Any other ioctl failure is per-poll noise worth seeing (a wedged
+            # drive, EIO on a dying disc); keep the original behaviour.
             logger.warning("ioctl failed: %s", exc)
             state = DriveState.NO_INFO
 
@@ -222,9 +236,7 @@ async def amain() -> None:
     # so the backend's Drive row matches what we will actually open. The
     # service's own identity/log name stays keyed to the configured srN.
     device_path: str = (
-        iso_path
-        if iso_path is not None
-        else resolve_drive_device(settings.ARM_DRIVE_DEV, settings.ARM_DRIVE_SERIAL)
+        iso_path if iso_path is not None else resolve_drive_device(settings.ARM_DRIVE_DEV, settings.ARM_DRIVE_SERIAL)
     )
     try:
         drive_id = await register_with_retry(client, device_path)
