@@ -49,6 +49,10 @@ describe('fetchDocsPage', () => {
 		await expect(fetchDocsPage('a/b/c')).rejects.toBeInstanceOf(DocsNotFoundError);
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
+	it('treats malformed JSON in a 200 application/json response as not found', async () => {
+		stubFetch('{not json', { type: 'application/json' });
+		await expect(fetchDocsPage('dev/arch')).rejects.toBeInstanceOf(DocsNotFoundError);
+	});
 });
 
 describe('searchDocs', () => {
