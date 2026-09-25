@@ -32,7 +32,13 @@ async function getJson<T>(path: string): Promise<T> {
 	const res = await fetch(`${DOCS_BASE}/${path}`);
 	const type = res.headers.get('content-type') ?? '';
 	if (!res.ok || !type.includes('application/json')) throw new DocsNotFoundError(path);
-	return (await res.json()) as T;
+	try {
+		return (await res.json()) as T;
+	} catch {
+		// A 200 application/json response with an unparsable body is just as
+		// missing as a real 404 or the SPA fallback.
+		throw new DocsNotFoundError(path);
+	}
 }
 
 export function fetchDocsPage(id: string): Promise<DocsPage> {
