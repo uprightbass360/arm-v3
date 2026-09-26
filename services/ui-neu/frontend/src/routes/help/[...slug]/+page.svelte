@@ -41,8 +41,19 @@
 				status = 'ready';
 				// The fragment arrives after SvelteKit's own hash scroll ran.
 				await tick();
-				const hash = decodeURIComponent(location.hash.slice(1));
+				if (current !== id) return;
+				const raw = location.hash.slice(1);
+				let hash = raw;
+				try {
+					hash = decodeURIComponent(raw);
+				} catch {
+					// Malformed percent-encoding: fall back to the raw hash rather
+					// than failing the whole page load.
+				}
 				if (hash) document.getElementById(hash)?.scrollIntoView();
+				// The app scrolls inside <main>, not the window, so a plain
+				// navigation (no hash) needs its own scroll-to-top.
+				else document.querySelector('main')?.scrollTo(0, 0);
 			})
 			.catch((e) => {
 				if (current !== id) return;
@@ -156,7 +167,7 @@
 
 <style>
 	.help-layout { display: grid; grid-template-columns: 15rem minmax(0, 1fr) 13rem; gap: 2rem; align-items: start; }
-	.help-nav, .help-toc { position: sticky; top: 0; }
+	.help-nav, .help-toc { position: sticky; top: 0; max-height: calc(100dvh - 6rem); overflow-y: auto; }
 	.help-topics { padding: 0; }
 	.help-topics-toggle { display: none; }
 	.help-section { margin-top: 0.75rem; padding: 0 0.75rem; }
@@ -176,7 +187,7 @@
 	}
 	@media (max-width: 64rem) {
 		.help-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-		.help-nav { position: static; }
+		.help-nav { position: static; max-height: none; overflow-y: visible; }
 		.help-topics-toggle { display: inline-flex; }
 		.help-topics:not([data-open='true']) { display: none; }
 	}
