@@ -11,6 +11,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/x")
 os.environ.setdefault("ARM_SERVICE_TOKEN", "tok-service")
 
 import secrets  # noqa: E402
+from datetime import UTC, datetime  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -70,6 +71,24 @@ def test_list_returns_inventory() -> None:
     assert all(g["enabled"] is True for g in body)
 
 
+def test_list_surfaces_probe_state() -> None:
+    probed = datetime(2026, 9, 26, 12, 0, tzinfo=UTC)
+    app, token, _db = _app(
+        [
+            _gpu(probed_at=probed),
+            _gpu("gpu_2", GpuVendor.VAAPI, device_path="/dev/dri/renderD129", probe_error="vaapi init failed"),
+        ]
+    )
+    with TestClient(app) as c:
+        r = c.get("/api/gpus", headers=_auth(token))
+    assert r.status_code == 200, r.text
+    by_id = {g["id"]: g for g in r.json()}
+    assert by_id["gpu_1"]["probed_at"].startswith("2026-09-26T12:00:00")
+    assert by_id["gpu_1"]["probe_error"] is None
+    assert by_id["gpu_2"]["probed_at"] is None
+    assert by_id["gpu_2"]["probe_error"] == "vaapi init failed"
+
+
 def test_patch_toggles_enabled() -> None:
     app, token, db = _app([_gpu()])
     with TestClient(app) as c:
@@ -109,3 +128,149 @@ def test_delete_claimed_gpu_409() -> None:
         r = c.delete("/api/gpus/gpu_1", headers=_auth(token))
     assert r.status_code == 409
     assert len(db.rows["gpus"]) == 1  # row survives
+
+
+# --- re-probe endpoints ------------------------------------------------------
+
+
+class _Runner:
+    """Stands in for GpuProbeRunner: records what the endpoints schedule."""
+
+    def __init__(self, *, capable: bool = True, probing: set[str] | None = None) -> None:
+        self._capable = capable
+        self.probing = probing or set()
+        self.started: list[str] = []
+
+    def capable(self) -> bool:
+        return self._capable
+
+    def gpu_in_use(self, gpu: Gpu) -> bool:
+        return gpu.claimed_by_task_id is not None or gpu.status == GpuStatus.BUSY
+
+    def start_probe(self, gpu_id: str) -> bool:
+        if gpu_id in self.probing:
+            return False
+        self.probing.add(gpu_id)
+        self.started.append(gpu_id)
+        return True
+
+
+def _real_runner(claimed: set[str]) -> object:
+    """A real GpuProbeRunner over a real dispatcher whose in-process claim
+    marker holds `claimed` (a claim not yet committed: the row still reads
+    AVAILABLE from any other session)."""
+    from unittest.mock import MagicMock
+
+    from arm_backend.config import Settings
+    from arm_backend.gpu_probe_runner import GpuProbeRunner
+    from arm_backend.transcode_dispatcher import TranscodeDispatcher
+
+    settings = Settings.model_construct(
+        ARM_TRANSCODE_CAPABLE=True, ARM_TRANSCODE_DOCKER_HOST="", ARM_TRANSCODE_DISPATCH_INTERVAL_SECONDS=5
+    )
+    dispatcher = TranscodeDispatcher(settings, MagicMock(), MagicMock(), MagicMock())
+    dispatcher.claimed_gpu_ids.update(claimed)
+    return GpuProbeRunner(settings, MagicMock(), dispatcher, MagicMock())
+
+
+def test_probe_one_uncommitted_claim_409() -> None:
+    app, token, _db = _app([_gpu()])  # AVAILABLE as far as this session can see
+    app.state.gpu_probe_runner = _real_runner({"gpu_1"})
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "gpu is in use by a running transcode"
+
+
+def test_probe_all_skips_uncommitted_claim() -> None:
+    app, token, _db = _app([_gpu()])
+    runner = _real_runner({"gpu_1"})
+    app.state.gpu_probe_runner = runner
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/probe", headers=_auth(token))
+    assert r.status_code == 202, r.text
+    assert r.json() == {"scheduled": []}
+
+
+def test_probe_one_schedules_202() -> None:
+    app, token, _db = _app([_gpu()])
+    runner = _Runner()
+    app.state.gpu_probe_runner = runner
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 202, r.text
+    assert r.json() == {"scheduled": True}
+    assert runner.started == ["gpu_1"]
+
+
+def test_probe_one_unknown_404() -> None:
+    app, token, _db = _app([])
+    app.state.gpu_probe_runner = _Runner()
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_missing/probe", headers=_auth(token))
+    assert r.status_code == 404
+
+
+def test_probe_one_busy_409() -> None:
+    app, token, _db = _app([_gpu(status=GpuStatus.BUSY, claimed_by_task_id="tt_running")])
+    runner = _Runner()
+    app.state.gpu_probe_runner = runner
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "gpu is in use by a running transcode"
+    assert runner.started == []
+
+
+def test_probe_one_not_capable_409() -> None:
+    app, token, _db = _app([_gpu()])
+    app.state.gpu_probe_runner = _Runner(capable=False)
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "no docker client (ripper-only deployment or docker unavailable)"
+
+
+def test_probe_one_without_a_runner_is_not_capable_409() -> None:
+    app, token, _db = _app([_gpu()])
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "no docker client (ripper-only deployment or docker unavailable)"
+
+
+def test_probe_one_already_probing_409() -> None:
+    app, token, _db = _app([_gpu()])
+    app.state.gpu_probe_runner = _Runner(probing={"gpu_1"})
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/gpu_1/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "gpu probe already running"
+
+
+def test_probe_all_skips_busy_disabled_and_already_probing() -> None:
+    app, token, _db = _app(
+        [
+            _gpu("gpu_free"),
+            _gpu("gpu_busy", status=GpuStatus.BUSY, claimed_by_task_id="tt_running"),
+            _gpu("gpu_off", enabled=False),
+            _gpu("gpu_probing"),
+            _gpu("gpu_free2", GpuVendor.NVENC, device_path="nvidia://0"),
+        ]
+    )
+    runner = _Runner(probing={"gpu_probing"})
+    app.state.gpu_probe_runner = runner
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/probe", headers=_auth(token))
+    assert r.status_code == 202, r.text
+    assert r.json() == {"scheduled": ["gpu_free", "gpu_free2"]}
+    assert runner.started == ["gpu_free", "gpu_free2"]
+
+
+def test_probe_all_not_capable_409() -> None:
+    app, token, _db = _app([_gpu()])
+    app.state.gpu_probe_runner = _Runner(capable=False)
+    with TestClient(app) as c:
+        r = c.post("/api/gpus/probe", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["detail"] == "no docker client (ripper-only deployment or docker unavailable)"
