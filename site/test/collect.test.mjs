@@ -73,9 +73,9 @@ test('collectPages: a user doc not placed in any section is an error', () => {
 
 test('collectPages: a pattern or file matching nothing is an error', () => {
 	const manifest = structuredClone(MANIFEST);
-	manifest.sections[2].groups.push({ label: 'Ops', files: ['docs/ops/*.md', { file: 'docs/nope.md' }] });
+	manifest.sections[2].groups.push({ label: 'Ops', files: ['docs/nonexistent/*.md', { file: 'docs/nope.md' }] });
 	assert.deepEqual(collectPages(fixtureTree(), manifest).errors, [
-		'manifest: docs/ops/*.md matched no files',
+		'manifest: docs/nonexistent/*.md matched no files',
 		'manifest: docs/nope.md matched no files'
 	]);
 });

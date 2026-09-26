@@ -43,7 +43,7 @@ live in a separate wiki repo and get overwritten.)
 - Keep it **v3-accurate.** v3 is Docker-only with a one-line installer and UI
   config — no native installs, no `arm.yaml`. If you find a page still describing
   v2, fix or flag it.
-- **Link between pages** with the page slug, e.g. `[Configuration](../../user/Configuring-ARM.md)`;
+- **Link between pages** with the page slug, e.g. `[Configuration](Configuring-ARM)`;
   link into the repo with full GitHub URLs.
 - Prefer concise, task-focused prose. Match the tone of the existing pages.
 
