@@ -268,7 +268,7 @@ curl -fsSL https://raw.githubusercontent.com/automatic-ripping-machine/automatic
 
 (Or `bash -c "$(curl -fsSL ...)"` for users who want a TTY; `install.sh --prefix /srv/arm` to override the default path.)
 
-> `install.sh` predates the drive-lifecycle model and still emits per-drive services; it is scheduled for a rewrite before release — use [devtools/setup-dev.sh](../../devtools/setup-dev.sh) (which follows the model above) meanwhile.
+> `install.sh` predates the drive-lifecycle model and still emits per-drive services; it is scheduled for a rewrite before release — use [devtools/setup-dev.sh](../../../devtools/setup-dev.sh) (which follows the model above) meanwhile.
 
 **What the installer does, in order:**
 

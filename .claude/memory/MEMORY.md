@@ -8,7 +8,7 @@
 - [Run pytest from repo root; no tests/__init__.py](pytest-invocation-and-no-tests-init.md) — bare `uv run pytest` (testpaths-driven); a file-path invocation OR a stray `__init__.py` in any `tests/` dir breaks `tests._fakes` collection across all 49 backend modules.
 - [Backend coverage push](project_backend_coverage_push.md) — 70%→94% status; which modules still have gaps and the pattern to finish them; no CI gate yet.
 - [Ripper disc-insert detection](project_ripper_insert_detection.md) — poll loop (no udev) + drive quirk (TRAY_OPEN ~2s flash, settles NOT_READY→DISC_OK) and the InsertDetector fix.
-- [ISO-source ripping = ephemeral spawned workers](project_iso_source_ripping.md) — rip-from-.iso is designed as transcode-style ephemeral containers spawned per ISO, NOT a long-running service; owner directive; future UI-upload front door; design at docs/arch/10-iso-source-ripping.md.
+- [ISO-source ripping = ephemeral spawned workers](project_iso_source_ripping.md) — rip-from-.iso is designed as transcode-style ephemeral containers spawned per ISO, NOT a long-running service; owner directive; future UI-upload front door; design at docs/developers/architecture/10-iso-source-ripping.md.
 - [Pin GitHub Actions to commit SHAs](feedback_pin_actions_to_sha.md) — every `uses:` must be a 40-char SHA + `# vX.Y.Z`, never a tag/branch; dependabot keeps them bumped.
 - [UI port is 8081; installer is canonical](feedback_ui_port_8081.md) — v3 UI runs on `https://localhost:8081`; never reconcile to 8080; the installer is the source of truth for deployment values.
 - [v3.0 is Linux + Docker only](project_linux_docker_only.md) — Unraid/Synology/NAS appliances dropped 2026-06-05; the single supported target is any Linux host with Docker Engine ≥ 24 + Compose v2.

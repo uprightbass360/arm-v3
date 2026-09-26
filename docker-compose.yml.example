@@ -100,7 +100,7 @@ services:
       - ./arm/certs/arm-backend.crt:/etc/ssl/arm/tls.crt:ro
       - ./arm/certs/arm-backend.key:/etc/ssl/arm/tls.key:ro
       # Phase 7 — Backend spawns arm-transcode-* containers via the socket.
-      # Acceptable per docs/arch/06-deployment.md (root-equivalent on host).
+      # Acceptable per docs/developers/architecture/06-deployment.md (root-equivalent on host).
       - /var/run/docker.sock:/var/run/docker.sock
       # Drive detection (spec §2): the host's udev by-id symlink directory,
       # read-only. Symlinks only — no device nodes, no cgroup rule; the

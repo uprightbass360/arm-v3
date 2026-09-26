@@ -29,7 +29,7 @@ const NAV = [
 		{ label: 'Open an issue', href: 'https://github.com/o/r/issues', external: true, pageId: null }
 	] }] }
 ];
-const PAGE = { id: 'guide/getting-started', title: 'Getting Started', html: '<h1 id="getting-started">Getting Started</h1><p>See <a href="/help/guide/configuring-arm#options">options</a>.</p>', toc: [{ depth: 2, id: 'a', text: 'A' }, { depth: 2, id: 'b', text: 'B' }], source: 'arm_wiki/Getting-Started.md', editUrl: 'https://github.com/o/r/edit/main/arm_wiki/Getting-Started.md' };
+const PAGE = { id: 'guide/getting-started', title: 'Getting Started', html: '<h1 id="getting-started">Getting Started</h1><p>See <a href="/help/guide/configuring-arm#options">options</a>.</p>', toc: [{ depth: 2, id: 'a', text: 'A' }, { depth: 2, id: 'b', text: 'B' }], source: 'docs/user/Getting-Started.md', editUrl: 'https://github.com/o/r/edit/main/docs/user/Getting-Started.md' };
 
 beforeEach(() => {
 	params.slug = 'guide/getting-started';

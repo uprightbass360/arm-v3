@@ -1,6 +1,6 @@
 # Contributing to the Wiki
 
-The wiki you're reading is generated from Markdown files in the **`arm_wiki/`**
+The wiki you're reading is generated from Markdown files in the **`docs/user/`**
 folder of the main repository, so wiki edits go through the same fork → branch →
 PR flow as code. (Don't edit pages directly in the GitHub wiki UI — those edits
 live in a separate wiki repo and get overwritten.)
@@ -22,9 +22,11 @@ live in a separate wiki repo and get overwritten.)
    git switch -c wiki/fix-getting-started
    ```
 
-3. **Edit the Markdown** under `arm_wiki/`. Each `.md` file is one wiki page; the
+3. **Edit the Markdown** under `docs/user/`. Each `.md` file is one wiki page; the
    filename (with spaces as hyphens) is its URL slug. If you add or remove a
-   page, update **`arm_wiki/_Sidebar.md`** so the navigation stays in sync.
+   page, update **`docs/user/_Sidebar.md`** so the navigation stays in sync,
+   and place the page in a section of **`site/manifest.json`** so it appears on
+   the docs site and in the app's Help (the docs build fails on an unplaced page).
 
 4. **Commit and push** to your fork:
 
@@ -41,9 +43,9 @@ live in a separate wiki repo and get overwritten.)
 - Keep it **v3-accurate.** v3 is Docker-only with a one-line installer and UI
   config — no native installs, no `arm.yaml`. If you find a page still describing
   v2, fix or flag it.
-- **Link between pages** with the page slug, e.g. `[Configuration](Configuring-ARM)`;
+- **Link between pages** with the page slug, e.g. `[Configuration](../../user/Configuring-ARM.md)`;
   link into the repo with full GitHub URLs.
 - Prefer concise, task-focused prose. Match the tone of the existing pages.
 
 If you're also touching code, fold the wiki update into the same PR — see
-[Contributing](Contribute).
+[Contributing](Contribute.md).

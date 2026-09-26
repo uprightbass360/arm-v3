@@ -291,7 +291,7 @@ echo "==> detected render group GID for ARM_RENDER_GID: ${RENDER_GID_VALUE:-(non
 # Prevent the host's udisks2/gvfs from auto-mounting optical drives ARM
 # wants to drive. Without this, post-rip `eject` from the ripper
 # container fails with EBUSY because the host mount holds /dev/srN.
-# See docs/arch/06-deployment.md.
+# See docs/developers/architecture/06-deployment.md.
 UDEV_RULE_PATH="/etc/udev/rules.d/99-arm-no-automount.rules"
 build_udev_rule_content() {
     cat <<'RULE'
@@ -299,7 +299,7 @@ build_udev_rule_content() {
 # Disables host auto-mount for optical drives so an ARM ripper container can
 # eject after a rip. Drives are hot-plugged and enrolled from the UI after
 # install, so the rule is not scoped per drive: ARM owns the optical drives
-# on this host. See docs/arch/06-deployment.md#host-side-auto-mount-must-be-disabled
+# on this host. See docs/developers/architecture/06-deployment.md#host-side-auto-mount-must-be-disabled
 SUBSYSTEM=="block", KERNEL=="sr[0-9]*", ENV{UDISKS_AUTO}="0"
 RULE
 }
