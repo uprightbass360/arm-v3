@@ -39,6 +39,9 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	vi.clearAllMocks();
+	// Navigation tests set window.location.hash; jsdom persists it across
+	// tests, so reset it back to the default (no hash).
+	window.location.hash = '';
 });
 
 describe('/help page', () => {
@@ -100,5 +103,31 @@ describe('/help page', () => {
 		renderComponent(HelpPage);
 		await fireEvent.input(screen.getByLabelText('Search help'), { target: { value: 'zzz' } });
 		expect(await screen.findByText('No matches')).toBeInTheDocument();
+	});
+
+	it('scrolls the main scroll container to top after a page loads with no hash', async () => {
+		window.location.hash = '';
+		const main = document.createElement('main');
+		const scrollTo = vi.fn();
+		main.scrollTo = scrollTo;
+		document.body.appendChild(main);
+		try {
+			renderComponent(HelpPage);
+			await waitFor(() => expect(scrollTo).toHaveBeenCalledWith(0, 0));
+		} finally {
+			main.remove();
+		}
+	});
+
+	it('renders the article for a malformed location hash instead of showing it unavailable', async () => {
+		window.location.hash = '#%E0%A4%A';
+		const { container } = renderComponent(HelpPage);
+		await waitFor(() => expect(container.querySelector('article.docs-prose h1')?.textContent).toBe('Getting Started'));
+		// A pre-fix decode failure surfaces asynchronously (it's caught by a
+		// later .catch), after this article has already rendered once, so
+		// give that a chance to run before asserting the state held.
+		await new Promise((r) => setTimeout(r, 20));
+		expect(container.querySelector('article.docs-prose h1')?.textContent).toBe('Getting Started');
+		expect(screen.queryByText('Help is unavailable')).not.toBeInTheDocument();
 	});
 });
