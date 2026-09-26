@@ -59,6 +59,9 @@ the preset's encoder:
   the task queues. **If no eligible device exists at all on this host, the
   task runs the CPU encoder for that codec** instead of waiting, so a
   built-in preset that defaults to `any_h265` keeps working on a CPU-only box.
+  The HandBrake preset's own settings (scaling, filters, audio) apply when
+  the job runs on the CPU, NVENC or QSV, but not when it lands on an AMD
+  (VAAPI) device, which encodes through ffmpeg instead.
 - **`<vendor>_<codec>`** (a specific `qsv_*`, `nvenc_*` or `vaapi_*` id): picks
   a free eligible device of that vendor if one exists; if all are busy, the
   task queues. If **no** device of that vendor has verified the codec, the
@@ -76,6 +79,13 @@ the preset's encoder:
 - If every eligible device for an encoder (including an `any_*` pick) is
   in the middle of being probed right now, the task queues rather than
   falling back to CPU. It is only unavailable for that tick.
+- If no device is eligible yet, but an enabled device that could serve the
+  encoder has never been probed and its probe is scheduled or running (the
+  boot pass, a re-probe, or enabling the row), the task queues until that
+  probe finishes, for `any_*` and vendor-pinned encoders alike, and a
+  vendor-pinned apply is not refused meanwhile. Once the probe is done, the
+  rules above apply to its result. A never-probed device that no probe is
+  scheduled for does not hold work back.
 - A preset whose stored encoder id no longer exists in the catalog (a stale
   row from a removed encoder) is refused at apply and fails at dispatch with
   `preset <id> has unknown encoder '<value>'`. Only that task fails; siblings
@@ -93,8 +103,14 @@ against it. Whatever encodes cleanly becomes that row's verified list.
 **When a probe runs:**
 
 - **At Backend boot**, a background pass probes every enabled row that was
-  never probed, or whose last probe verified nothing. This never blocks
-  startup; GPU work simply queues until each row's probe finishes.
+  never probed, or whose last probe verified nothing, one row at a time. This
+  never blocks startup. Every never-probed row the pass will visit counts as
+  awaiting its probe from the moment the Backend starts, so work that such a
+  row could serve queues until that row's probe finishes (see above) instead
+  of running on CPU or failing. This is what happens on the first boot after
+  an upgrade, when every row starts unprobed.
+- **When you enable a never-probed row** in Settings > GPUs, its probe is
+  scheduled in the background.
 - **On demand**, from Settings > GPUs: **Re-probe** on one row, or
   **Re-probe all**. Rows refresh live over the `gpu.probed` WebSocket event.
 
@@ -131,11 +147,7 @@ nothing) records one of these in `probe_error`:
   vendor or device it needed.
 - otherwise, a message telling you to rebuild or pull the image, plus a tail
   of the container's stderr: usually a transcode image that predates the
-  `--probe-device` worker mode. This is also what you get for an exit code
-  that would otherwise read as "misconfigured" but whose stderr mentions
-  "unrecognized": that shape means an old worker's argument parser rejected
-  `--probe-device` outright, which is the stale-image case, not a
-  vendor/device misconfiguration.
+  `--probe-device` worker mode.
 
 ## Image variants
 
