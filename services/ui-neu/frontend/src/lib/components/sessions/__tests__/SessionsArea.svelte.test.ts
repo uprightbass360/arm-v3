@@ -8,19 +8,19 @@ vi.mock('$lib/api/sessions', () => ({
 	updateSession: vi.fn(),
 	deleteSession: vi.fn(),
 	cloneSession: vi.fn(),
-	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null }),
+	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null })
 }));
 vi.mock('$lib/api/ripPresets', () => ({
 	fetchRipPresets: vi.fn(),
 	createRipPreset: vi.fn(),
 	updateRipPreset: vi.fn(),
-	deleteRipPreset: vi.fn(),
+	deleteRipPreset: vi.fn()
 }));
 vi.mock('$lib/api/transcodePresets', () => ({
 	fetchTranscodePresets: vi.fn(),
 	createTranscodePreset: vi.fn(),
 	updateTranscodePreset: vi.fn(),
-	deleteTranscodePreset: vi.fn(),
+	deleteTranscodePreset: vi.fn()
 }));
 
 import { fetchSessions } from '$lib/api/sessions';
@@ -41,7 +41,7 @@ const makeSession = (id = 's1', name = 'ses Alpha') => ({
 	overrides_json: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 const makeRip = (id = 'r1', name = 'rip r1') => ({
@@ -55,7 +55,7 @@ const makeRip = (id = 'r1', name = 'rip r1') => ({
 	track_filters_json: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 const makeTranscode = (id = 't1', name = 'tc t1') => ({
@@ -71,7 +71,7 @@ const makeTranscode = (id = 't1', name = 'tc t1') => ({
 	extra_args: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 afterEach(() => {
@@ -280,7 +280,7 @@ describe('ripper-only deployment (not transcode-capable)', () => {
 		vi.mocked(fetchSessions).mockResolvedValue([
 			{ ...makeSession('s_raw', 'ses Raw'), transcode_preset_id: null },
 			{ ...makeSession('s_pass', 'ses Pass'), transcode_preset_id: 't_none' },
-			{ ...makeSession('s_enc', 'ses Encode'), transcode_preset_id: 't1' },
+			{ ...makeSession('s_enc', 'ses Encode'), transcode_preset_id: 't1' }
 		]);
 		vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode(), passthroughPreset()]);
 	});

@@ -4,7 +4,7 @@
 // `ripper.progress.{job_id}` with `{track_id, progress_pct}`; ETA is computed
 // here on the receiving side (matches the legacy UI's approach).
 //
-// Ported from services/ui/src/stores/rips.ts (Pinia) into ui-neu's Svelte-5
+// Ported from the removed Vue UI's Pinia rips store into ui-neu's Svelte-5
 // runes idiom (module-level $state, like lib/stores/toast.svelte.ts).
 
 import { wsClient, type WSEnvelope } from '$lib/api/ws';
@@ -61,6 +61,7 @@ export function stopWS(): void {
  * unsubscribe (and drop live state) for any job no longer in the set.
  */
 export function reconcileSubscriptions(activeRippingJobIds: string[]): void {
+	// eslint-disable-next-line svelte/prefer-svelte-reactivity -- local lookup, never stored
 	const wanted = new Set(activeRippingJobIds);
 	for (const id of Object.keys(unsubs)) {
 		if (!wanted.has(id)) {
@@ -87,11 +88,7 @@ export function onProgress(jobId: string, env: WSEnvelope): void {
 	// null until enough has accumulated. Also reset on a sustained backwards
 	// jump (>1 pp) — defensive against a non-monotonic sequence under a stable
 	// track_id; without it pctDelta goes negative and ETA hangs at null.
-	if (
-		baseline === undefined ||
-		baseline.trackId !== payload.track_id ||
-		payload.progress_pct < baseline.atPct - 1
-	) {
+	if (baseline === undefined || baseline.trackId !== payload.track_id || payload.progress_pct < baseline.atPct - 1) {
 		baselines[jobId] = { trackId: payload.track_id, atMs: now, atPct: payload.progress_pct };
 		ripProgress.value = {
 			...ripProgress.value,
