@@ -1,5 +1,5 @@
 <script lang="ts">
-	// Ported from services/ui/src/components/TrackFiltersEditor.vue.
+	// Ported from the TrackFiltersEditor component of the removed Vue UI.
 	// Model is the `track_filters_json` shape; all conditions are ANDed.
 	type TrackFilters = {
 		min_duration_seconds?: number | null;
@@ -37,9 +37,7 @@
 
 <div class="panel-section track-filters-editor">
 	<h4 class="track-filters-editor-title">Custom track filters</h4>
-	<p class="track-filters-editor-hint">
-		All conditions are ANDed. Indices come from the rip log's MakeMKV title list.
-	</p>
+	<p class="track-filters-editor-hint">All conditions are ANDed. Indices come from the rip log's MakeMKV title list.</p>
 
 	<label class="field track-filters-editor-field">
 		<span class="field-label">Min duration (seconds)</span>
@@ -95,8 +93,20 @@
 	   component's own caller (RipPresetForm's .stack) needs restating since
 	   .stack's gap does not apply between a sibling and this component's own
 	   root margin. */
-	.track-filters-editor { margin-top: 0.5rem; }
-	.track-filters-editor-title { font-size: 0.875rem; font-weight: 600; color: var(--color-text); }
-	.track-filters-editor-hint { margin-top: 0.25rem; font-size: 0.75rem; color: var(--color-text-muted); }
-	.track-filters-editor-field { margin-top: 0.75rem; }
+	.track-filters-editor {
+		margin-top: 0.5rem;
+	}
+	.track-filters-editor-title {
+		font-size: 0.875rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.track-filters-editor-hint {
+		margin-top: 0.25rem;
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+	.track-filters-editor-field {
+		margin-top: 0.75rem;
+	}
 </style>

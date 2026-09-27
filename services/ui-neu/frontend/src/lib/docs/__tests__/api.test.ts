@@ -5,7 +5,10 @@ import { slugToId, idToRoute, fetchDocsPage, searchDocs, DocsNotFoundError } fro
 afterEach(() => vi.unstubAllGlobals());
 
 function stubFetch(body: string, init: { status?: number; type?: string } = {}) {
-	const fetchMock = vi.fn(async () => new Response(body, { status: init.status ?? 200, headers: { 'content-type': init.type ?? 'application/json' } }));
+	const fetchMock = vi.fn(
+		async () =>
+			new Response(body, { status: init.status ?? 200, headers: { 'content-type': init.type ?? 'application/json' } })
+	);
 	vi.stubGlobal('fetch', fetchMock);
 	return fetchMock;
 }
@@ -30,7 +33,9 @@ describe('idToRoute', () => {
 
 describe('fetchDocsPage', () => {
 	it('loads a page from /docs-data/pages', async () => {
-		const fetchMock = stubFetch(JSON.stringify({ id: 'dev/arch', title: 'Architecture', html: '<p>x</p>', toc: [], source: 's', editUrl: 'e' }));
+		const fetchMock = stubFetch(
+			JSON.stringify({ id: 'dev/arch', title: 'Architecture', html: '<p>x</p>', toc: [], source: 's', editUrl: 'e' })
+		);
 		const page = await fetchDocsPage('dev/arch');
 		expect(page.title).toBe('Architecture');
 		expect(fetchMock).toHaveBeenCalledWith('/docs-data/pages/dev/arch.json');

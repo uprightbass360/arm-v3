@@ -140,6 +140,7 @@
 			<!-- Trusted HTML: rendered at image build time by site/ from this
 			     repo's own markdown (markdown-it with raw HTML disabled, no
 			     scripts), served same-origin from /docs-data/. Never user input. -->
+			<!-- eslint-disable-next-line svelte/no-at-html-tags -- trusted build-time HTML, see above -->
 			<article class="docs-prose">{@html doc.html}</article>
 			<p class="help-footer">
 				<a class="btn btn-link" href={doc.editUrl} target="_blank" rel="noopener">Edit this page on GitHub</a>
@@ -166,29 +167,94 @@
 </div>
 
 <style>
-	.help-layout { display: grid; grid-template-columns: 15rem minmax(0, 1fr) 13rem; gap: 2rem; align-items: start; }
-	.help-nav, .help-toc { position: sticky; top: 0; max-height: calc(100dvh - 6rem); overflow-y: auto; }
-	.help-topics { padding: 0; }
-	.help-topics-toggle { display: none; }
-	.help-section { margin-top: 0.75rem; padding: 0 0.75rem; }
-	.help-group { margin: 0.5rem 0 0; padding: 0 0.75rem; font-size: 0.75rem; font-weight: 600; color: var(--color-text-muted); }
-	.help-empty, .help-status { font-size: 0.875rem; color: var(--color-text-muted); }
-	.help-main { min-width: 0; }
-	.help-main .docs-prose { max-width: 75ch; }
-	.help-footer { max-width: 75ch; margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--color-border); }
-	.help-toc { display: flex; flex-direction: column; gap: 0.125rem; }
-	.help-toc-link { padding: 0.125rem 0 0.125rem 0.75rem; border-left: 2px solid var(--color-border); font-size: 0.8125rem; color: var(--color-text-muted); }
-	.help-toc-link[data-depth='3'] { padding-left: 1.5rem; }
-	.help-toc-link:hover { color: var(--color-text); }
+	.help-layout {
+		display: grid;
+		grid-template-columns: 15rem minmax(0, 1fr) 13rem;
+		gap: 2rem;
+		align-items: start;
+	}
+	.help-nav,
+	.help-toc {
+		position: sticky;
+		top: 0;
+		max-height: calc(100dvh - 6rem);
+		overflow-y: auto;
+	}
+	.help-topics {
+		padding: 0;
+	}
+	.help-topics-toggle {
+		display: none;
+	}
+	.help-section {
+		margin-top: 0.75rem;
+		padding: 0 0.75rem;
+	}
+	.help-group {
+		margin: 0.5rem 0 0;
+		padding: 0 0.75rem;
+		font-size: 0.75rem;
+		font-weight: 600;
+		color: var(--color-text-muted);
+	}
+	.help-empty,
+	.help-status {
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+	.help-main {
+		min-width: 0;
+	}
+	.help-main .docs-prose {
+		max-width: 75ch;
+	}
+	.help-footer {
+		max-width: 75ch;
+		margin-top: 2rem;
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
+	.help-toc {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+	}
+	.help-toc-link {
+		padding: 0.125rem 0 0.125rem 0.75rem;
+		border-left: 2px solid var(--color-border);
+		font-size: 0.8125rem;
+		color: var(--color-text-muted);
+	}
+	.help-toc-link[data-depth='3'] {
+		padding-left: 1.5rem;
+	}
+	.help-toc-link:hover {
+		color: var(--color-text);
+	}
 
 	@media (max-width: 80rem) {
-		.help-layout { grid-template-columns: 15rem minmax(0, 1fr); }
-		.help-toc { display: none; }
+		.help-layout {
+			grid-template-columns: 15rem minmax(0, 1fr);
+		}
+		.help-toc {
+			display: none;
+		}
 	}
 	@media (max-width: 64rem) {
-		.help-layout { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-		.help-nav { position: static; max-height: none; overflow-y: visible; }
-		.help-topics-toggle { display: inline-flex; }
-		.help-topics:not([data-open='true']) { display: none; }
+		.help-layout {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 1rem;
+		}
+		.help-nav {
+			position: static;
+			max-height: none;
+			overflow-y: visible;
+		}
+		.help-topics-toggle {
+			display: inline-flex;
+		}
+		.help-topics:not([data-open='true']) {
+			display: none;
+		}
 	}
 </style>

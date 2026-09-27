@@ -5,12 +5,39 @@ import MiniSearch, { type Options } from 'minisearch';
 export const DOCS_BASE = '/docs-data';
 export const HOME_ID = 'guide/home';
 
-export interface DocsTocEntry { depth: number; id: string; text: string }
-export interface DocsPage { id: string; title: string; html: string; toc: DocsTocEntry[]; source: string; editUrl: string }
-export interface DocsNavItem { label: string; href: string; external: boolean; pageId: string | null }
-export interface DocsNavGroup { label: string | null; items: DocsNavItem[] }
-export interface DocsNavSection { id: string; label: string; groups: DocsNavGroup[] }
-export interface DocsSearchHit { id: string; title: string; href: string }
+export interface DocsTocEntry {
+	depth: number;
+	id: string;
+	text: string;
+}
+export interface DocsPage {
+	id: string;
+	title: string;
+	html: string;
+	toc: DocsTocEntry[];
+	source: string;
+	editUrl: string;
+}
+export interface DocsNavItem {
+	label: string;
+	href: string;
+	external: boolean;
+	pageId: string | null;
+}
+export interface DocsNavGroup {
+	label: string | null;
+	items: DocsNavItem[];
+}
+export interface DocsNavSection {
+	id: string;
+	label: string;
+	groups: DocsNavGroup[];
+}
+export interface DocsSearchHit {
+	id: string;
+	title: string;
+	href: string;
+}
 
 export class DocsNotFoundError extends Error {}
 

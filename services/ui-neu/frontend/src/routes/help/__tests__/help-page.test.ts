@@ -23,13 +23,37 @@ import { fetchDocsNav, fetchDocsPage, loadDocsSearch, DocsNotFoundError } from '
 import MiniSearch from 'minisearch';
 
 const NAV = [
-	{ id: 'guide', label: 'Guide', groups: [{ label: 'Getting Started', items: [
-		{ label: 'Home', href: '/help', external: false, pageId: 'guide/home' },
-		{ label: 'Getting Started', href: '/help/guide/getting-started', external: false, pageId: 'guide/getting-started' },
-		{ label: 'Open an issue', href: 'https://github.com/o/r/issues', external: true, pageId: null }
-	] }] }
+	{
+		id: 'guide',
+		label: 'Guide',
+		groups: [
+			{
+				label: 'Getting Started',
+				items: [
+					{ label: 'Home', href: '/help', external: false, pageId: 'guide/home' },
+					{
+						label: 'Getting Started',
+						href: '/help/guide/getting-started',
+						external: false,
+						pageId: 'guide/getting-started'
+					},
+					{ label: 'Open an issue', href: 'https://github.com/o/r/issues', external: true, pageId: null }
+				]
+			}
+		]
+	}
 ];
-const PAGE = { id: 'guide/getting-started', title: 'Getting Started', html: '<h1 id="getting-started">Getting Started</h1><p>See <a href="/help/guide/configuring-arm#options">options</a>.</p>', toc: [{ depth: 2, id: 'a', text: 'A' }, { depth: 2, id: 'b', text: 'B' }], source: 'docs/user/Getting-Started.md', editUrl: 'https://github.com/o/r/edit/main/docs/user/Getting-Started.md' };
+const PAGE = {
+	id: 'guide/getting-started',
+	title: 'Getting Started',
+	html: '<h1 id="getting-started">Getting Started</h1><p>See <a href="/help/guide/configuring-arm#options">options</a>.</p>',
+	toc: [
+		{ depth: 2, id: 'a', text: 'A' },
+		{ depth: 2, id: 'b', text: 'B' }
+	],
+	source: 'docs/user/Getting-Started.md',
+	editUrl: 'https://github.com/o/r/edit/main/docs/user/Getting-Started.md'
+};
 
 beforeEach(() => {
 	params.slug = 'guide/getting-started';
@@ -48,7 +72,9 @@ describe('/help page', () => {
 	it('renders the page fragment inside docs-prose with internal links as /help routes', async () => {
 		const { container } = renderComponent(HelpPage);
 		await waitFor(() => expect(container.querySelector('article.docs-prose h1')?.textContent).toBe('Getting Started'));
-		expect(container.querySelector('article.docs-prose a')?.getAttribute('href')).toBe('/help/guide/configuring-arm#options');
+		expect(container.querySelector('article.docs-prose a')?.getAttribute('href')).toBe(
+			'/help/guide/configuring-arm#options'
+		);
 		expect(fetchDocsPage).toHaveBeenCalledWith('guide/getting-started');
 		expect(screen.getByText('Edit this page on GitHub').getAttribute('href')).toBe(PAGE.editUrl);
 	});
