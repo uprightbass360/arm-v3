@@ -68,7 +68,7 @@ npm test
 
 Vitest covers the auth store (login / logout / 401 reset) and router guards
 (anonymous → /login, must-change → /change-password). No Playwright by
-design — see `docs/arch/05-cross-cutting.md § Testing strategy`.
+design — see `docs/developers/architecture/05-cross-cutting.md § Testing strategy`.
 
 ## Lint + format
 
@@ -92,4 +92,4 @@ can find the binaries.
 Browsers don't trust the internal CA by default. Either click through once,
 or import `~/arm/certs/arm-ca.crt` into your OS / browser trust store to
 silence the warning across every device on your LAN. See
-`docs/arch/05-cross-cutting.md § Transport (TLS)`.
+`docs/developers/architecture/05-cross-cutting.md § Transport (TLS)`.
