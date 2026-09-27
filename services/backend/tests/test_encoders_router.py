@@ -10,13 +10,17 @@ os.environ.setdefault("ARM_SERVICE_TOKEN", "tok-service")
 
 import secrets  # noqa: E402
 from datetime import UTC, datetime  # noqa: E402
+from unittest.mock import MagicMock  # noqa: E402
 
+import pytest  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 from arm_backend.db import get_session  # noqa: E402
 from arm_backend.jwt_utils import issue_access_token  # noqa: E402
 from arm_backend.routers import encoders as encoders_router  # noqa: E402
+from arm_backend.transcode_dispatcher import TranscodeDispatcher, set_active_dispatcher  # noqa: E402
+from arm_backend.ws import WSHub  # noqa: E402
 from arm_common import Gpu, User  # noqa: E402
 from arm_common.encoders import ENCODERS  # noqa: E402
 from arm_common.enums import GpuStatus, GpuVendor  # noqa: E402
@@ -163,3 +167,79 @@ def test_vaapi_group_is_vendor_value() -> None:
     by_id = {e["id"]: e for e in r.json()}
     assert by_id["vaapi_h264"]["group"] == "vaapi"
     assert by_id["nvenc_h264"]["group"] == "nvenc"
+
+
+def _awaiting_dispatcher(gpu_id: str, *, probing: bool) -> TranscodeDispatcher:
+    disp = TranscodeDispatcher(MagicMock(), MagicMock(), MagicMock(), WSHub())
+    if probing:
+        disp.probing_gpu_ids.add(gpu_id)
+    else:
+        disp.pending_probe_gpu_ids.add(gpu_id)
+    return disp
+
+
+def _get_with_dispatcher(gpus: list[Gpu], dispatcher: TranscodeDispatcher) -> dict[str, dict]:
+    app, token = _app(gpus)
+    set_active_dispatcher(dispatcher)
+    try:
+        with TestClient(app) as c:
+            r = c.get("/api/encoders", headers=_auth(token))
+    finally:
+        set_active_dispatcher(None)
+    assert r.status_code == 200, r.text
+    return {e["id"]: e for e in r.json()}
+
+
+@pytest.mark.parametrize("probing", [False, True], ids=["pending", "probing"])
+def test_gpu_kind_available_while_a_matching_device_awaits_its_first_probe(probing: bool) -> None:
+    """Matches the apply gate: a pinned encoder whose only matching device is
+    never-probed with its probe reserved or running is accepted there (the
+    task queues), so the picker offers it too."""
+    by_id = _get_with_dispatcher(
+        [_gpu(vendor=GpuVendor.QSV, probed_at=None, encoder_kinds=[])],
+        _awaiting_dispatcher("gpu_1", probing=probing),
+    )
+
+    qsv = by_id["qsv_h265"]
+    assert qsv["available"] is True
+    assert qsv["reason"] == "waiting for the first GPU probe"
+    assert by_id["nvenc_h265"]["available"] is False
+
+
+@pytest.mark.parametrize("probing", [False, True], ids=["pending", "probing"])
+def test_any_kind_says_it_waits_for_the_probe_while_a_device_awaits_it(probing: bool) -> None:
+    """The claim queues an `any_<codec>` task while a device that could serve
+    the codec awaits its first probe, so the reason must not promise the CPU."""
+    by_id = _get_with_dispatcher(
+        [_gpu(vendor=GpuVendor.NVENC, probed_at=None, encoder_kinds=[])],
+        _awaiting_dispatcher("gpu_1", probing=probing),
+    )
+
+    any_h265 = by_id["any_h265"]
+    assert any_h265["available"] is True
+    assert any_h265["reason"] == "waiting for the first GPU probe"
+
+
+def test_any_kind_runs_on_the_cpu_for_an_unprobed_device_nobody_is_probing() -> None:
+    by_id = _get_with_dispatcher(
+        [_gpu(vendor=GpuVendor.NVENC, probed_at=None, encoder_kinds=[])],
+        _awaiting_dispatcher("gpu_other", probing=True),
+    )
+    assert by_id["any_h265"]["reason"] == "no verified GPU; runs on the CPU"
+
+
+def test_gpu_kind_unavailable_for_an_unprobed_device_nobody_is_probing() -> None:
+    by_id = _get_with_dispatcher(
+        [_gpu(vendor=GpuVendor.QSV, probed_at=None, encoder_kinds=[])],
+        _awaiting_dispatcher("gpu_other", probing=True),
+    )
+    assert by_id["qsv_h265"]["available"] is False
+    assert by_id["qsv_h265"]["reason"] == "no enabled device has verified qsv_h265"
+
+
+def test_gpu_kind_ignores_a_disabled_device_awaiting_its_probe() -> None:
+    by_id = _get_with_dispatcher(
+        [_gpu(vendor=GpuVendor.QSV, probed_at=None, encoder_kinds=[], enabled=False)],
+        _awaiting_dispatcher("gpu_1", probing=True),
+    )
+    assert by_id["qsv_h265"]["available"] is False
