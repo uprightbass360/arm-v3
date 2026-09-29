@@ -121,6 +121,7 @@ describe('DiscReviewWidget', () => {
 			renderWidget({ status: 'awaiting_review' });
 			await waitFor(() => expect(screen.getByText('Start rip')).toBeInTheDocument());
 			expect(screen.getByText('Cancel')).toBeInTheDocument();
+			expect(screen.getByText(/Apply session/)).toBeInTheDocument();
 		});
 	});
 });
