@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from arm_backend.path_sanitize import sanitize_path_component
-from arm_backend.path_template import TemplateValidationError, expand_template, referenced_tokens
+from arm_backend.path_template import NEVER_OPTIONAL, TemplateValidationError, expand_template, required_tokens
 from arm_backend.slugify import slugify
 from arm_common import (
     Config,
@@ -148,14 +148,15 @@ def compute_outputs(
         return []
 
     template = session.output_path_template
-    referenced = referenced_tokens(template)
+    required = required_tokens(template)
     resolved: list[ResolvedTask] = []
     for track in candidates:
         ctx = _build_track_ctx(job, track, session, transcode_preset)
-        for token in referenced:
+        for token in sorted(required):
             if not ctx.get(token):
+                hint = "" if token in NEVER_OPTIONAL else f"; mark it optional as {{{token}?}} to allow that"
                 raise TemplateValidationError(
-                    f"track index={track.index}: token {{{token}}} resolved empty against the job's metadata"
+                    f"track index={track.index}: token {{{token}}} resolved empty against the job's metadata{hint}"
                 )
         path = expand_template(template, ctx)
         if track.custom_filename:

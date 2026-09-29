@@ -15287,6 +15287,17 @@
           "expansion": {
             "type": "string",
             "title": "Expansion"
+          },
+          "expansion_without_optional": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expansion Without Optional"
           }
         },
         "type": "object",
