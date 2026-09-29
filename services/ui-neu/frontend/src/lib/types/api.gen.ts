@@ -1957,6 +1957,10 @@ export type JobView = {
      */
     pending_session_id?: string | null;
     /**
+     * Parked Session Ids
+     */
+    parked_session_ids?: Array<string>;
+    /**
      * Disc Number
      */
     disc_number?: number | null;
@@ -4397,6 +4401,10 @@ export type JobViewWritable = {
      * Pending Session Id
      */
     pending_session_id?: string | null;
+    /**
+     * Parked Session Ids
+     */
+    parked_session_ids?: Array<string>;
     /**
      * Disc Number
      */
