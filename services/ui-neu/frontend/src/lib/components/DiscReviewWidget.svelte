@@ -338,7 +338,7 @@
 					aria-pressed={showMusicSearch}>Search</button
 				>
 			{/if}
-			{#if $isAdmin}
+			{#if $isAdmin && displayJob.actions.can_apply}
 				<button
 					onclick={() => (showApplySession = true)}
 					class="btn {isPostRip ? 'disc-review-widget-success-btn' : 'disc-review-widget-action-btn'}"
