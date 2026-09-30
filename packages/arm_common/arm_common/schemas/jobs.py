@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from arm_common.enums import (
     DiscType,
@@ -9,6 +9,7 @@ from arm_common.enums import (
     MediaType,
     SessionApplicationStatus,
     TrackKind,
+    TrackRole,
     TrackStatus,
     TranscodeTaskStatus,
 )
@@ -18,22 +19,24 @@ from arm_common.schemas.job_metadata import ExternalIds, JobMetadata, MusicMeta
 class ResolveRequest(BaseModel):
     """POST /api/jobs/{id}/resolve body.
 
-    title/year/disc_number/disc_total are the full identity statement: every
-    resolve restates them, so there is no "omitted" case for these four --
-    whatever value is sent (including null) is exactly what lands.
+    title/year are the full identity statement: every resolve restates them,
+    so there is no "omitted" case for these two -- whatever value is sent
+    (including null) is exactly what lands.
 
-    media_type/season are classifications, not part of that statement, and
-    follow different semantics: **omitted = keep** the stored value (a
-    title-only fix must not wipe them), **explicit null = clear** it (the
-    operator saying "this isn't a season" / "clear the kind"). The same
-    omitted=keep / explicit-null=clears rule applies per-field inside
-    `external_ids`: sending `external_ids` at all starts an identity edit,
-    and each of its member fields (imdb/tmdb/tvdb/musicbrainz_release) that
-    is explicitly present -- even as `null` -- clears that one id, while a
-    member field left out of the payload keeps its previously stored value.
-    Distinguishing "sent null" from "not sent" requires Pydantic's
-    `model_fields_set`, not an `is not None` check, since both collapse to
-    the same `None` once parsed.
+    media_type/season/disc_number/disc_total are classifications, not part of
+    that statement, and follow different semantics: **omitted = keep** the
+    stored value (a title-only fix -- e.g. picking a title in the identify
+    dialog after a disc-hint source already filled disc_number/disc_total --
+    must not wipe them), **explicit null = clear** it (the operator saying
+    "this isn't a season" / "clear the kind" / "clear the disc position").
+    The same omitted=keep / explicit-null=clears rule applies per-field
+    inside `external_ids`: sending `external_ids` at all starts an identity
+    edit, and each of its member fields (imdb/tmdb/tvdb/musicbrainz_release)
+    that is explicitly present -- even as `null` -- clears that one id,
+    while a member field left out of the payload keeps its previously
+    stored value. Distinguishing "sent null" from "not sent" requires
+    Pydantic's `model_fields_set`, not an `is not None` check, since both
+    collapse to the same `None` once parsed.
     """
 
     # Unknown keys are a caller bug: the free-form metadata bag is gone (G-03/§3.4).
@@ -193,9 +196,17 @@ class HeldJobView(BaseModel):
     paused: bool
 
 
+TrackRevertField = Literal[
+    "role", "title", "season", "episode_number", "episode_number_end", "episode_name", "custom_filename", "excluded"
+]
+
+
 class TrackEditRequest(BaseModel):
     """One entry in JobUpdateRequest.tracks. `track_id` selects the row; every
-    other field is an optional operator edit (omitted=untouched, null=clear)."""
+    other field is an optional operator edit (omitted=untouched, null=clear).
+    Identity fields become `manual` identity proposals; `revert_fields` drops
+    the operator's value for those fields and hands them back to the
+    automatic sources."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -204,11 +215,14 @@ class TrackEditRequest(BaseModel):
     year: int | None = None
     imdb_id: str | None = None
     poster_url: str | None = None
-    video_type: str | None = None
+    role: TrackRole | None = None
+    season: int | None = None
     episode_number: int | None = None
+    episode_number_end: int | None = None
     episode_name: str | None = None
     excluded: bool | None = None
     custom_filename: str | None = None
+    revert_fields: list[TrackRevertField] = Field(default_factory=list)
 
 
 class JobUpdateRequest(BaseModel):
@@ -255,17 +269,20 @@ class TrackView(BaseModel):
     attempts: int
     last_error: str | None
     label: str | None = None
-    role: str | None = None
+    role: TrackRole | None = None
     edition: str | None = None
     title: str | None = None
     year: int | None = None
     imdb_id: str | None = None
     poster_url: str | None = None
-    video_type: str | None = None
     episode_number: int | None = None
     episode_name: str | None = None
+    episode_number_end: int | None = None
+    season: int | None = None
     excluded: bool = False
     custom_filename: str | None = None
+    # {attribute: source_id} for resolver-managed fields (display-only).
+    identity_provenance: dict[str, str] | None = None
 
 
 class RipStartResponse(BaseModel):

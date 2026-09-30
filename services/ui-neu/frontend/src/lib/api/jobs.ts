@@ -93,10 +93,12 @@ export function updateTrackTitle(
 	return patchJob(jobId, { tracks: [{ track_id: trackId, ...data }] });
 }
 
-// Clear the operator title override (null = clear in v3).
+// Clear the operator title override: `title` is resolver-owned, so revert it
+// (hands it back to the automatic sources) rather than pinning a manual null.
+// year / imdb_id / poster_url are plain fields and are cleared with null.
 export function clearTrackTitle(jobId: string, trackId: string): Promise<JobView> {
 	return patchJob(jobId, {
-		tracks: [{ track_id: trackId, title: null, year: null, imdb_id: null, poster_url: null }]
+		tracks: [{ track_id: trackId, year: null, imdb_id: null, poster_url: null, revert_fields: ['title'] }]
 	});
 }
 
@@ -125,8 +127,15 @@ export function updateJobConfig(jobId: string, data: JobUpdateRequest): Promise<
 
 // v3 POST /api/jobs/{id}/resolve  body: ResolveRequest { title, year?, disc_number?, disc_total?, media_type?, music? }.
 // Stamps the chosen identity onto the job (status → identified). `year` defaults
-// to null, disc fields to null; `music`/`media_type` are only sent by callers that
-// have something typed to say (the free-form `metadata` bag is gone — unknown keys 422).
+// to null; `music`/`media_type` are only sent by callers that have something
+// typed to say (the free-form `metadata` bag is gone — unknown keys 422).
+//
+// disc_number/disc_total are a classification like media_type/season on the
+// Backend, not part of the identity statement: omitted keeps whatever value
+// is already stored (a disc-hint source may have filled it before the
+// operator ever opened the identify dialog -- Review Focus 5), while an
+// explicit `null` is the operator clearing it. `!== undefined` is the only
+// way to tell "the caller didn't pass this" from "the caller passed null".
 export function resolveJob(
 	jobId: string,
 	body: {
@@ -138,14 +147,19 @@ export function resolveJob(
 		music?: MusicMeta;
 	}
 ): Promise<ResolveResponse> {
-	return post<ResolveResponse>(`/api/jobs/${jobId}/resolve`, {
+	const payload: Record<string, unknown> = {
 		title: body.title,
-		year: body.year ?? null,
-		disc_number: body.disc_number ?? null,
-		disc_total: body.disc_total ?? null,
-		media_type: body.media_type,
-		music: body.music
-	});
+		year: body.year ?? null
+	};
+	if (body.disc_number !== undefined) {
+		payload.disc_number = body.disc_number;
+	}
+	if (body.disc_total !== undefined) {
+		payload.disc_total = body.disc_total;
+	}
+	payload.media_type = body.media_type;
+	payload.music = body.music;
+	return post<ResolveResponse>(`/api/jobs/${jobId}/resolve`, payload);
 }
 
 // v3 POST /api/jobs/manual  body: ManualTriggerRequest { drive_id, session_id? }.
@@ -261,16 +275,6 @@ export function fetchNamingVariables(): Promise<NamingVariablesResponse> {
 	return apiFetch<NamingVariablesResponse>('/api/naming/variables');
 }
 
-// ---------------------------------------------------------------------------
-// MISSING in v3 — no endpoint exists. Screens are feature-flagged OFF; the
-// stub rejects before any fetch so a hidden path fails loudly. Function shapes
-// are preserved so callers still compile. (P1/P2 backlog.)
-// ---------------------------------------------------------------------------
-
-export async function cancelWaitingJob(_id: string): Promise<never> {
-	notAvailable('Cancel waiting job');
-}
-
 // Timed review gate: operator Start for a disc held in awaiting_review.
 // Transitions AWAITING_REVIEW -> RIPPING and unblocks the parked ripper.
 export function startWaitingJob(id: string): Promise<JobView> {
@@ -283,33 +287,10 @@ export function pauseWaitingJob(id: string, paused = true): Promise<JobView> {
 	return apiFetch<JobView>(`/api/jobs/${id}/review-pause?paused=${paused}`, { method: 'POST' });
 }
 
-export async function fixJobPermissions(_id: string): Promise<never> {
-	notAvailable('Fix job permissions');
-}
-
-export async function skipAndFinalize(_jobId: string): Promise<never> {
-	notAvailable('Skip and finalize');
-}
-
-export async function forceComplete(_jobId: string): Promise<never> {
-	notAvailable('Force complete');
-}
-
-export async function submitToCrcDb(_id: string): Promise<never> {
-	notAvailable('Submit to CRC database');
-}
-
-export async function fetchCrcLookup(_jobId: string): Promise<never> {
-	notAvailable('CRC lookup');
-}
-
-export async function retranscodeJob(_id: string): Promise<never> {
-	notAvailable('Re-transcode job');
-}
-
-export async function toggleMultiTitle(_jobId: string, _enabled: boolean): Promise<never> {
-	notAvailable('Multi-title toggle');
-}
+// ---------------------------------------------------------------------------
+// MISSING in v3: no TVDB matching endpoint. TvdbMatch/EpisodeMatch are not
+// mounted yet; these reject before any fetch so a hidden path fails loudly.
+// ---------------------------------------------------------------------------
 
 export async function tvdbMatch(
 	_jobId: string,
@@ -326,39 +307,4 @@ export async function tvdbMatch(
 
 export async function fetchTvdbEpisodes(_jobId: string, _season: number): Promise<never> {
 	notAvailable('TVDB episode listing');
-}
-
-export async function updateJobTranscodeConfig(_jobId: string, _overrides: Record<string, unknown>): Promise<never> {
-	notAvailable('Per-job transcode config');
-}
-
-export async function updateJobNaming(
-	_jobId: string,
-	_data: { title_pattern_override?: string | null; folder_pattern_override?: string | null }
-): Promise<never> {
-	notAvailable('Per-job naming overrides');
-}
-
-export async function bulkPurgeJobs(_params: { job_ids?: string[]; status?: string }): Promise<never> {
-	notAvailable('Bulk purge jobs');
-}
-
-export async function fetchJobStats(_params?: {
-	search?: string;
-	video_type?: string;
-	disctype?: string;
-	days?: number;
-}): Promise<never> {
-	notAvailable('Job stats');
-}
-
-export async function fetchJobProgress(_id: string): Promise<never> {
-	notAvailable('Job progress polling');
-}
-
-export async function setJobTracks(
-	_jobId: string,
-	_tracks: { track_number: string; title: string; length_ms: number | null }[]
-): Promise<never> {
-	notAvailable('Replace job tracks');
 }

@@ -18,10 +18,8 @@ import {
 	resolveJob,
 	applySession,
 	// MISSING in v3
-	toggleMultiTitle,
 	tvdbMatch,
-	fetchTvdbEpisodes,
-	updateJobNaming
+	fetchTvdbEpisodes
 } from '../api/jobs';
 
 beforeEach(() => mockFetch.mockReset());
@@ -45,8 +43,8 @@ describe('updateTrackTitle (bulk-PATCH wrap)', () => {
 	});
 });
 
-describe('clearTrackTitle (bulk-PATCH wrap, null=clear)', () => {
-	it('PATCHes /api/jobs/{id} clearing override fields to null', async () => {
+describe('clearTrackTitle (bulk-PATCH wrap, title reverts to automatic sources)', () => {
+	it('PATCHes /api/jobs/{id} reverting title and clearing the other override fields', async () => {
 		mockFetch.mockResolvedValue(jsonResponse({ id: 'job_1' }));
 		await clearTrackTitle('job_1', 'trk_3');
 		expect(mockFetch).toHaveBeenCalledWith(
@@ -54,7 +52,7 @@ describe('clearTrackTitle (bulk-PATCH wrap, null=clear)', () => {
 			expect.objectContaining({
 				method: 'PATCH',
 				body: JSON.stringify({
-					tracks: [{ track_id: 'trk_3', title: null, year: null, imdb_id: null, poster_url: null }]
+					tracks: [{ track_id: 'trk_3', year: null, imdb_id: null, poster_url: null, revert_fields: ['title'] }]
 				})
 			})
 		);
@@ -160,7 +158,7 @@ describe('resolveJob', () => {
 			'/api/jobs/job_1/resolve',
 			expect.objectContaining({
 				method: 'POST',
-				body: JSON.stringify({ title: 'X', year: 2020, disc_number: null, disc_total: null })
+				body: JSON.stringify({ title: 'X', year: 2020 })
 			})
 		);
 	});
@@ -175,10 +173,33 @@ describe('resolveJob', () => {
 				body: JSON.stringify({
 					title: 'Album',
 					year: null,
-					disc_number: null,
-					disc_total: null,
 					music: { artist: 'A', tracks: [{ title: 'T1' }] }
 				})
+			})
+		);
+	});
+
+	// Review Focus 5 (identity-disc-hints PR2, Task 6): a disc-hint source can
+	// fill job.disc_number/disc_total before the operator ever opens the
+	// identify dialog. resolveJob must not send those keys unless the caller
+	// actually passed them, or every hint-filled disc number would be wiped
+	// by a manual null the instant the operator picks a title.
+	it('omits disc_number/disc_total from the body when the caller does not pass them', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ job: { id: 'job_3' }, fan_out: [] }));
+		await resolveJob('job_3', { title: 'Lost', year: 2004 });
+		const body = JSON.parse((mockFetch.mock.calls[0][1] as RequestInit).body as string);
+		expect(body).not.toHaveProperty('disc_number');
+		expect(body).not.toHaveProperty('disc_total');
+	});
+
+	it('sends disc_number: null / disc_total: null when the caller passes null explicitly', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ job: { id: 'job_4' }, fan_out: [] }));
+		await resolveJob('job_4', { title: 'Lost', year: 2004, disc_number: null, disc_total: null });
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/jobs/job_4/resolve',
+			expect.objectContaining({
+				method: 'POST',
+				body: JSON.stringify({ title: 'Lost', year: 2004, disc_number: null, disc_total: null })
 			})
 		);
 	});
@@ -216,10 +237,8 @@ describe('applySession', () => {
 
 describe('MISSING in v3', () => {
 	it.each([
-		['toggleMultiTitle', () => toggleMultiTitle('job_1', true)],
 		['tvdbMatch', () => tvdbMatch('job_1', { season: 2, apply: true })],
-		['fetchTvdbEpisodes', () => fetchTvdbEpisodes('job_1', 1)],
-		['updateJobNaming', () => updateJobNaming('job_1', { title_pattern_override: '{title}' })]
+		['fetchTvdbEpisodes', () => fetchTvdbEpisodes('job_1', 1)]
 	])('%s rejects with /not yet available in v3/', async (_name, call) => {
 		await expect(call()).rejects.toThrow(/not yet available in v3/);
 		expect(mockFetch).not.toHaveBeenCalled();

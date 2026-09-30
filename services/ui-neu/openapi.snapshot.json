@@ -2094,6 +2094,276 @@
         }
       }
     },
+    "/api/jobs/{job_id}/identity": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Get Identity",
+        "operationId": "get_identity_api_jobs__job_id__identity_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/identity/match": {
+      "post": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Match Identity",
+        "operationId": "match_identity_api_jobs__job_id__identity_match_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MatchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MatchPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/identity/pin": {
+      "delete": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Clear Identity Pin",
+        "operationId": "clear_identity_pin_api_jobs__job_id__identity_pin_delete",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdentityView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/jobs/{job_id}/identity/episodes": {
+      "get": {
+        "tags": [
+          "identity"
+        ],
+        "summary": "Browse Episodes",
+        "operationId": "browse_episodes_api_jobs__job_id__identity_episodes_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^job_[0-9A-HJKMNP-TV-Z]{26}$",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "tmdb",
+                "tvmaze",
+                "tvdb"
+              ],
+              "type": "string",
+              "title": "Source"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "title": "Season"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeListView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/drives": {
       "get": {
         "tags": [
@@ -8859,6 +9129,53 @@
         ],
         "title": "BashScriptSummary"
       },
+      "BdDiscMeta": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "set_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Set Number"
+          },
+          "num_sets": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Sets"
+          },
+          "language": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Language"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "BdDiscMeta",
+        "description": "Blu-ray disc title from BDMV/META/DL/bdmt_<lang>.xml (studio-authored).\nOptional on the wire: older rippers never send it."
+      },
       "Body_upload_theme_api_themes_post": {
         "properties": {
           "theme_json": {
@@ -10912,6 +11229,78 @@
         "title": "EncoderAvailabilityView",
         "description": "One `arm_common.encoders.ENCODERS` catalog entry, with availability\ncomputed server-side from the live `gpus` inventory (GET /api/encoders).\n\n`group` buckets `preset`/`cpu`/`any` kinds by themselves and `gpu` kinds\nby vendor, so the transcode preset picker can render sections without\nre-deriving the grouping client-side. `available` is always true for\n`preset`/`cpu`/`any` (an `any_*` encoder falls back to CPU at dispatch\ntime); for a vendor-pinned `gpu` encoder it reflects whether any enabled\ndevice's probe currently verifies that vendor/codec. `reason` explains\nan unavailable `gpu` entry, or an `any_*` entry that would currently run\non the CPU for lack of a verified GPU; it is `None` otherwise."
       },
+      "EpisodeListView": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "show_id": {
+            "type": "string",
+            "title": "Show Id"
+          },
+          "season": {
+            "type": "integer",
+            "title": "Season"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeSummary"
+            },
+            "type": "array",
+            "title": "Episodes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "show_id",
+          "season"
+        ],
+        "title": "EpisodeListView",
+        "description": "`GET /api/jobs/{id}/identity/episodes` response."
+      },
+      "EpisodeSummary": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "runtime_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Runtime S"
+          },
+          "special": {
+            "type": "boolean",
+            "title": "Special",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "number"
+        ],
+        "title": "EpisodeSummary",
+        "description": "One episode in an `EpisodeListView`."
+      },
       "EventTypeInfo": {
         "properties": {
           "key": {
@@ -10982,6 +11371,28 @@
               }
             ],
             "title": "Tvdb"
+          },
+          "tvmaze": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tvmaze"
+          },
+          "anidb": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anidb"
           },
           "musicbrainz_release": {
             "anyOf": [
@@ -11455,6 +11866,55 @@
         ],
         "title": "IdentifyRequest"
       },
+      "IdentityClaims": {
+        "properties": {
+          "sources": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceClaims"
+            },
+            "type": "object",
+            "title": "Sources"
+          },
+          "pin": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Pin"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "IdentityClaims"
+      },
+      "IdentityView": {
+        "properties": {
+          "sources": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SourceSummary"
+            },
+            "type": "object",
+            "title": "Sources"
+          },
+          "pin": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Pin"
+          },
+          "tracks": {
+            "items": {
+              "$ref": "#/components/schemas/TrackIdentityView"
+            },
+            "type": "array",
+            "title": "Tracks"
+          }
+        },
+        "type": "object",
+        "title": "IdentityView",
+        "description": "`GET /api/jobs/{id}/identity` response."
+      },
       "InAppChannelConfig": {
         "properties": {
           "type": {
@@ -11573,6 +12033,20 @@
               }
             ],
             "title": "Disc Total"
+          },
+          "identity_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Provenance"
           },
           "poster_url": {
             "anyOf": [
@@ -11693,6 +12167,57 @@
           "updated_at"
         ],
         "title": "Job"
+      },
+      "JobClaim": {
+        "properties": {
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "disc_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Number"
+          },
+          "disc_total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Total"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "JobClaim"
       },
       "JobCompleteRequest": {
         "properties": {},
@@ -11817,8 +12342,11 @@
               }
             ]
           },
-          "thediscdb": {
+          "identity_claims": {
             "anyOf": [
+              {
+                "$ref": "#/components/schemas/IdentityClaims"
+              },
               {
                 "additionalProperties": true,
                 "type": "object"
@@ -11827,7 +12355,7 @@
                 "type": "null"
               }
             ],
-            "title": "Thediscdb"
+            "title": "Identity Claims"
           },
           "flags": {
             "$ref": "#/components/schemas/JobFlags"
@@ -12419,6 +12947,233 @@
           "session_id"
         ],
         "title": "ManualTriggerResponse"
+      },
+      "MatchEntryView": {
+        "properties": {
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "episode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode"
+          },
+          "episode_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode End"
+          },
+          "episode_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Name"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_ref"
+        ],
+        "title": "MatchEntryView",
+        "description": "One title's episode match within a `MatchOutcomeView`."
+      },
+      "MatchOutcomeView": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "miss",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "ok"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "suggestion": {
+            "type": "boolean",
+            "title": "Suggestion",
+            "default": false
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          },
+          "matches": {
+            "items": {
+              "$ref": "#/components/schemas/MatchEntryView"
+            },
+            "type": "array",
+            "title": "Matches"
+          },
+          "alternatives": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id"
+        ],
+        "title": "MatchOutcomeView",
+        "description": "One provider's outcome from a `/identity/match` call."
+      },
+      "MatchPreview": {
+        "properties": {
+          "outcomes": {
+            "items": {
+              "$ref": "#/components/schemas/MatchOutcomeView"
+            },
+            "type": "array",
+            "title": "Outcomes"
+          }
+        },
+        "type": "object",
+        "title": "MatchPreview",
+        "description": "`POST /api/jobs/{id}/identity/match` response, for both\n`apply=False` (a preview, nothing written) and `apply=True` (reflects the\nstored outcomes)."
+      },
+      "MatchRequest": {
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "tmdb",
+                  "tvmaze",
+                  "tvdb"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "disc_number": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disc Number"
+          },
+          "tolerance": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1800.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tolerance"
+          },
+          "apply": {
+            "type": "boolean",
+            "title": "Apply",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "MatchRequest",
+        "description": "`POST /api/jobs/{id}/identity/match` body."
       },
       "MediaType": {
         "type": "string",
@@ -14025,7 +14780,7 @@
           "title"
         ],
         "title": "ResolveRequest",
-        "description": "POST /api/jobs/{id}/resolve body.\n\ntitle/year/disc_number/disc_total are the full identity statement: every\nresolve restates them, so there is no \"omitted\" case for these four --\nwhatever value is sent (including null) is exactly what lands.\n\nmedia_type/season are classifications, not part of that statement, and\nfollow different semantics: **omitted = keep** the stored value (a\ntitle-only fix must not wipe them), **explicit null = clear** it (the\noperator saying \"this isn't a season\" / \"clear the kind\"). The same\nomitted=keep / explicit-null=clears rule applies per-field inside\n`external_ids`: sending `external_ids` at all starts an identity edit,\nand each of its member fields (imdb/tmdb/tvdb/musicbrainz_release) that\nis explicitly present -- even as `null` -- clears that one id, while a\nmember field left out of the payload keeps its previously stored value.\nDistinguishing \"sent null\" from \"not sent\" requires Pydantic's\n`model_fields_set`, not an `is not None` check, since both collapse to\nthe same `None` once parsed."
+        "description": "POST /api/jobs/{id}/resolve body.\n\ntitle/year are the full identity statement: every resolve restates them,\nso there is no \"omitted\" case for these two -- whatever value is sent\n(including null) is exactly what lands.\n\nmedia_type/season/disc_number/disc_total are classifications, not part of\nthat statement, and follow different semantics: **omitted = keep** the\nstored value (a title-only fix -- e.g. picking a title in the identify\ndialog after a disc-hint source already filled disc_number/disc_total --\nmust not wipe them), **explicit null = clear** it (the operator saying\n\"this isn't a season\" / \"clear the kind\" / \"clear the disc position\").\nThe same omitted=keep / explicit-null=clears rule applies per-field\ninside `external_ids`: sending `external_ids` at all starts an identity\nedit, and each of its member fields (imdb/tmdb/tvdb/musicbrainz_release)\nthat is explicitly present -- even as `null` -- clears that one id,\nwhile a member field left out of the payload keeps its previously\nstored value. Distinguishing \"sent null\" from \"not sent\" requires\nPydantic's `model_fields_set`, not an `is not None` check, since both\ncollapse to the same `None` once parsed."
       },
       "ResolveResponse": {
         "properties": {
@@ -14437,6 +15192,16 @@
             },
             "type": "array",
             "title": "Fingerprints"
+          },
+          "bd_meta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BdDiscMeta"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "raw": {
             "additionalProperties": true,
@@ -15047,6 +15812,144 @@
         "title": "SettingsSchemaResponse",
         "description": "Render metadata for the settings page \u2014 grouped field classification.\nStatic (derived from CONFIG_FIELD_META); values come from /api/config and\n/api/settings/infra."
       },
+      "SourceClaims": {
+        "properties": {
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "miss",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "ok"
+          },
+          "suggestion": {
+            "type": "boolean",
+            "title": "Suggestion",
+            "default": false
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inputs"
+          },
+          "job": {
+            "$ref": "#/components/schemas/JobClaim"
+          },
+          "tracks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TrackClaim"
+            },
+            "type": "object",
+            "title": "Tracks"
+          },
+          "alternatives": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "SourceClaims"
+      },
+      "SourceSummary": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "miss",
+              "skipped",
+              "error"
+            ],
+            "title": "Status",
+            "default": "ok"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "run_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run At"
+          },
+          "suggestion": {
+            "type": "boolean",
+            "title": "Suggestion",
+            "default": false
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Inputs"
+          },
+          "alternatives": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Alternatives"
+          },
+          "extra": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Extra"
+          }
+        },
+        "type": "object",
+        "title": "SourceSummary",
+        "description": "One source's claims for a job, display-shaped."
+      },
       "StatsResponse": {
         "properties": {
           "uptime_seconds": {
@@ -15253,6 +16156,111 @@
         ],
         "title": "TemplatePreviewResponse"
       },
+      "TrackClaim": {
+        "properties": {
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "episode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode"
+          },
+          "episode_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode End"
+          },
+          "episode_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Name"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "selected": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TrackClaim"
+      },
       "TrackEditRequest": {
         "properties": {
           "track_id": {
@@ -15303,16 +16311,26 @@
             ],
             "title": "Poster Url"
           },
-          "video_type": {
+          "role": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/TrackRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Video Type"
+            "title": "Season"
           },
           "episode_number": {
             "anyOf": [
@@ -15324,6 +16342,17 @@
               }
             ],
             "title": "Episode Number"
+          },
+          "episode_number_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Number End"
           },
           "episode_name": {
             "anyOf": [
@@ -15357,6 +16386,23 @@
               }
             ],
             "title": "Custom Filename"
+          },
+          "revert_fields": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "role",
+                "title",
+                "season",
+                "episode_number",
+                "episode_number_end",
+                "episode_name",
+                "custom_filename",
+                "excluded"
+              ]
+            },
+            "type": "array",
+            "title": "Revert Fields"
           }
         },
         "additionalProperties": false,
@@ -15365,7 +16411,128 @@
           "track_id"
         ],
         "title": "TrackEditRequest",
-        "description": "One entry in JobUpdateRequest.tracks. `track_id` selects the row; every\nother field is an optional operator edit (omitted=untouched, null=clear)."
+        "description": "One entry in JobUpdateRequest.tracks. `track_id` selects the row; every\nother field is an optional operator edit (omitted=untouched, null=clear).\nIdentity fields become `manual` identity proposals; `revert_fields` drops\nthe operator's value for those fields and hands them back to the\nautomatic sources."
+      },
+      "TrackIdentityView": {
+        "properties": {
+          "track_id": {
+            "type": "string",
+            "title": "Track Id"
+          },
+          "source_ref": {
+            "type": "string",
+            "title": "Source Ref"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
+          "episode_number": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Number"
+          },
+          "episode_number_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Number End"
+          },
+          "episode_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Name"
+          },
+          "custom_filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Custom Filename"
+          },
+          "excluded": {
+            "type": "boolean",
+            "title": "Excluded",
+            "default": false
+          },
+          "identity_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Provenance"
+          },
+          "proposals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TrackClaim"
+            },
+            "type": "object",
+            "title": "Proposals"
+          }
+        },
+        "type": "object",
+        "required": [
+          "track_id",
+          "source_ref"
+        ],
+        "title": "TrackIdentityView",
+        "description": "One track's currently-resolved identity values plus every source's\ncompeting proposal for it (`proposals`, keyed by source id)."
       },
       "TrackKind": {
         "type": "string",
@@ -15375,6 +16542,18 @@
           "data_dump"
         ],
         "title": "TrackKind"
+      },
+      "TrackRole": {
+        "type": "string",
+        "enum": [
+          "main",
+          "episode",
+          "extra",
+          "trailer",
+          "other"
+        ],
+        "title": "TrackRole",
+        "description": "What one title on a disc is. Set by identity sources via the resolver\n(arm_backend.identity) or by the operator; replaces the old free-text\nrole and the per-track video_type."
       },
       "TrackSelection": {
         "type": "string",
@@ -15582,13 +16761,12 @@
           "role": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/TrackRole"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Role"
+            ]
           },
           "edition": {
             "anyOf": [
@@ -15645,17 +16823,6 @@
             ],
             "title": "Poster Url"
           },
-          "video_type": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Video Type"
-          },
           "episode_number": {
             "anyOf": [
               {
@@ -15678,6 +16845,28 @@
             ],
             "title": "Episode Name"
           },
+          "episode_number_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Episode Number End"
+          },
+          "season": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Season"
+          },
           "excluded": {
             "type": "boolean",
             "title": "Excluded",
@@ -15693,6 +16882,20 @@
               }
             ],
             "title": "Custom Filename"
+          },
+          "identity_provenance": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identity Provenance"
           }
         },
         "type": "object",

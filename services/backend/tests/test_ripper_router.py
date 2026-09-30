@@ -26,7 +26,7 @@ import pytest  # noqa: E402
 from arm_backend.db import get_session  # noqa: E402
 from arm_backend.metadata.base import MetadataResult  # noqa: E402
 from arm_backend.routers import ripper as ripper_router  # noqa: E402
-from arm_backend.thediscdb.snapshot import DiscMatch  # noqa: E402
+from arm_backend.identity.sources.thediscdb_snapshot import DiscMatch  # noqa: E402
 from arm_common import (  # noqa: E402
     Config,
     ContainerFormat,
@@ -82,8 +82,10 @@ class _Dispatcher:
     def __init__(self, result: MetadataResult | None = None, *, raise_timeout: bool = False) -> None:
         self.result = result
         self.raise_timeout = raise_timeout
+        self.received_kwargs: dict[str, Any] = {}
 
-    async def identify(self, _scan: Any, _cfg: Any) -> MetadataResult | None:
+    async def identify(self, _scan: Any, _cfg: Any, **_kw: Any) -> MetadataResult | None:
+        self.received_kwargs = _kw
         if self.raise_timeout:
             raise asyncio.TimeoutError
         return self.result
@@ -524,6 +526,25 @@ async def test_persist_review_tracks_is_idempotent() -> None:
     assert added_refs == {"2"}  # index 1 skipped (already exists), only 2 added
 
 
+async def test_persist_review_tracks_no_new_titles_records_no_preset_claim() -> None:
+    """Every title already has a Track row (a full re-POST idempotency case):
+    no rows are added, so no preset proposal is recorded either."""
+    from arm_backend.routers.ripper import _persist_review_tracks
+    from arm_common import Job as _Job, Track as _Track, TrackKind as _TrackKind
+    from arm_common.schemas import ScanResult as _ScanResult, ScanTitle as _ScanTitle
+
+    db = FakeSession()
+    db.rows["rip_presets"] = [_movie_preset()]
+    job = _Job(
+        id="job_01JZXR7K3M5Q8N4VWA0000I02", drive_id="drv_x", disc_type=DiscType.DVD, status=JobStatus.AWAITING_REVIEW
+    )
+    db.rows["tracks"] = [_Track(id="trk_pre", job_id=job.id, kind=_TrackKind.VIDEO_TITLE, index=1, source_ref="1")]
+    scan = _ScanResult(disc_type=DiscType.DVD, titles=[_ScanTitle(index=1, duration_seconds=4200)])
+    await _persist_review_tracks(db, job, scan)
+    assert [t for t in db.added if type(t).__name__ == "Track"] == []
+    assert "identity_claims" not in (job.metadata_json or {})
+
+
 def test_identify_with_hold_parks_without_preset_seeded() -> None:
     """hold_for_review on but the default rip preset isn't seeded -> still parks in
     AWAITING_REVIEW (review-track persistence is skipped, logged) rather than
@@ -598,6 +619,60 @@ def test_identify_unidentified_with_hold_does_not_park(signing_key: bytes) -> No
     assert out["metadata_json"]["flags"]["unidentified"] is True
 
 
+def test_identify_repost_on_held_disc_keeps_operator_exclusion() -> None:
+    """Ripper re-POSTs identify for a disc already parked in review after the
+    operator re-enabled a preset-dropped title. The preset claim must not flip
+    it back and no duplicate Track rows appear (Review Focus 5)."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(hold_for_review=True)]
+    claims = {
+        "sources": {
+            "preset": {"status": "ok", "tracks": {"1": {"selected": True}, "2": {"selected": False}}},
+            "manual": {"status": "ok", "tracks": {"2": {"selected": True}}},
+        }
+    }
+    held = _job(status=JobStatus.AWAITING_REVIEW, meta={"identity_claims": claims})
+    db.rows["jobs"] = [held]
+    db.rows["disc_fingerprints"] = [DiscFingerprint(job_id=held.id, algo="crc64", value="abc")]
+    db.rows["tracks"] = [
+        Track(
+            id="trk_kept",
+            job_id=held.id,
+            kind=TrackKind.VIDEO_TITLE,
+            index=1,
+            source_ref="1",
+            excluded=False,
+        ),
+        Track(
+            id="trk_reenabled",
+            job_id=held.id,
+            kind=TrackKind.VIDEO_TITLE,
+            index=2,
+            source_ref="2",
+            excluded=False,
+            identity_provenance={"excluded": "manual"},
+        ),
+    ]
+
+    app = _make_app(db, dispatcher=_Dispatcher(None))
+    scan = _scan_dict()
+    scan["fingerprints"] = [{"algo": "crc64", "value": "abc"}]
+
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": scan},
+            headers=_SERVICE_AUTH,
+        )
+
+    assert r.status_code == 200
+    assert r.json()["id"] == held.id  # reused, not new
+    assert len(db.rows["tracks"]) == 2  # no duplicate Track rows
+    reenabled = next(t for t in db.rows["tracks"] if t.source_ref == "2")
+    assert reenabled.excluded is False
+
+
 def test_identify_snapshots_drive_serial_onto_job() -> None:
     """The job created by identify carries the drive's hardware serial at
     that moment — a permanent record that survives the Drive row later
@@ -665,6 +740,121 @@ def test_identify_timeout_records_diagnostic() -> None:
     assert r.json()["metadata_json"]["flags"]["dispatch_timeout"] is True
 
 
+# --- /identify (background episode stage trigger) -----------------------------
+
+
+class _StageRunner:
+    """Recording fake `EpisodeStageRunner` (Task 8): records every job_id
+    `schedule` was called with, without running anything for real."""
+
+    def __init__(self) -> None:
+        self.scheduled: list[str] = []
+
+    def schedule(self, job_id: str) -> None:
+        self.scheduled.append(job_id)
+
+
+def test_identify_tv_disc_schedules_episode_stage() -> None:
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Some Show", year=2020, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": _scan_dict()},
+            headers=_SERVICE_AUTH,
+        )
+    assert r.status_code == 200
+    assert stage_runner.scheduled == [r.json()["id"]]
+
+
+def test_identify_movie_does_not_schedule_episode_stage() -> None:
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Iron Man", year=2008, kind="movie", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": _scan_dict()},
+            headers=_SERVICE_AUTH,
+        )
+    assert r.status_code == 200
+    assert stage_runner.scheduled == []
+
+
+def test_identify_without_a_stage_runner_configured_skips_scheduling() -> None:
+    """No `app.state.episode_stage` (every other test in this module, and
+    real routers-under-test elsewhere): the dependency returns None and
+    identify proceeds exactly as before Task 8."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Some Show", year=2020, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": _scan_dict()},
+            headers=_SERVICE_AUTH,
+        )
+    assert r.status_code == 200
+
+
+def test_identify_without_hold_then_rip_start_schedules_episode_stage() -> None:
+    """C1: with the default config (no review hold) identify creates no Track
+    rows, so the stage it schedules sees nothing to match. rip-start is where
+    the tracks appear, so rip-start must schedule the stage too."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    db.rows["rip_presets"] = [_movie_preset()]
+    result = MetadataResult(title="Some Show", year=2020, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": _scan_dict()},
+            headers=_SERVICE_AUTH,
+        )
+        assert r.status_code == 200
+        job_id = r.json()["id"]
+        assert r.json()["status"] == "identified"
+        assert db.rows.get("tracks", []) == []
+        db.rows["jobs"][0].resumed_from_crash = False
+        new = [_track("trk_new", status=TrackStatus.QUEUED, job_id=job_id)]
+        with _patch_select_tracks(new):
+            r2 = client.post(f"/api/ripper/jobs/{job_id}/rip-start", headers=_OWNER_HEADERS)
+    assert r2.status_code == 200
+    assert stage_runner.scheduled == [job_id, job_id]
+
+
+def test_rip_start_movie_does_not_schedule_episode_stage() -> None:
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    job = _job(status=JobStatus.IDENTIFIED, meta={"scan_result": _scan_dict()})
+    job.media_type = MediaType.MOVIE
+    db.rows["jobs"] = [job]
+    db.rows["tracks"] = []
+    db.rows["rip_presets"] = [_movie_preset()]
+    app = _make_app(db)
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client, _patch_select_tracks([_track("trk_new", status=TrackStatus.QUEUED)]):
+        r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
+    assert r.status_code == 200
+    assert stage_runner.scheduled == []
+
+
 # --- /identify (TheDiscDB match) ----------------------------------------------
 
 
@@ -680,7 +870,7 @@ class _ImdbExactDispatcher:
         self.identify_from_imdb_calls.append(imdb_id)
         return self.result
 
-    async def identify(self, _scan: Any, _cfg: Any) -> MetadataResult | None:
+    async def identify(self, _scan: Any, _cfg: Any, **_kw: Any) -> MetadataResult | None:
         pytest.fail("dispatcher.identify must not be called when the exact TheDiscDB identity succeeds")
 
 
@@ -716,9 +906,9 @@ class _FakeStore:
 
 def test_identify_thediscdb_match_stamps_map_and_uses_exact_identity() -> None:
     """A TheDiscDB content-hash match on a new job: the exact-identity path
-    (identify_from_imdb) wins over fuzzy identify, the match is stored in
-    job.metadata_json["thediscdb"], and it is applied onto the review Track
-    row persisted by the hold_for_review path."""
+    (identify_from_imdb) wins over fuzzy identify, the match is stored as an
+    identity_claims source, and it is resolved onto the review Track row
+    persisted by the hold_for_review path."""
     db = FakeSession()
     db.rows["drives"] = [_drive()]
     db.rows["config"] = [_config(hold_for_review=True, thediscdb_enabled=True)]
@@ -740,14 +930,14 @@ def test_identify_thediscdb_match_stamps_map_and_uses_exact_identity() -> None:
     assert r.status_code == 200
     out = r.json()
     assert out["title"] == "Round Midnight"
-    assert out["metadata_json"]["thediscdb"]["matched"]["0"]["type"] == "MainMovie"
+    assert out["metadata_json"]["identity_claims"]["sources"]["thediscdb"]["tracks"]["0"]["role"] == "main"
     assert app.state.thediscdb.called_with == ["2D61282D8DA5EAC2CA87B451BCE9A055"]
     assert dispatcher.identify_from_imdb_calls == ["tt0090557"]
 
     tracks = [row for row in db.added if type(row).__name__ == "Track"]
     by_ref = {t.source_ref: t for t in tracks}
-    assert by_ref["0"].role == "MainMovie"
-    assert by_ref["0"].role_source == "thediscdb"
+    assert by_ref["0"].role == "main"
+    assert by_ref["0"].identity_provenance["role"] == "thediscdb"
     assert by_ref["0"].custom_filename == "Main.mkv"
     assert by_ref["0"].excluded is False
 
@@ -824,16 +1014,17 @@ class _AllMissDispatcher:
     async def identify_from_imdb(self, _imdb_id: str, _cfg: Any) -> MetadataResult | None:
         return None
 
-    async def identify(self, _scan: Any, _cfg: Any) -> MetadataResult | None:
+    async def identify(self, _scan: Any, _cfg: Any, **_kw: Any) -> MetadataResult | None:
         return None
 
 
 def test_identify_thediscdb_match_survives_total_identify_miss() -> None:
     """A TheDiscDB match was found, but BOTH identify_from_imdb and the fuzzy
     fallback miss (block_on_miss=False -> synthetic unidentified IDENTIFIED).
-    The stamped "thediscdb" record must survive the miss-path's metadata_json
-    assignment (a full overwrite here would silently orphan the map, making
-    rip_start's apply_map a no-op even though good disc-map data exists)."""
+    The stamped identity_claims source must survive the miss-path's
+    metadata_json assignment (a full overwrite here would silently orphan the
+    claims, making rip_start's resolve_job a no-op even though good disc-map
+    data exists)."""
     db = FakeSession()
     db.rows["drives"] = [_drive()]
     db.rows["config"] = [_config(block_on_miss=False, thediscdb_enabled=True)]
@@ -854,7 +1045,7 @@ def test_identify_thediscdb_match_survives_total_identify_miss() -> None:
     out = r.json()
     assert out["status"] == "identified"  # unchanged synthetic-miss behavior
     assert out["metadata_json"]["flags"]["unidentified"] is True
-    assert out["metadata_json"]["thediscdb"]["matched"]  # map survived the overwrite
+    assert out["metadata_json"]["identity_claims"]["sources"]["thediscdb"]["tracks"]  # claims survived the overwrite
 
 
 # --- /jobs/{id} & in-flight --------------------------------------------------
@@ -1185,21 +1376,20 @@ def test_rip_start_success_creates_tracks_and_emits() -> None:
     assert any(e["event_type"] == "rip.started" for e in hub.events)
 
 
-def test_rip_start_applies_stored_thediscdb_map_to_new_tracks() -> None:
-    """A job whose identify run stored a TheDiscDB map must have that map
-    applied (apply_map) onto the freshly-created rip-start Track rows."""
+def test_rip_start_applies_stored_thediscdb_claims_to_new_tracks() -> None:
+    """A job whose identify run stored TheDiscDB claims must have them
+    resolved onto the freshly-created rip-start Track rows."""
     db = FakeSession()
     db.rows["drives"] = [_drive()]
-    thediscdb_meta = {
-        "release_slug": "2022-criterion-blu-ray",
-        "title_slug": "round-midnight-1986",
-        "kind": "movie",
-        "contributors": [],
-        "matched": {"1": {"type": "MainMovie", "title": "Round Midnight", "filename": "Main.mkv"}},
+    claims = {
+        "sources": {
+            "thediscdb": {
+                "status": "ok",
+                "tracks": {"1": {"role": "main", "filename": "Main.mkv", "selected": True}},
+            }
+        }
     }
-    db.rows["jobs"] = [
-        _job(status=JobStatus.IDENTIFIED, meta={"scan_result": _scan_dict(), "thediscdb": thediscdb_meta})
-    ]
+    db.rows["jobs"] = [_job(status=JobStatus.IDENTIFIED, meta={"scan_result": _scan_dict(), "identity_claims": claims})]
     db.rows["tracks"] = []
     db.rows["rip_presets"] = [_movie_preset()]
     new = [_track("trk_new", status=TrackStatus.QUEUED, index=1)]
@@ -1207,10 +1397,12 @@ def test_rip_start_applies_stored_thediscdb_map_to_new_tracks() -> None:
         r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
     assert r.status_code == 200
     out_track = r.json()["tracks"][0]
-    assert out_track["role"] == "MainMovie"
+    assert out_track["role"] == "main"
     assert out_track["custom_filename"] == "Main.mkv"
     assert out_track["excluded"] is False
-    assert new[0].role_source == "thediscdb"
+    assert out_track["identity_provenance"]["role"] == "thediscdb"
+    stored = db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]
+    assert stored["preset"]["tracks"]["1"] == {"selected": True}
 
 
 # --- /resume (no-default-preset branch; happy path is in test_ripper_resume) --
@@ -2031,3 +2223,229 @@ def test_identify_music_fills_music_section_and_disc_number() -> None:
     assert job.disc_number == 2
     assert job.media_type == MediaType.MUSIC
     assert "artist" not in md and "tracks" not in md
+
+
+# --- disc hints wired into identify --------------------------------------
+
+
+def test_identify_records_hint_claims_and_applies_job_fields() -> None:
+    """DVD, label-only hints: identify runs run_disc_hints before dispatch and
+    resolve_job after, so season/disc_number land on the job with provenance,
+    and both hint sources are recorded (label ok, bd_title skipped — not a
+    Blu-ray)."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Lost", year=2004, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    scan = _scan_dict()
+    scan["volume_label"] = "LOST_S2D3"
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    job = db.rows["jobs"][0]
+    assert job.season == 2
+    assert job.disc_number == 3
+    assert job.identity_provenance == {"season": "label", "disc_number": "label"}
+    sources = job.metadata_json["identity_claims"]["sources"]
+    assert sources["label"]["status"] == "ok"
+    assert sources["bd_title"]["status"] == "skipped"
+
+
+def test_identify_bd_title_beats_label() -> None:
+    """BLURAY with both a season/disc-shaped label AND BDMT meta: bd_title
+    outranks label (DEFAULT_RANKS), so its season/disc_number/disc_total win
+    even though label's own disc_number claim is still stored."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="The West Wing", year=1999, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    scan = _scan_dict("bluray")
+    scan["volume_label"] = "WW_D3"
+    scan["bd_meta"] = {"name": "The West Wing Season 3", "set_number": 2, "num_sets": 6}
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    job = db.rows["jobs"][0]
+    assert job.disc_number == 2
+    assert job.disc_total == 6
+    assert job.season == 3
+    assert job.identity_provenance == {"season": "bd_title", "disc_number": "bd_title", "disc_total": "bd_title"}
+    sources = job.metadata_json["identity_claims"]["sources"]
+    assert sources["label"]["job"]["disc_number"] == 3
+
+
+def test_identify_passes_hint_title_to_dispatcher() -> None:
+    """The BDMT-derived hint title reaches the dispatcher as title_hint."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    dispatcher = _Dispatcher(MetadataResult(title="Arrival", year=2016, kind="movie", payload={}))
+    app = _make_app(db, dispatcher=dispatcher)
+    scan = _scan_dict("bluray")
+    scan["bd_meta"] = {"name": "Arrival"}
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert dispatcher.received_kwargs.get("title_hint") == "arrival"
+    assert dispatcher.received_kwargs.get("title_hint_is_tv") is False
+
+
+def test_identify_passes_title_hint_is_tv_true_for_season_label() -> None:
+    """A season-bearing label hint reaches the dispatcher as title_hint_is_tv=True."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    dispatcher = _Dispatcher(MetadataResult(title="Lost", year=2004, kind="tv", payload={}))
+    app = _make_app(db, dispatcher=dispatcher)
+    scan = _scan_dict()
+    scan["volume_label"] = "LOST_S2D3"
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert dispatcher.received_kwargs.get("title_hint") == "lost"
+    assert dispatcher.received_kwargs.get("title_hint_is_tv") is True
+
+
+def test_identify_without_bd_meta_key_still_uses_label() -> None:
+    """Review Focus 3: an old ripper's scan_result has no `bd_meta` key at
+    all (not even null). identify must still run label hints and identify
+    exactly as before."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Lost", year=2004, kind="tv", payload={})
+    app = _make_app(db, dispatcher=_Dispatcher(result))
+    scan = _scan_dict()
+    scan["volume_label"] = "LOST_S2D3"
+    assert "bd_meta" not in scan
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    job = db.rows["jobs"][0]
+    assert job.season == 2
+    assert job.disc_number == 3
+    sources = job.metadata_json["identity_claims"]["sources"]
+    assert sources["label"]["status"] == "ok"
+    assert sources["bd_title"]["status"] == "skipped"
+
+
+def test_identify_reuse_records_no_new_hint_claims() -> None:
+    """Guard 1 extended: a re-POSTed identify that reuses an existing job
+    (fingerprint match) must not run disc hints at all — already_identified
+    skips run_disc_hints/resolve_job entirely, so a season/disc-shaped label
+    on the re-scan is neither computed nor applied to the existing job."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(block_on_miss=True, hold_for_review=False)]
+    existing = _job("job_exist", status=JobStatus.AWAITING_USER_ID, disc_type="dvd")
+    existing.title = "Operator Title"
+    db.rows["jobs"] = [existing]
+    db.rows["disc_fingerprints"] = [DiscFingerprint(job_id="job_exist", algo="crc64", value="abc")]
+    dispatcher = _Dispatcher(result=None)  # must NOT be consulted on reuse
+    app = _make_app(db, dispatcher=dispatcher)
+    scan = _scan_dict("dvd")
+    scan["fingerprints"] = [{"algo": "crc64", "value": "abc"}]
+    scan["volume_label"] = "LOST_S2D3"
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/api/ripper/identify",
+            json={"drive_id": "drv_x", "scan_result": scan},
+            headers=_SERVICE_AUTH,
+        )
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "job_exist"
+    assert existing.season is None
+    assert existing.disc_number is None
+    assert existing.identity_provenance is None
+    assert "identity_claims" not in (existing.metadata_json or {})
+
+
+def test_identify_awaiting_user_id_still_applies_label_hints() -> None:
+    """A total identify miss with block_on_miss on still runs disc hints and
+    resolve_job: the label-derived season/disc land on the job even though
+    the job parks at AWAITING_USER_ID for the operator to pick a title."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config(block_on_miss=True)]
+    app = _make_app(db, dispatcher=_Dispatcher(None))
+    scan = _scan_dict()
+    scan["volume_label"] = "LOST_S2D3"
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert r.json()["status"] == "awaiting_user_id"
+    job = db.rows["jobs"][0]
+    assert job.season == 2
+    assert job.disc_number == 3
+    assert job.identity_provenance == {"season": "label", "disc_number": "label"}
+
+
+async def test_resolve_manual_season_beats_label_hint() -> None:
+    """Review Focus 4: a hint-derived season is overridden by an operator
+    resolve, and that manual value survives a later resolve_job re-run."""
+    from arm_backend.jwt_utils import issue_access_token
+    from arm_backend.routers import jobs as jobs_router
+    from arm_backend.identity.pipeline import resolve_job
+    from arm_common import User
+
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    result = MetadataResult(title="Lost", year=2004, kind="tv", payload={})
+    ripper_app = _make_app(db, dispatcher=_Dispatcher(result))
+    scan = _scan_dict()
+    scan["volume_label"] = "LOST_S2D3"
+    body = {"drive_id": "drv_x", "scan_result": scan}
+    with TestClient(ripper_app) as client:
+        r = client.post("/api/ripper/identify", json=body, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    job = db.rows["jobs"][0]
+    assert job.season == 2  # from the label hint
+    assert job.identity_provenance is not None and job.identity_provenance.get("season") == "label"
+    # The identify endpoint's internally-created Job doesn't set this column
+    # (it has no default at the Python level, only a server_default); JobView
+    # (used by /resolve's response) requires a bool, so seed it as the DB's
+    # server default would.
+    job.resumed_from_crash = False
+
+    signing_key = secrets.token_bytes(32)
+    jobs_app = FastAPI()
+    jobs_app.state.signing_key = signing_key
+    jobs_app.state.ws_hub = _Hub()
+    jobs_app.include_router(jobs_router.router)
+
+    async def _override() -> FakeSession:
+        return db
+
+    jobs_app.dependency_overrides[get_session] = _override
+    db.rows.setdefault("users", []).append(
+        User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)
+    )
+    token, _ = issue_access_token("usr_admin", "admin", signing_key)
+
+    with TestClient(jobs_app) as client:
+        r2 = client.post(
+            f"/api/jobs/{job.id}/resolve",
+            json={"title": job.title, "year": job.year, "season": 5},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert r2.status_code == 200
+    job2 = db.rows["jobs"][0]
+    assert job2.season == 5
+    assert job2.identity_provenance is not None and job2.identity_provenance.get("season") == "manual"
+
+    # A later resolve_job re-run (e.g. triggered by a plain field PATCH) must
+    # not let the lower-tier label hint reclaim the operator's season.
+    outcome = await resolve_job(db, job2)
+    assert outcome.changed == 0
+    assert job2.season == 5
+    assert job2.identity_provenance.get("season") == "manual"
