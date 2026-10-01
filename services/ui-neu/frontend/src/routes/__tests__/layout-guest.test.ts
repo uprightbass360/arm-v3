@@ -57,6 +57,12 @@ vi.mock('$lib/stores/auth', async () => {
 		__setSession: (kind: 'admin' | 'guest') => {
 			_role.set(kind === 'admin' ? 'admin' : null);
 			_isAuthenticated.set(kind === 'admin');
+		},
+		// Test-only: a logged-in session whose role is not a writer (admin).
+		// No such account exists today; the ISO gate must still hold for one.
+		__setReader: () => {
+			_role.set('reader');
+			_isAuthenticated.set(true);
 		}
 	};
 });
@@ -187,21 +193,42 @@ describe('Layout guest gating', () => {
 		expect(screen.getByTitle('Quick actions')).toBeInTheDocument();
 	});
 
-	it('quick-actions flyout offers Settings but no Import while the import flag is off', async () => {
+	it('quick-actions flyout offers Settings and Rip from ISO for admin', async () => {
 		renderComponent(Layout, { props: { children: childSnippet() } });
 		await fireEvent.click(screen.getByTitle('Quick actions'));
 		expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
-		expect(screen.queryByRole('menuitem', { name: 'Import' })).not.toBeInTheDocument();
+		expect(screen.getByRole('menuitem', { name: 'Rip from ISO' })).toBeInTheDocument();
 	});
 
-	it('does not mount the Import wizard while the import flag is off', async () => {
-		const { showImportWizard } = await import('$lib/stores/importWizard');
-		showImportWizard.set(true);
+	it('hides the Rip from ISO item and mounts no picker for guests', async () => {
+		const auth = (await import('$lib/stores/auth')) as unknown as {
+			__setSession: (kind: 'admin' | 'guest') => void;
+		};
+		auth.__setSession('guest');
+		const { showIsoPicker } = await import('$lib/stores/isoPicker');
+		showIsoPicker.set(true);
 		try {
 			renderComponent(Layout, { props: { children: childSnippet() } });
-			expect(screen.queryByRole('heading', { name: 'Import' })).not.toBeInTheDocument();
+			expect(screen.queryByRole('menuitem', { name: 'Rip from ISO' })).not.toBeInTheDocument();
+			expect(screen.queryByRole('heading', { name: 'Rip from ISO' })).not.toBeInTheDocument();
 		} finally {
-			showImportWizard.set(false);
+			showIsoPicker.set(false);
+		}
+	});
+
+	it('hides the Rip from ISO item and mounts no picker for a signed-in non-writer', async () => {
+		const auth = (await import('$lib/stores/auth')) as unknown as { __setReader: () => void };
+		auth.__setReader();
+		const { showIsoPicker } = await import('$lib/stores/isoPicker');
+		showIsoPicker.set(true);
+		try {
+			renderComponent(Layout, { props: { children: childSnippet() } });
+			await fireEvent.click(screen.getByTitle('Quick actions'));
+			expect(screen.getByRole('menuitem', { name: 'Settings' })).toBeInTheDocument();
+			expect(screen.queryByRole('menuitem', { name: 'Rip from ISO' })).not.toBeInTheDocument();
+			expect(screen.queryByRole('heading', { name: 'Rip from ISO' })).not.toBeInTheDocument();
+		} finally {
+			showIsoPicker.set(false);
 		}
 	});
 

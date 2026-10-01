@@ -608,6 +608,10 @@ export type ConfigUpdateRequest = {
      */
     max_parallel_transcodes?: number | null;
     /**
+     * Max Parallel Iso Rips
+     */
+    max_parallel_iso_rips?: number | null;
+    /**
      * Transcode Enabled
      */
     transcode_enabled?: boolean | null;
@@ -715,6 +719,10 @@ export type ConfigView = {
      * Max Parallel Transcodes
      */
     max_parallel_transcodes: number;
+    /**
+     * Max Parallel Iso Rips
+     */
+    max_parallel_iso_rips: number;
     /**
      * Transcode Enabled
      */
@@ -930,6 +938,12 @@ export type Drive = {
     sysfs_port?: string | null;
     identity_kind?: DriveIdentityKind | null;
     lifecycle?: DriveLifecycle;
+    kind?: DriveKind;
+    source_kind?: DriveSourceKind | null;
+    /**
+     * Source Path
+     */
+    source_path?: string | null;
     /**
      * Present
      */
@@ -1103,12 +1117,22 @@ export type DriveDiagnosticResponse = {
 export type DriveIdentityKind = 'by_id' | 'port';
 
 /**
+ * DriveKind
+ *
+ * What a Drive row represents. OPTICAL is a physical drive the scanner
+ * found; VIRTUAL is an ephemeral per-ISO-rip drive row (source_kind /
+ * source_path identify the ISO), created enrolled and retired when its one
+ * rip ends.
+ */
+export type DriveKind = 'optical' | 'virtual';
+
+/**
  * DriveLifecycle
  *
  * Operator-owned state of a physical optical drive the backend has seen.
  * Presence (plugged in right now) is a separate, orthogonal fact.
  */
-export type DriveLifecycle = 'detected' | 'ignored' | 'enrolled';
+export type DriveLifecycle = 'detected' | 'ignored' | 'enrolled' | 'retired';
 
 /**
  * DriveMediaStatus
@@ -1157,6 +1181,13 @@ export type DriveRescanResponse = {
      */
     pruned?: number;
 };
+
+/**
+ * DriveSourceKind
+ *
+ * What a virtual drive's source is. Only ISO exists today.
+ */
+export type DriveSourceKind = 'iso';
 
 /**
  * DriveStatus
@@ -1302,6 +1333,12 @@ export type DriveView = {
      */
     last_error: string | null;
     current_job?: DriveCurrentJobView | null;
+    kind?: DriveKind;
+    source_kind?: DriveSourceKind | null;
+    /**
+     * Source Path
+     */
+    source_path?: string | null;
 };
 
 /**
@@ -1806,6 +1843,78 @@ export type InAppChannelConfig = {
      * Type
      */
     type?: 'inapp';
+};
+
+/**
+ * IsoLibraryEntry
+ */
+export type IsoLibraryEntry = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Kind
+     */
+    kind: 'folder' | 'iso';
+    /**
+     * Size Bytes
+     */
+    size_bytes?: number | null;
+    /**
+     * Modified At
+     */
+    modified_at?: string | null;
+    /**
+     * Ripping
+     */
+    ripping?: boolean;
+};
+
+/**
+ * IsoLibraryListing
+ */
+export type IsoLibraryListing = {
+    /**
+     * Host Path
+     */
+    host_path: string;
+    /**
+     * Subpath
+     */
+    subpath: string;
+    /**
+     * Parent Subpath
+     */
+    parent_subpath: string | null;
+    /**
+     * Entries
+     */
+    entries: Array<IsoLibraryEntry>;
+};
+
+/**
+ * IsoRipCreated
+ */
+export type IsoRipCreated = {
+    /**
+     * Drive Id
+     */
+    drive_id: string;
+};
+
+/**
+ * IsoRipRequest
+ */
+export type IsoRipRequest = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Session Id
+     */
+    session_id?: string | null;
 };
 
 /**
@@ -6155,7 +6264,14 @@ export type ListDrivesApiDrivesGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Include Retired
+         *
+         * Include retired (one-shot ISO rip) drive rows.
+         */
+        include_retired?: boolean;
+    };
     url: '/api/drives';
 };
 
@@ -6467,6 +6583,109 @@ export type UnenrollDriveApiDrivesDriveIdUnenrollPostResponses = {
 };
 
 export type UnenrollDriveApiDrivesDriveIdUnenrollPostResponse = UnenrollDriveApiDrivesDriveIdUnenrollPostResponses[keyof UnenrollDriveApiDrivesDriveIdUnenrollPostResponses];
+
+export type LibraryApiIsoLibraryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Subpath
+         */
+        subpath?: string;
+    };
+    url: '/api/iso/library';
+};
+
+export type LibraryApiIsoLibraryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LibraryApiIsoLibraryGetError = LibraryApiIsoLibraryGetErrors[keyof LibraryApiIsoLibraryGetErrors];
+
+export type LibraryApiIsoLibraryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IsoLibraryListing;
+};
+
+export type LibraryApiIsoLibraryGetResponse = LibraryApiIsoLibraryGetResponses[keyof LibraryApiIsoLibraryGetResponses];
+
+export type CreateRipApiIsoRipsPostData = {
+    body: IsoRipRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/iso/rips';
+};
+
+export type CreateRipApiIsoRipsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRipApiIsoRipsPostError = CreateRipApiIsoRipsPostErrors[keyof CreateRipApiIsoRipsPostErrors];
+
+export type CreateRipApiIsoRipsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: IsoRipCreated;
+};
+
+export type CreateRipApiIsoRipsPostResponse = CreateRipApiIsoRipsPostResponses[keyof CreateRipApiIsoRipsPostResponses];
+
+export type CancelRipApiIsoRipsDriveIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/iso/rips/{drive_id}';
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteError = CancelRipApiIsoRipsDriveIdDeleteErrors[keyof CancelRipApiIsoRipsDriveIdDeleteErrors];
+
+export type CancelRipApiIsoRipsDriveIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteResponse = CancelRipApiIsoRipsDriveIdDeleteResponses[keyof CancelRipApiIsoRipsDriveIdDeleteResponses];
 
 export type ListSessionsApiSessionsGetData = {
     body?: never;
