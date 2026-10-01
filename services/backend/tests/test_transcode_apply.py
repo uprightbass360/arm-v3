@@ -96,6 +96,30 @@ def test_compute_outputs_empty_token_raises() -> None:
         compute_outputs(job, [_video_track(1)], sess, tp)
 
 
+def test_compute_outputs_drops_empty_optional_year() -> None:
+    job = _job(year=None)
+    sess = _movie_session("{title} ({year?})/{title} ({year?}).{ext}")
+    [task] = compute_outputs(job, [_video_track(1)], sess, _movie_preset())
+    assert task.output_path == "Iron Man/Iron Man.mkv"
+
+
+def test_compute_outputs_token_used_required_and_optional_stays_required() -> None:
+    job = _job(year=None)
+    sess = _movie_session("{title} ({year?})/{title} {year}.{ext}")
+    with pytest.raises(TemplateValidationError, match=r"token \{year\} resolved empty.*\{year\?\}"):
+        compute_outputs(job, [_video_track(1)], sess, _movie_preset())
+
+
+def test_compute_outputs_no_optional_hint_for_never_optional_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arm_backend import transcode_apply
+
+    monkeypatch.setattr(transcode_apply, "_build_track_ctx", lambda *a, **k: {"title": "Iron Man", "ext": ""})
+    sess = _movie_session("{title}.{ext}")
+    with pytest.raises(TemplateValidationError, match=r"token \{ext\} resolved empty") as exc:
+        compute_outputs(_job(), [_video_track(1)], sess, _movie_preset())
+    assert "optional" not in str(exc.value)
+
+
 def test_compute_outputs_iso_no_transcode_preset() -> None:
     job = _job()
     sess = Session(
@@ -499,6 +523,24 @@ def test_bonus_title_tidies_only_segments_with_an_empty_episode_token() -> None:
     tp = _tv_preset()
     out = compute_outputs(job, [_tv_track(4, role=TrackRole.EXTRA)], sess, tp)
     assert out[0].output_path == "Show  -  Collection/Season 01/Show - S01 - T04.mkv"
+
+
+def test_bonus_title_with_an_empty_optional_year() -> None:
+    # Both empty-token rules at once: the optional {year?} drops with its
+    # brackets, and the bonus title's empty episode tokens are tidied away.
+    template = "{show} ({year?})/Season {season}/{show} - S{season}E{episode} - {episode_title}.{ext}"
+    job = _tv_job(title="Show", year=None)  # type: ignore[arg-type]
+    tracks = [
+        _tv_track(1, role=TrackRole.EPISODE, episode_number=1, episode_name="Pilot"),
+        _tv_track(2, role=TrackRole.EXTRA),
+    ]
+    sess = _tv_session(template)
+    tp = _tv_preset()
+    out = {r.track_id: r.output_path for r in compute_outputs(job, tracks, sess, tp)}
+    assert out == {
+        "trk_1": "Show/Season 01/Show - S01E01 - Pilot.mkv",
+        "trk_2": "Show/Season 01/Show - S01 - T02.mkv",
+    }
 
 
 def test_bonus_title_keeps_e_that_is_not_dangling() -> None:
