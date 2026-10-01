@@ -2543,3 +2543,36 @@ async def test_resolve_manual_season_beats_label_hint() -> None:
     assert outcome.changed == 0
     assert job2.season == 5
     assert job2.identity_provenance.get("season") == "manual"
+
+
+# --- per-drive auto-rip override (setup spec D1) ---
+
+
+@pytest.mark.parametrize(
+    ("mode", "global_value", "expected"),
+    [(None, True, True), (None, False, False), ("manual", True, False), ("auto", False, True)],
+)
+def test_get_config_resolves_per_drive_mode(mode: str | None, global_value: bool, expected: bool) -> None:
+    from arm_common.enums import DriveMode
+
+    db = FakeSession()
+    cfg = _config()
+    cfg.auto_rip_on_insert = global_value
+    db.rows["config"] = [cfg]
+    db.rows["drives"] = [
+        Drive(id="drv_1", hostname="h", device_path="/dev/sr0", drive_mode=DriveMode(mode) if mode else None)
+    ]
+    with TestClient(_make_app(db)) as client:
+        r = client.get("/api/ripper/config", params={"drive_id": "drv_1"}, headers=_SERVICE_AUTH)
+    assert r.status_code == 200
+    assert r.json()["auto_rip_on_insert"] is expected
+
+
+def test_get_config_unknown_drive_falls_back_to_global() -> None:
+    db = FakeSession()
+    cfg = _config()
+    cfg.auto_rip_on_insert = False
+    db.rows["config"] = [cfg]
+    with TestClient(_make_app(db)) as client:
+        r = client.get("/api/ripper/config", params={"drive_id": "nope"}, headers=_SERVICE_AUTH)
+    assert r.json()["auto_rip_on_insert"] is False
