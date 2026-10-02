@@ -2638,6 +2638,7 @@ def test_owner_check_rejects_job_whose_drive_was_deleted() -> None:
     assert r.status_code == 403
     assert r.json()["detail"] == "job has no owning drive"
 
+
 # --- rip-start: ISO image with no titles falls back to the full-disc dump --------
 
 
