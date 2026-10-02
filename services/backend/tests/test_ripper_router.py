@@ -2733,3 +2733,40 @@ def test_rip_start_iso_without_titles_422_when_dump_session_missing() -> None:
     with TestClient(_make_app(db)) as client:
         r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
     assert r.status_code == 422
+
+
+def test_rip_start_job_without_drive_never_takes_the_iso_fallback() -> None:
+    """A job with no drive (its drive row was removed) is not an ISO source."""
+    db = FakeSession()
+    db.rows["config"] = [_config()]
+    db.rows["drives"] = [_virtual_drive()]
+    job = _titleless_bluray_job()
+    db.rows["jobs"] = [job]
+    db.rows["tracks"] = []
+    db.rows["sessions"] = [_session_row(), _iso_dump_session()]
+    db.rows["rip_presets"] = [_movie_preset(), _movie_preset("rpr_session"), _iso_dump_preset()]
+    from arm_backend.routers import ripper as ripper_router
+
+    async def _no_drive(_db, _job):  # type: ignore[no-untyped-def]
+        return await _real_is_iso(_db, _job.model_copy(update={"drive_id": None}))
+
+    _real_is_iso = ripper_router._is_iso_source_job
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(ripper_router, "_is_iso_source_job", _no_drive)
+        with TestClient(_make_app(db)) as client:
+            r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
+    assert r.status_code == 422
+
+
+def test_rip_start_iso_fallback_500_when_dump_preset_not_seeded() -> None:
+    db = FakeSession()
+    db.rows["config"] = [_config()]
+    db.rows["drives"] = [_virtual_drive()]
+    db.rows["jobs"] = [_titleless_bluray_job()]
+    db.rows["tracks"] = []
+    db.rows["sessions"] = [_session_row(), _iso_dump_session()]
+    db.rows["rip_presets"] = [_movie_preset(), _movie_preset("rpr_session")]
+    with TestClient(_make_app(db)) as client:
+        r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
+    assert r.status_code == 500
+    assert "not seeded" in r.json()["detail"]

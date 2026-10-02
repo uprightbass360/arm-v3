@@ -801,10 +801,7 @@ async def rip_start(
             )
             job.pending_session_id = fallback.id
             sess = fallback
-            try:
-                preset_id = _rip_preset_id_from_session(sess, job.disc_type)
-            except RipPresetUnavailable as exc:
-                raise _rip_preset_or_http(exc) from exc
+            preset_id = fallback.rip_preset_id
             min_length_seconds = _min_length_override_from_session(sess)
             preset = (
                 await session.execute(select(RipPreset).where(col(RipPreset.id) == preset_id))
