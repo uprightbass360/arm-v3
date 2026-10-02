@@ -1,22 +1,17 @@
 import { test, expect } from '@playwright/test';
+import { mockShell, holdRequest } from './_mocks';
 
 test.describe('Transcoder visual', () => {
 	test('loading state', async ({ page }) => {
-		let resolve: (v: unknown) => void = () => {};
-		await page.route('**/api/transcoder/**', (route) => {
-			new Promise((r) => {
-				resolve = r;
-			}).then(() =>
-				route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({ jobs: [], total: 0 })
-				})
-			);
-		});
+		const shell = await mockShell(page);
+		// The "All" tab lists tasks with GET /api/transcodes; stats, workers and
+		// the GPU inventory are answered by the shell mocks.
+		const release = await holdRequest(page, '/api/transcodes', []);
+
 		await page.goto('/transcoder');
 		await page.waitForSelector('[aria-busy="true"]', { timeout: 3000 });
-		await expect(page).toHaveScreenshot('transcoder-loading.png', { fullPage: true });
-		resolve(undefined);
+		await expect(page).toHaveScreenshot('transcoder-loading.png', { fullPage: true, animations: 'disabled' });
+		release();
+		expect(shell.unmocked).toEqual([]);
 	});
 });
