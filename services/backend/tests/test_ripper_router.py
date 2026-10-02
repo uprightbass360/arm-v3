@@ -2796,3 +2796,32 @@ def test_rip_start_titleless_disc_folder_says_folder_not_iso() -> None:
         r = client.post("/api/ripper/jobs/job_01JZXR7K3M5Q8N4VWA00000001/rip-start", headers=_OWNER_HEADERS)
     assert r.status_code == 422
     assert r.json()["detail"].startswith("MakeMKV found no titles in this disc folder.")
+
+
+def test_identify_asks_for_tv_first_when_the_disc_is_episodic() -> None:
+    """Kolchak: five ~51 minute titles and an extra, label without a season ->
+    identify must still search TV first (identity.disc_shape)."""
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    dispatcher = _Dispatcher(MetadataResult(title="Kolchak: The Night Stalker", year=1974, kind="tv", payload={}))
+    scan = _scan_dict("bluray")
+    scan["volume_label"] = "Kolchak The Night Stalker Disc 1"
+    scan["titles"] = [{"index": i, "duration_seconds": d} for i, d in enumerate((3093, 3033, 3092, 3070, 3078, 542))]
+    with TestClient(_make_app(db, dispatcher=dispatcher)) as client:
+        r = client.post("/api/ripper/identify", json={"drive_id": "drv_x", "scan_result": scan}, headers=_SERVICE_AUTH)
+    assert r.status_code == 200, r.text
+    assert dispatcher.received_kwargs["prefer_tv"] is True
+
+
+def test_identify_keeps_movie_first_for_a_feature_disc() -> None:
+    db = FakeSession()
+    db.rows["drives"] = [_drive()]
+    db.rows["config"] = [_config()]
+    dispatcher = _Dispatcher(MetadataResult(title="Arrival", year=2016, kind="movie", payload={}))
+    scan = _scan_dict("bluray")
+    scan["titles"] = [{"index": 0, "duration_seconds": 6960}, {"index": 1, "duration_seconds": 900}]
+    with TestClient(_make_app(db, dispatcher=dispatcher)) as client:
+        r = client.post("/api/ripper/identify", json={"drive_id": "drv_x", "scan_result": scan}, headers=_SERVICE_AUTH)
+    assert r.status_code == 200, r.text
+    assert dispatcher.received_kwargs["prefer_tv"] is False
