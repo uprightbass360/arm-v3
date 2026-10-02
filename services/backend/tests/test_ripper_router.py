@@ -2800,7 +2800,7 @@ def test_rip_start_titleless_disc_folder_says_folder_not_iso() -> None:
 
 def test_identify_asks_for_tv_first_when_the_disc_is_episodic() -> None:
     """Kolchak: five ~51 minute titles and an extra, label without a season ->
-    identify must still search TV first (identity.disc_shape)."""
+    identify must still search TV first (arm_common.disc_shape)."""
     db = FakeSession()
     db.rows["drives"] = [_drive()]
     db.rows["config"] = [_config()]
