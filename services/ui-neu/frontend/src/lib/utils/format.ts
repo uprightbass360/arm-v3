@@ -81,6 +81,7 @@ export function etaTime(startTime: string | null | undefined, progressPct: numbe
 export function statusAccentVar(status: string | null | undefined): string {
 	switch (status?.toLowerCase()) {
 		case 'created':
+		case 'preparing': // ISO rip scanning / unpacking its image, no job yet
 			return 'var(--color-status-scanning)';
 		case 'identified': // queued to rip
 		case 'ripping':
@@ -117,6 +118,7 @@ export function statusAccentVar(status: string | null | undefined): string {
 export function statusColor(status: string | null | undefined): string {
 	switch (status?.toLowerCase()) {
 		case 'created': // disc inserted, not yet identified
+		case 'preparing': // ISO rip scanning / unpacking its image, no job yet
 			return 'status-scanning';
 		case 'awaiting_user_id': // needs manual identification
 		case 'awaiting_review': // held for the timed review gate
