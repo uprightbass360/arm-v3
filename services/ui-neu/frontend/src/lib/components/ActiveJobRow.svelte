@@ -28,6 +28,8 @@
 		isoSource?: string | null;
 		/** Live progress from the rips store; carries bytes and rate for a copy. */
 		live?: RipLiveProgress | null;
+		/** Whether that virtual drive rips an .iso file or a disc folder. */
+		isoKind?: 'iso' | 'folder';
 	}
 
 	let {
@@ -38,7 +40,8 @@
 		tracksTotal = null,
 		eta = null,
 		isoSource = null,
-		live = null
+		live = null,
+		isoKind = 'iso'
 	}: Props = $props();
 
 	let transfer = $derived(formatTransfer(live));
@@ -122,7 +125,7 @@
 				<!-- ISO source chip (replaces the absent drive pill for a virtual drive) -->
 				{#if isoSource}
 					<span class="shrink-0">
-						<IsoSourceChip name={isoSource} />
+						<IsoSourceChip name={isoSource} kind={isoKind} />
 					</span>
 				{/if}
 
