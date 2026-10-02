@@ -11,7 +11,7 @@
 	import { jobPoster } from '$lib/utils/poster';
 	import SkeletonCard from './SkeletonCard.svelte';
 	import IsoSourceChip from './IsoSourceChip.svelte';
-	import { formatEta } from '$lib/stores/rips.svelte';
+	import { formatEta, formatTransfer, type RipLiveProgress } from '$lib/stores/rips.svelte';
 	import { slide } from 'svelte/transition';
 	import { isAdmin } from '$lib/stores/auth';
 	import { cancelIsoRip } from '$lib/api/iso';
@@ -26,6 +26,8 @@
 		eta?: number | null;
 		/** ISO file name for this job's (virtual) drive, when it's an ISO rip. */
 		isoSource?: string | null;
+		/** Live progress from the rips store; carries bytes and rate for a copy. */
+		live?: RipLiveProgress | null;
 	}
 
 	let {
@@ -35,8 +37,11 @@
 		tracksRipped = null,
 		tracksTotal = null,
 		eta = null,
-		isoSource = null
+		isoSource = null,
+		live = null
 	}: Props = $props();
+
+	let transfer = $derived(formatTransfer(live));
 
 	let cancelling = $state(false);
 
@@ -203,6 +208,9 @@
 							<span class="shrink-0 job-active-row-meta">{formatEta(eta)} left</span>
 						{/if}
 					</div>
+					{#if transfer}
+						<div class="job-active-row-meta mono">{transfer}</div>
+					{/if}
 				{:else}
 					<div class="flex items-center gap-2">
 						<!-- data-indeterminate: the progress vocabulary's state hook,
