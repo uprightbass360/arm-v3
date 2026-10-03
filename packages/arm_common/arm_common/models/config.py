@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, LargeBinary, String
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field, SQLModel
 
 from arm_common.models._columns import enum_column, updated_at_column
@@ -52,6 +53,20 @@ class Config(SQLModel, table=True):
     thediscdb_enabled: bool = Field(sa_column=Column(Boolean, nullable=False, server_default="true"))
     thediscdb_refresh_days: int = Field(sa_column=Column(Integer, nullable=False, server_default="7"))
     thediscdb_refreshed_at: datetime | None = Field(sa_column=Column(DateTime(timezone=True), nullable=True))
+    # Identity settings (PR 4): ranked source lists for episode matching + disc
+    # hints, the match-tolerance window, and the auto-apply gate.
+    episode_sources: list[str] = Field(
+        default_factory=lambda: ["tmdb", "tvmaze", "tvdb"],
+        sa_column=Column(ARRAY(String), nullable=False, server_default="{tmdb,tvmaze,tvdb}"),
+    )
+    disc_hint_sources: list[str] = Field(
+        default_factory=lambda: ["bd_title", "label"],
+        sa_column=Column(ARRAY(String), nullable=False, server_default="{bd_title,label}"),
+    )
+    episode_match_tolerance_seconds: int = Field(
+        default=300, sa_column=Column(Integer, nullable=False, server_default="300")
+    )
+    episode_auto_apply: bool = Field(default=True, sa_column=Column(Boolean, nullable=False, server_default="true"))
     # See DEFAULT_MUSICBRAINZ_USER_AGENT above — a bare token 403s; operators are
     # still encouraged to override with their own contact info (UI placeholder hint).
     musicbrainz_user_agent: str | None = Field(default=DEFAULT_MUSICBRAINZ_USER_AGENT)
@@ -71,6 +86,24 @@ class Config(SQLModel, table=True):
     # rip (suppressed while `ripping_paused`). Off = today's auto-rip behavior.
     hold_for_review: bool = Field(sa_column=Column(Boolean, nullable=False, server_default="false"))
     manual_wait_seconds: int = Field(sa_column=Column(Integer, nullable=False, server_default="60"))
+    # Drive scanner (spec §2). Read on every tick, so edits apply live.
+    drive_scan_interval_seconds: int = Field(sa_column=Column(Integer, nullable=False, server_default="30"))
+    # Dispatcher parallelism cap - operator config (Settings > Transcoding),
+    # moved from the MAX_PARALLEL_TRANSCODES env var. NULL = not yet seeded;
+    # the backend's config seeder backfills it from the env value once, then
+    # this column is authoritative and the dispatcher reads it per tick.
+    max_parallel_transcodes: int | None = Field(default=None, sa_column=Column(Integer, nullable=True))
+    # ISO-source ripping (ephemeral per-ISO virtual drives, docs/developers/
+    # architecture/10-iso-source-ripping.md): how many ISO rips may run at once.
+    max_parallel_iso_rips: int = Field(default=1, sa_column=Column(Integer, nullable=False, server_default="1"))
+    # Runtime transcode switch (Settings > Transcoding). NULL means the row
+    # predates the column; every reader treats NULL as enabled and the config
+    # seeder backfills it to true on the next boot. Encode-task creation and
+    # container spawn honor it; passthrough (finalize) is never gated.
+    transcode_enabled: bool | None = Field(
+        default=None, sa_column=Column(Boolean, nullable=True, server_default="true")
+    )
+    drive_detected_prune_days: int = Field(sa_column=Column(Integer, nullable=False, server_default="7"))
     default_retention_policy: RetentionPolicy = Field(
         sa_column=enum_column(
             RetentionPolicy,
@@ -87,6 +120,29 @@ class Config(SQLModel, table=True):
         sa_column=Column(Boolean, nullable=False, server_default="false"),
     )
     session_signing_key: bytes | None = Field(sa_column=Column(LargeBinary, nullable=True))
+    # One-shot marker (I1): built-in session_routes are seeded only when this
+    # is false AND the table is empty; seeding then flips it true. Without
+    # this, "seed when table empty" would silently resurrect a route a user
+    # deliberately deleted on every backend restart. See migration
+    # 0035_session_routes_seed_marker for why it defaults true on any
+    # already-deployed Postgres DB.
+    session_routes_seeded: bool = Field(sa_column=Column(Boolean, nullable=False, server_default="false"))
+    # First-run setup walkthrough (setup spec 2026-10-01 §6.1). NULL completed_at
+    # = the walkthrough is active; migration 0042 backfills it for installs in use.
+    setup_completed_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    # {step_id: {"state": "done"|"skipped"|"attention", "at": iso}}; ids and
+    # states are validated in the app (SetupStep / SetupStepState), never PG enums.
+    setup_progress: dict[str, Any] = Field(
+        default_factory=dict, sa_column=Column(JSONB, nullable=False, server_default="{}")
+    )
+    setup_checklist_dismissed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    # "Finish later": the walkthrough stops redirecting, for every browser,
+    # until Settings > "Run setup again" (restart) or completing it clears it.
+    setup_deferred_at: datetime | None = Field(default=None, sa_column=Column(DateTime(timezone=True), nullable=True))
+    # Which drive's ripper last reported the MakeMKV key status (setup "checked by").
+    makemkv_key_checked_by_drive_id: str | None = Field(default=None, sa_column=Column(String, nullable=True))
     updated_by_user_id: str | None = Field(
         sa_column=Column(String, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     )

@@ -40,7 +40,7 @@ from arm_common import (  # noqa: E402
     TrackStatus,
     User,
 )
-from arm_common.enums import TrackKind  # noqa: E402
+from arm_common.enums import TrackKind, TrackRole  # noqa: E402
 from arm_common.models import Track  # noqa: E402
 
 from tests._fakes import FakeSession  # noqa: E402
@@ -67,6 +67,17 @@ class _Hub:
         session: Any = None,
     ) -> None:
         self.events.append({"topic": topic, "event_type": event_type, "payload": payload})
+
+
+class _StageRunner:
+    """Recording fake `EpisodeStageRunner` (Task 8): records every job_id
+    `schedule` was called with, without running anything for real."""
+
+    def __init__(self) -> None:
+        self.scheduled: list[str] = []
+
+    def schedule(self, job_id: str) -> None:
+        self.scheduled.append(job_id)
 
 
 def _make_app(signing_key: bytes, db: FakeSession, hub: _Hub | None = None) -> tuple[FastAPI, str]:
@@ -544,32 +555,236 @@ def test_resolve_success_preserves_scan_and_emits(signing_key: bytes) -> None:
     with TestClient(app) as client:
         r = client.post(
             "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
-            json={"title": "Blade Runner", "year": 1982, "metadata": {"tmdb_id": 78}},
+            json={
+                "title": "Blade Runner",
+                "year": 1982,
+                "external_ids": {"tmdb": "78"},
+            },
             headers=_auth(token),
         )
     assert r.status_code == 200
     body = r.json()
     assert body["job"]["status"] == "identified"
     assert body["job"]["title"] == "Blade Runner"
-    assert body["job"]["metadata_json"]["scan_result"] == {"disc_type": "dvd"}
-    assert body["job"]["metadata_json"]["tmdb_id"] == 78
+    assert body["job"]["metadata_json"]["scan_result"]["disc_type"] == "dvd"
+    assert body["job"]["metadata_json"]["identity"]["external_ids"]["tmdb"] == "78"
     assert body["fan_out"] == []
     types = {e["event_type"] for e in hub.events}
     assert {"identify.resolved", "rip.identify_resolved"} <= types
 
 
+def test_resolve_new_season_schedules_episode_stage(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID)]
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Some Show", "season": 2},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    assert stage_runner.scheduled == ["job_01JZXR7K3M5Q8N4VWA00000001"]
+
+
+def test_resolve_unchanged_identity_does_not_schedule_episode_stage(signing_key: bytes) -> None:
+    """Same title, no season/disc_number/media_type change: the identity
+    fields the background stage cares about are unchanged, so it must not
+    schedule a run."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.RIPPED, title="X", year=2000)]
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2001},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    assert stage_runner.scheduled == []
+
+
+def _ids_job() -> Any:
+    return _job(
+        status=JobStatus.IDENTIFIED,
+        title="X",
+        year=2000,
+        meta={
+            "identity": {"provider": "tmdb", "external_ids": {"imdb": "tt1", "tmdb": "7", "tvdb": "8", "tvmaze": "9"}}
+        },
+    )
+
+
+def test_resolve_changed_imdb_clears_derived_ids_and_reschedules(signing_key: bytes) -> None:
+    """I4: a different imdb means a different show, so the show ids derived
+    from the old one (tvmaze, and tmdb / tvdb unless sent too) are cleared,
+    and the ids change reschedules the episode stage."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_ids_job()]
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"imdb": "tt2", "tvdb": "80"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"imdb": "tt2", "tvdb": "80"}
+    assert stage_runner.scheduled == ["job_01JZXR7K3M5Q8N4VWA00000001"]
+
+
+def test_resolve_changed_tmdb_alone_clears_the_old_imdb(signing_key: bytes) -> None:
+    """Re-sending only a different tmdb names a different show: the old imdb
+    (and tvdb / tvmaze) belong to the previous show and are cleared, so no
+    provider can re-resolve the old show from them."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_ids_job()]
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"tmdb": "70"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"tmdb": "70"}
+    assert stage_runner.scheduled == ["job_01JZXR7K3M5Q8N4VWA00000001"]
+
+
+def test_resolve_changed_imdb_forgets_stored_episode_show_ids_r2(signing_key: bytes) -> None:
+    job = _ids_job()
+    job.metadata_json = {
+        **job.metadata_json,
+        "identity_claims": {
+            "sources": {
+                "episodes_tmdb": {"status": "ok", "inputs": {"show_id": "7", "season": 1}},
+                "episodes_tvmaze": {"status": "miss", "inputs": {}},
+                "label": {"status": "ok", "inputs": {"show_id": "keep"}},
+            }
+        },
+    }
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [job]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"imdb": "tt2"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    sources = db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]
+    assert sources["episodes_tmdb"]["inputs"] == {"show_id": None, "season": 1}
+    assert sources["episodes_tvmaze"]["inputs"] == {}
+    assert sources["label"]["inputs"] == {"show_id": "keep"}  # not an episode source
+
+
+def test_resolve_filling_a_blank_imdb_keeps_tmdb_and_tvdb_r3(signing_key: bytes) -> None:
+    """R3: a TMDb-identified job with no imdb gets one; filling a blank id
+    names no different show, so tmdb and tvdb are kept."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [
+        _job(
+            status=JobStatus.IDENTIFIED,
+            title="X",
+            year=2000,
+            meta={"identity": {"provider": "tmdb", "external_ids": {"tmdb": "7", "tvdb": "8", "tvmaze": "9"}}},
+        )
+    ]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"imdb": "tt1"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"imdb": "tt1", "tmdb": "7", "tvdb": "8", "tvmaze": "9"}
+
+
+def test_resolve_restating_the_same_ids_keeps_derived_ids(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_ids_job()]
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"imdb": "tt1", "tmdb": "7"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"imdb": "tt1", "tmdb": "7", "tvdb": "8", "tvmaze": "9"}
+    assert stage_runner.scheduled == []
+
+
+def test_resolve_musicbrainz_id_leaves_show_ids_alone(signing_key: bytes) -> None:
+    """A musicbrainz_release id names no show: it is stored, and no derived
+    show id is cleared."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_ids_job()]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "X", "year": 2000, "external_ids": {"musicbrainz_release": "mb-1"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"imdb": "tt1", "tmdb": "7", "tvdb": "8", "tvmaze": "9", "musicbrainz_release": "mb-1"}
+
+
+def test_resolve_without_a_stage_runner_configured_skips_scheduling(signing_key: bytes) -> None:
+    """No `app.state.episode_stage` (every other resolve test in this
+    module): the dependency returns None and resolve proceeds exactly as
+    before Task 8."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID)]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Some Show", "season": 2},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+
+
 def test_resolve_cd_writes_structured_metadata(signing_key: bytes) -> None:
     """Resolve for a CD whose MusicBrainz lookup missed: the UI's
     IdentifyDiscDialog posts artist + album + per-track tracks[]; the
-    resolve endpoint stores them verbatim under metadata_json so the
-    music path template (`{artist}/{album}/{track} - {track_title} - ...`)
-    can expand against them when transcode fans out."""
+    resolve endpoint stores them under metadata_json's typed `music`
+    section so the music path template
+    (`{artist}/{album}/{track} - {track_title} - ...`) can expand against
+    them when transcode fans out."""
     db = FakeSession()
     app, token = _make_app(signing_key, db)
     db.rows["jobs"] = [
         _job(
             status=JobStatus.AWAITING_USER_ID,
-            meta={"scan_result": {"disc_type": "cd", "titles": [{"index": 1}, {"index": 2}]}},
+            meta={
+                "scan_result": {
+                    "disc_type": "cd",
+                    "titles": [
+                        {"index": 1, "duration_seconds": 180},
+                        {"index": 2, "duration_seconds": 220},
+                    ],
+                }
+            },
         )
     ]
     with TestClient(app) as client:
@@ -578,7 +793,7 @@ def test_resolve_cd_writes_structured_metadata(signing_key: bytes) -> None:
             json={
                 "title": "Animals",
                 "year": 1977,
-                "metadata": {
+                "music": {
                     "artist": "Pink Floyd",
                     "album": "Animals",
                     "tracks": [{"title": "Dogs"}, {"title": "Pigs"}],
@@ -592,16 +807,79 @@ def test_resolve_cd_writes_structured_metadata(signing_key: bytes) -> None:
     assert body["job"]["title"] == "Animals"
     assert body["job"]["year"] == 1977
     md = body["job"]["metadata_json"]
-    assert md["artist"] == "Pink Floyd"
-    assert md["album"] == "Animals"
-    assert md["tracks"] == [{"title": "Dogs"}, {"title": "Pigs"}]
+    assert md["music"]["artist"] == "Pink Floyd"
+    assert md["music"]["album"] == "Animals"
+    assert md["music"]["tracks"] == [{"title": "Dogs", "position": None, "length_ms": None, "disc_number": None}] + [
+        {"title": "Pigs", "position": None, "length_ms": None, "disc_number": None}
+    ]
+    assert "artist" not in md  # nothing lands top-level
     # scan_result is still preserved alongside the user-supplied metadata.
     assert md["scan_result"]["disc_type"] == "cd"
 
 
+def test_resolve_rejects_unknown_keys(signing_key: bytes) -> None:
+    """The free-form metadata bag is gone (G-03/§3.4): an unrecognized top-
+    level key is a caller bug, not silently-dropped data."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Fixed Title", "metadata": {"season": 3}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 422
+
+
+def test_resolve_music_lands_in_typed_section(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={
+                "title": "Abbey Road",
+                "music": {
+                    "artist": "The Beatles",
+                    "album": "Abbey Road",
+                    "tracks": [{"title": "Come Together"}],
+                },
+            },
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    md = r.json()["job"]["metadata_json"]
+    assert md["music"]["artist"] == "The Beatles"
+    assert "artist" not in md  # nothing lands top-level
+
+
+def test_resolve_title_only_keeps_existing_music_section(signing_key: bytes) -> None:
+    """A partial edit (title only) must not wipe a previously-resolved
+    music section."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [
+        _job(
+            status=JobStatus.IDENTIFIED,
+            meta={"music": {"artist": "The Beatles", "album": "Abbey Road", "tracks": []}},
+        )
+    ]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Renamed"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200
+    md = r.json()["job"]["metadata_json"]
+    assert md["music"]["artist"] == "The Beatles"
+
+
 def test_resolve_accepts_ripped_awaiting_identify(signing_key: bytes) -> None:
-    """The new RIPPED_AWAITING_IDENTIFY status is accepted by resolve as
-    groundwork for the future deferred-placeholder rip path."""
+    """Resolving a ripped placeholder promotes it to RIPPED — the rip is
+    already done, so IDENTIFIED (a pre-rip status) would be wrong (G-09)."""
     db = FakeSession()
     app, token = _make_app(signing_key, db)
     db.rows["jobs"] = [_job(status=JobStatus.RIPPED_AWAITING_IDENTIFY, meta={})]
@@ -613,26 +891,29 @@ def test_resolve_accepts_ripped_awaiting_identify(signing_key: bytes) -> None:
         )
     assert r.status_code == 200
     body = r.json()
-    assert body["job"]["status"] == "identified"
+    assert body["job"]["status"] == "ripped"
     assert body["job"]["title"] == "Home Movie"
     assert body["fan_out"] == []
 
 
 def test_resolve_success_without_preserved_scan(signing_key: bytes) -> None:
-    """job.metadata_json starts empty — merge yields exactly what the caller sent."""
+    """job.metadata_json starts empty and the caller sends no typed sections —
+    the round-tripped bag stays free of scan_result / music / identity."""
     db = FakeSession()
     app, token = _make_app(signing_key, db)
     db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
     with TestClient(app) as client:
         r = client.post(
             "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
-            json={"title": "Solaris", "metadata": {"k": "v"}},
+            json={"title": "Solaris"},
             headers=_auth(token),
         )
     assert r.status_code == 200
     body = r.json()
-    assert "scan_result" not in body["job"]["metadata_json"]
-    assert body["job"]["metadata_json"]["k"] == "v"
+    md = body["job"]["metadata_json"]
+    assert md.get("scan_result") is None
+    assert md.get("music") is None
+    assert md.get("identity") is None
 
 
 @pytest.mark.parametrize("status_in", [JobStatus.IDENTIFIED, JobStatus.RIPPED, JobStatus.RIPPED_PARTIAL])
@@ -663,7 +944,9 @@ def test_resolve_post_rip_correction_preserves_status(signing_key: bytes, status
     assert body["job"]["status"] == status_in.value
     assert body["job"]["title"] == "Sintel"
     assert body["job"]["year"] == 2010
-    # Merge semantics: partial metadata (sent {}) did NOT wipe existing keys.
+    # Merge semantics: a typed ResolveRequest with no metadata sections did
+    # NOT wipe existing keys (including the pre-typed-section extra key
+    # tmdb_id, kept alive by JobMetadata's extra="allow").
     md = body["job"]["metadata_json"]
     assert md["tmdb_id"] == 99
     assert md["scan_result"]["disc_type"] == "dvd"
@@ -673,28 +956,96 @@ def test_resolve_post_rip_correction_preserves_status(signing_key: bytes, status
     assert {"identify.resolved", "rip.identify_resolved"} <= types
 
 
-def test_resolve_metadata_merge_overlays_specific_keys(signing_key: bytes) -> None:
-    """req.metadata keys overlay existing metadata_json keys; non-overlapping keys are
-    preserved. Verifies the explicit-replace path (caller wants to overwrite tmdb_id)."""
+def test_resolve_ripped_partial_placeholder_clears_unidentified_flag(signing_key: bytes) -> None:
+    """Fix 75-6 regression: resolving a RIPPED_PARTIAL placeholder must clear
+    the spent `unidentified` flag too. RIPPED_PARTIAL stays in the PRESERVE
+    bucket (partiality wins over the placeholder status -- see rip-complete),
+    so before the fix the pop only ran on the PROMOTE branch and a resolved
+    partial placeholder kept flags.unidentified=true forever."""
     db = FakeSession()
     app, token = _make_app(signing_key, db)
     db.rows["jobs"] = [
         _job(
-            status=JobStatus.IDENTIFIED,
-            meta={"tmdb_id": 99, "scan_result": {"x": 1}, "extra": "keep-me"},
+            status=JobStatus.RIPPED_PARTIAL,
+            title="MY_DISC",
+            year=None,
+            meta={"flags": {"unidentified": True}},
         )
     ]
     with TestClient(app) as client:
         r = client.post(
             "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
-            json={"title": "T", "metadata": {"tmdb_id": 42}},
+            json={"title": "Iron Man", "year": 2008},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["job"]["status"] == "ripped_partial"  # status unchanged (PRESERVE)
+    # Cleared per flag_is_set's semantics: the key may still be present as
+    # False (JobMetadata's Flags model default) or absent entirely -- either
+    # way it must no longer read as "set".
+    assert not (body["job"]["metadata_json"].get("flags") or {}).get("unidentified")
+    assert not (db.rows["jobs"][0].metadata_json.get("flags") or {}).get("unidentified")
+
+
+def test_resolve_external_ids_overlay_existing_identity(signing_key: bytes) -> None:
+    """req.external_ids overlays the existing identity.external_ids section
+    field-by-field, not a wholesale replace. Sending only a DIFFERENT tmdb
+    names a different title, so the old imdb is stale and cleared (I4);
+    same-show partial updates keep the other ids (see the R3 and restate
+    tests). Non-overlapping sections (scan_result) are preserved."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [
+        _job(
+            status=JobStatus.IDENTIFIED,
+            meta={
+                "identity": {"provider": "tmdb", "external_ids": {"tmdb": "99", "imdb": "tt0111161"}},
+                "scan_result": {"disc_type": "dvd"},
+            },
+        )
+    ]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "T", "external_ids": {"tmdb": "42"}},
             headers=_auth(token),
         )
     assert r.status_code == 200
     md = r.json()["job"]["metadata_json"]
-    assert md["tmdb_id"] == 42  # overwritten
-    assert md["extra"] == "keep-me"  # preserved
-    assert md["scan_result"] == {"x": 1}  # preserved
+    assert md["identity"]["external_ids"]["tmdb"] == "42"  # overwritten
+    assert md["identity"]["external_ids"]["imdb"] is None  # belonged to the old title
+    assert md["identity"]["provider"] == "tmdb"  # preserved
+    assert md["scan_result"]["disc_type"] == "dvd"  # preserved
+
+
+def test_resolve_explicit_null_external_id_clears_it(signing_key: bytes) -> None:
+    """Fix 75-5 regression: sending an external_ids member field as explicit
+    null CLEARS the stored id -- distinct from omitting the field entirely
+    (which keeps it, covered by test_resolve_external_ids_overlay_existing_identity).
+    Before the fix, `is not None` treated "sent null" and "not sent" the
+    same, so an explicit null silently kept the old value instead of
+    clearing it."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [
+        _job(
+            status=JobStatus.IDENTIFIED,
+            meta={
+                "identity": {"provider": "tmdb", "external_ids": {"tmdb": "99", "imdb": "tt0111161"}},
+            },
+        )
+    ]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "T", "external_ids": {"imdb": None}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    md = r.json()["job"]["metadata_json"]
+    assert md["identity"]["external_ids"]["imdb"] is None  # explicit null clears
+    assert md["identity"]["external_ids"]["tmdb"] == "99"  # untouched field survives
 
 
 # --- apply_session exception mapping (happy/collision in test_apply_session) --
@@ -960,3 +1311,663 @@ def test_update_job_edits_multiple_tracks(signing_key: bytes) -> None:
     assert by_id[_TRK_ID_B].episode_name == "Part Two"
     updated = [e for e in hub.events if e["event_type"] == "track.updated"]
     assert len(updated) == 2
+
+
+# --- update_job identity edits become manual proposals (identity core) ------
+
+
+def test_patch_track_identity_edit_is_manual_claim_with_provenance(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    db.rows["tracks"][0].source_ref = "1"
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "episode_number": 5}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    track = db.rows["tracks"][0]
+    assert track.episode_number == 5
+    assert track.identity_provenance == {"episode_number": "manual"}
+    claims = db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]["manual"]
+    assert claims["tracks"]["1"] == {"episode": 5}
+
+
+def test_patch_manual_clear_beats_disc_map(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {"identity_claims": {"sources": {"thediscdb": {"tracks": {"1": {"episode_name": "Pilot"}}}}}}
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.episode_name = "Pilot"
+    track.identity_provenance = {"episode_name": "thediscdb"}
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "episode_name": None}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    track = db.rows["tracks"][0]
+    assert track.episode_name is None
+    assert track.identity_provenance == {"episode_name": "manual"}
+
+
+def test_patch_revert_hands_field_back_to_disc_map(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {
+        "identity_claims": {
+            "sources": {
+                "thediscdb": {"tracks": {"1": {"episode_name": "Pilot"}}},
+                "manual": {"tracks": {"1": {"episode_name": None}}},
+            }
+        }
+    }
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.episode_name = None
+    track.identity_provenance = {"episode_name": "manual"}
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "revert_fields": ["episode_name"]}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    track = db.rows["tracks"][0]
+    assert track.episode_name == "Pilot"
+    assert track.identity_provenance == {"episode_name": "thediscdb"}
+
+
+def test_patch_revert_with_no_other_proposer_resets_to_default(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {"identity_claims": {"sources": {"manual": {"tracks": {"1": {"episode": 5}}}}}}
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.episode_number = 5
+    track.identity_provenance = {"episode_number": "manual"}
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "revert_fields": ["episode_number"]}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.rows["tracks"][0].episode_number is None
+
+
+def test_patch_sibling_edit_keeps_migrated_legacy_exclusion(signing_key: bytes) -> None:
+    """Post-0039 shape of a legacy job: the disc map selects track 1, but the
+    operator excluded it before the upgrade, so 0039 seeded a manual
+    `selected=false`. Editing a sibling runs the resolver over every track;
+    track 1 must stay excluded."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {
+        "identity_claims": {
+            "sources": {
+                "thediscdb": {"tracks": {"1": {"selected": True, "role": "main"}}},
+                "manual": {"tracks": {"1": {"selected": False}}},
+            }
+        }
+    }
+    legacy = db.rows["tracks"][0]
+    legacy.source_ref = "1"
+    legacy.excluded = True
+    legacy.role = TrackRole.MAIN
+    sibling_id = "trk_00000000000000000000000002"
+    db.rows["tracks"].append(
+        Track(id=sibling_id, job_id=_JOB_ID_A, kind=TrackKind.VIDEO_TITLE, index=2, source_ref="2")
+    )
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": sibling_id, "custom_filename": "Bonus"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    legacy = db.rows["tracks"][0]
+    assert legacy.excluded is True
+    assert legacy.identity_provenance == {"role": "thediscdb", "excluded": "manual"}
+    assert db.rows["tracks"][1].custom_filename == "Bonus"
+
+
+def test_patch_emits_track_updated_for_resolver_changed_sibling(signing_key: bytes) -> None:
+    """PR 3a Task 4: PATCHing track "1" (a plain identity edit) runs the
+    resolver over every track on the job; track "2" carries a thediscdb
+    episode claim that was never applied and picks one up here. Both track
+    ids must get exactly one track.updated event (PR 1's parked finding)."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {"identity_claims": {"sources": {"thediscdb": {"tracks": {"2": {"episode": 7}}}}}}
+    track1 = db.rows["tracks"][0]
+    track1.source_ref = "1"
+    sibling_id = "trk_00000000000000000000000002"
+    db.rows["tracks"].append(
+        Track(id=sibling_id, job_id=_JOB_ID_A, kind=TrackKind.VIDEO_TITLE, index=2, source_ref="2")
+    )
+    hub = _Hub()
+    app, token = _make_app(signing_key, db, hub=hub)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "custom_filename": "Bonus"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    sibling = db.rows["tracks"][1]
+    assert sibling.episode_number == 7
+    updated_ids = [e["payload"]["track_id"] for e in hub.events if e["event_type"] == "track.updated"]
+    assert updated_ids.count(_TRK_ID_A) == 1
+    assert updated_ids.count(sibling_id) == 1
+    assert len(updated_ids) == 2
+
+
+def test_patch_plain_fields_still_set_directly(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "year": 1999}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.rows["tracks"][0].year == 1999
+    assert "identity_claims" not in db.rows["jobs"][0].metadata_json
+
+
+def test_patch_job_disc_fields_are_manual_claims(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(f"/api/jobs/{_JOB_ID_A}", json={"disc_number": 2, "disc_total": 4}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert (job.disc_number, job.disc_total) == (2, 4)
+    assert job.identity_provenance == {"disc_number": "manual", "disc_total": "manual"}
+
+
+def test_patch_disc_number_change_schedules_episode_stage(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as c:
+        r = c.patch(f"/api/jobs/{_JOB_ID_A}", json={"disc_number": 2}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert stage_runner.scheduled == [_JOB_ID_A]
+
+
+def test_patch_locks_the_job_row_before_its_tracks(signing_key: bytes) -> None:
+    """M2: PATCH selects the job `FOR UPDATE` (lock order: job, then tracks)."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "custom_filename": "a.mkv"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.locked[0] == "jobs"
+
+
+def test_resolve_locks_the_job_row(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID)]
+    with TestClient(app) as client:
+        r = client.post("/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve", json={"title": "T"}, headers=_auth(token))
+    assert r.status_code == 200
+    assert db.locked[0] == "jobs"
+
+
+def test_patch_filename_only_does_not_schedule_episode_stage(signing_key: bytes) -> None:
+    """A PATCH that only touches a track's filename never changes
+    season/disc_number/media_type/title, so it must not schedule the
+    background episode stage."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    stage_runner = _StageRunner()
+    app.state.episode_stage = stage_runner
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "custom_filename": "renamed"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert stage_runner.scheduled == []
+
+
+def test_patch_without_a_stage_runner_configured_skips_scheduling(signing_key: bytes) -> None:
+    """No `app.state.episode_stage` (every other PATCH test in this module):
+    the dependency returns None and the request proceeds exactly as before
+    Task 8."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(f"/api/jobs/{_JOB_ID_A}", json={"disc_number": 2}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+
+
+def test_patch_rejects_unknown_revert_field(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "revert_fields": ["year"]}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 422
+
+
+def test_patch_rejects_video_type(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "video_type": "series"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 422
+
+
+# --- resolve fills the identity columns (step 2 / G-03, G-14) ----------------
+
+
+def test_resolve_sets_media_type_and_season_columns(signing_key: bytes) -> None:
+    """Resolve is where a human corrects what identify guessed: media_type
+    (a TV box set mis-searched as a movie) and season are first-class."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "The West Wing", "year": 1999, "media_type": "tv", "season": 3, "disc_number": 2},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert job.media_type == MediaType.TV
+    assert job.season == 3
+    assert job.disc_number == 2
+    body = r.json()
+    assert body["job"]["media_type"] == "tv"
+    assert body["job"]["season"] == 3
+
+
+def test_resolve_disc_and_season_become_manual_claims(signing_key: bytes) -> None:
+    """Disc position and season are identity fields: resolve records them as
+    manual claims with provenance, not plain column writes -- so a later
+    disc-map or preset proposal can never silently override them."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Show", "disc_number": 2, "disc_total": 3, "season": 1},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert (job.season, job.disc_number, job.disc_total) == (1, 2, 3)
+    assert job.identity_provenance == {"season": "manual", "disc_number": "manual", "disc_total": "manual"}
+
+
+def _job_with_label_disc_hint() -> Job:
+    """A job whose disc_number/disc_total were filled by the label disc-hint
+    source (tier 4), as identify would leave it before the operator opens the
+    identify dialog to pick a title."""
+    job = _job(
+        status=JobStatus.AWAITING_USER_ID,
+        meta={"identity_claims": {"sources": {"label": {"job": {"disc_number": 3, "disc_total": 6}}}}},
+    )
+    job.disc_number = 3
+    job.disc_total = 6
+    job.identity_provenance = {"disc_number": "label", "disc_total": "label"}
+    return job
+
+
+def test_resolve_without_disc_fields_keeps_hinted_disc(signing_key: bytes) -> None:
+    """Review Focus 5: picking a title in the identify dialog after hints
+    filled the disc number must not wipe it -- /resolve must not treat
+    OMITTED disc_number/disc_total as an explicit manual null."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job_with_label_disc_hint()]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Lost"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert (job.disc_number, job.disc_total) == (3, 6)
+    assert job.identity_provenance == {"disc_number": "label", "disc_total": "label"}
+
+
+def test_resolve_explicit_null_disc_clears_hint(signing_key: bytes) -> None:
+    """An EXPLICIT null for disc_number is the operator saying "clear it" --
+    distinct from omitting the field (test_resolve_without_disc_fields_keeps_hinted_disc
+    above), and still wins over the hint as a manual claim."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job_with_label_disc_hint()]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Lost", "disc_number": None},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert job.disc_number is None
+    assert job.identity_provenance == {"disc_number": "manual", "disc_total": "label"}
+
+
+def test_resolve_legacy_metadata_season_and_disc_now_rejected(signing_key: bytes) -> None:
+    """G-14's transitional lift (season/disc inside a free-form `metadata`
+    bag) is retired now that season/disc are first-class request fields
+    (G-03/§3.4): the old wire shape 422s instead of being silently lifted."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "The West Wing", "metadata": {"season": "03", "disc": "2"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 422
+
+
+def test_resolve_omitting_media_type_and_season_keeps_them(signing_key: bytes) -> None:
+    """Unlike title/year (a full identity statement), media_type and season
+    are classifications: a title-only correction must not wipe them."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _job(status=JobStatus.AWAITING_USER_ID, meta={})
+    job.media_type = MediaType.TV
+    job.season = 3
+    db.rows["jobs"] = [job]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "The West Wing (fixed)"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.rows["jobs"][0].media_type == MediaType.TV
+    assert db.rows["jobs"][0].season == 3
+
+
+def test_resolve_explicit_null_media_type_and_season_clears_them(signing_key: bytes) -> None:
+    """Fix 75-5 regression: EXPLICIT null for media_type/season clears the
+    stored value -- distinct from omitting the field, which keeps it
+    (test_resolve_omitting_media_type_and_season_keeps_them above). Before
+    the fix, `req.media_type is not None` couldn't distinguish "sent null"
+    from "not sent", so an explicit null silently no-opped instead of
+    clearing."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _job(status=JobStatus.AWAITING_USER_ID, meta={})
+    job.media_type = MediaType.TV
+    job.season = 3
+    db.rows["jobs"] = [job]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "The West Wing (fixed)", "media_type": None, "season": None},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.rows["jobs"][0].media_type is None
+    assert db.rows["jobs"][0].season is None
+
+
+def test_resolve_season_first_class_field_used_directly(signing_key: bytes) -> None:
+    """season is a first-class request field now (no legacy metadata bag to
+    fall back to); an unparseable value is a 422 from field validation, not
+    a silently-discarded loose key."""
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "The West Wing", "season": "three"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 422
+
+
+# --- corrupt / future-version identity_claims never 500s a read or write ----
+
+_CORRUPT_CLAIMS = {"sources": "garbage", "future_key": 1}
+
+
+def test_list_and_detail_tolerate_corrupt_identity_claims(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(meta={"identity_claims": _CORRUPT_CLAIMS})]
+    db.rows["tracks"] = [_track("t1", status=TrackStatus.DONE)]
+    with TestClient(app) as client:
+        listed = client.get("/api/jobs", headers=_auth(token))
+        detail = client.get("/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001", headers=_auth(token))
+    assert listed.status_code == 200, listed.text
+    assert listed.json()[0]["metadata_json"]["identity_claims"] == _CORRUPT_CLAIMS
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["job"]["metadata_json"]["identity_claims"] == _CORRUPT_CLAIMS
+
+
+def test_patch_plain_field_tolerates_corrupt_identity_claims(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(meta={"identity_claims": _CORRUPT_CLAIMS})]
+    with TestClient(app) as client:
+        r = client.patch(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001",
+            json={"poster_url_manual": "https://x/p.jpg"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["metadata_json"]["identity_claims"] == _CORRUPT_CLAIMS
+
+
+def test_resolve_tolerates_and_keeps_corrupt_identity_claims(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={"identity_claims": _CORRUPT_CLAIMS})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Fixed"},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert db.rows["jobs"][0].metadata_json["identity_claims"] == _CORRUPT_CLAIMS
+
+
+# --- restated values are not recorded as manual claims ----------------------
+
+
+def test_patch_resending_unchanged_auto_values_records_no_manual_claim(signing_key: bytes) -> None:
+    """ui-neu re-sends every field on save (incl. null for blanks); restating
+    what TheDiscDB set, or an empty field, must not pin it as manual."""
+    db = FakeSession()
+    _seed_job_with_track(db)
+    job = db.rows["jobs"][0]
+    job.metadata_json = {"identity_claims": {"sources": {"thediscdb": {"tracks": {"1": {"episode_name": "Pilot"}}}}}}
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.episode_name = "Pilot"
+    track.identity_provenance = {"episode_name": "thediscdb"}
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "episode_name": "Pilot", "custom_filename": None}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    assert "manual" not in db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]
+    assert db.rows["tracks"][0].identity_provenance == {"episode_name": "thediscdb"}
+
+
+def test_patch_resending_manual_value_records_normally(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.episode_name = "Mine"
+    track.identity_provenance = {"episode_name": "manual"}
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "episode_name": "Mine"}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    manual = db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]["manual"]
+    assert manual["tracks"]["1"] == {"episode_name": "Mine"}
+    assert db.rows["tracks"][0].identity_provenance == {"episode_name": "manual"}
+
+
+def test_patch_clearing_a_set_value_records_manual_null(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed_job_with_track(db)
+    track = db.rows["tracks"][0]
+    track.source_ref = "1"
+    track.custom_filename = "typed.mkv"
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch(
+            f"/api/jobs/{_JOB_ID_A}",
+            json={"tracks": [{"track_id": _TRK_ID_A, "custom_filename": None}]},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    manual = db.rows["jobs"][0].metadata_json["identity_claims"]["sources"]["manual"]
+    assert manual["tracks"]["1"] == {"filename": None}
+    assert db.rows["tracks"][0].custom_filename is None
+    assert db.rows["tracks"][0].identity_provenance == {"custom_filename": "manual"}
+
+
+def test_resolve_null_disc_fields_on_empty_job_record_nothing(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    db.rows["jobs"] = [_job(status=JobStatus.AWAITING_USER_ID, meta={})]
+    with TestClient(app) as client:
+        r = client.post(
+            "/api/jobs/job_01JZXR7K3M5Q8N4VWA00000001/resolve",
+            json={"title": "Show", "disc_number": None, "disc_total": None, "season": None},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    job = db.rows["jobs"][0]
+    assert "identity_claims" not in job.metadata_json
+    assert job.identity_provenance is None
+
+
+def _kind_job() -> Job:
+    return _job(
+        status=JobStatus.IDENTIFIED,
+        meta={"identity": {"provider": "tmdb", "external_ids": {"tmdb": "1749913", "tmdb_kind": "movie"}}},
+    )
+
+
+def test_resolve_stores_the_picked_series_ids_and_kind(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _kind_job()
+    db.rows["jobs"] = [job]
+    app.state.episode_stage = _StageRunner()
+    body = {
+        "title": "Kolchak: The Night Stalker",
+        "year": 1974,
+        "media_type": "tv",
+        "external_ids": {"tmdb": "5084", "imdb": "tt0071003", "tvdb": "77170", "tmdb_kind": "tv"},
+    }
+    with TestClient(app) as client:
+        r = client.post(f"/api/jobs/{job.id}/resolve", json=body, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    ids = {k: v for k, v in r.json()["job"]["metadata_json"]["identity"]["external_ids"].items() if v is not None}
+    assert ids == {"tmdb": "5084", "imdb": "tt0071003", "tvdb": "77170", "tmdb_kind": "tv"}
+
+
+def test_resolve_with_a_new_tmdb_and_no_kind_drops_the_old_kind(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _kind_job()
+    db.rows["jobs"] = [job]
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/jobs/{job.id}/resolve",
+            json={"title": "X", "external_ids": {"tmdb": "5084"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    ids = r.json()["job"]["metadata_json"]["identity"]["external_ids"]
+    assert ids.get("tmdb") == "5084" and ids.get("tmdb_kind") is None
+
+
+def test_resolve_show_change_clears_the_old_kind(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _kind_job()
+    job.metadata_json["identity"]["external_ids"]["imdb"] = "tt1"
+    db.rows["jobs"] = [job]
+    with TestClient(app) as client:
+        r = client.post(
+            f"/api/jobs/{job.id}/resolve",
+            json={"title": "X", "external_ids": {"imdb": "tt9"}},
+            headers=_auth(token),
+        )
+    assert r.status_code == 200, r.text
+    ids = r.json()["job"]["metadata_json"]["identity"]["external_ids"]
+    assert ids.get("imdb") == "tt9" and ids.get("tmdb") is None and ids.get("tmdb_kind") is None
+
+
+def test_patch_switches_media_type_and_reschedules_matching(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, token = _make_app(signing_key, db)
+    job = _kind_job()
+    job.media_type = MediaType.MOVIE
+    db.rows["jobs"] = [job]
+    runner = _StageRunner()
+    app.state.episode_stage = runner
+    with TestClient(app) as client:
+        r = client.patch(f"/api/jobs/{job.id}", json={"media_type": "tv"}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["media_type"] == "tv"
+    assert r.json()["metadata_json"]["identity"]["external_ids"]["tmdb"] == "1749913"  # ids kept
+    assert runner.scheduled == [job.id]

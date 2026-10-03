@@ -2,6 +2,44 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderComponent, screen, cleanup, waitFor, fireEvent } from '$lib/test-utils';
 import SettingsPage from '../+page.svelte';
 import { fetchSettings } from '$lib/api/settings';
+import { fetchDrives, fetchDriveDiagnostic } from '$lib/api/drives';
+import { fetchGpus } from '$lib/api/gpus';
+import { get } from 'svelte/store';
+import { setTranscoderEnabled, setTranscodeRuntimeEnabled, transcodeRuntimeEnabled } from '$lib/stores/config';
+import type { DriveView } from '$lib/types/api.gen';
+
+function drive(over: Partial<DriveView> = {}): DriveView {
+	return {
+		id: 'drv_1',
+		hostname: 'arm-ripper-abc',
+		device_path: '/dev/sr0',
+		display_name: null,
+		status: 'online',
+		last_seen_at: null,
+		media_status: null,
+		media_status_at: null,
+		default_session_id: null,
+		rip_speed: null,
+		drive_mode: null,
+		uhd_capable: null,
+		prescan_cache_mb: null,
+		prescan_timeout: null,
+		prescan_retries: null,
+		disc_enum_timeout: null,
+		created_at: null,
+		updated_at: null,
+		lifecycle: 'enrolled',
+		present: true,
+		identity_kind: 'by_id',
+		serial: 'AAAABBBB000E',
+		by_id_name: 'usb-X_AAAABBBB000E-0:0',
+		vendor: 'PIONEER',
+		model: 'BD-RW BDR-S12JX',
+		last_error: null,
+		current_job: null,
+		...over
+	} as DriveView;
+}
 
 // Per-test override of the fetchSettings mock with a custom config patch.
 function withConfig(patch: Record<string, unknown>) {
@@ -23,33 +61,126 @@ const mockSchema = {
 		{
 			name: 'Metadata',
 			fields: [
-				{ key: 'metadata_provider', group: 'Metadata', tier: 'operator', label: 'Metadata provider', help: '', type: 'enum', editable: true, enum_values: ['tmdb', 'omdb'] },
-				{ key: 'tmdb_api_key', group: 'Metadata', tier: 'secret', label: 'TMDb API key', help: '', type: 'string', editable: true, enum_values: null }
+				{
+					key: 'metadata_provider',
+					group: 'Metadata',
+					tier: 'operator',
+					label: 'Metadata provider',
+					help: '',
+					type: 'enum',
+					editable: true,
+					enum_values: ['tmdb', 'omdb']
+				},
+				{
+					key: 'tmdb_api_key',
+					group: 'Metadata',
+					tier: 'secret',
+					label: 'TMDb API key',
+					help: '',
+					type: 'string',
+					editable: true,
+					enum_values: null
+				}
 			]
 		},
 		{
 			name: 'Ripping',
 			fields: [
-				{ key: 'auto_rip_on_insert', group: 'Ripping', tier: 'operator', label: 'Auto-rip on insert', help: '', type: 'bool', editable: true, enum_values: null },
-				{ key: 'block_on_miss', group: 'Ripping', tier: 'operator', label: 'Block on miss', help: '', type: 'bool', editable: true, enum_values: null }
+				{
+					key: 'auto_rip_on_insert',
+					group: 'Ripping',
+					tier: 'operator',
+					label: 'Auto-rip on insert',
+					help: '',
+					type: 'bool',
+					editable: true,
+					enum_values: null
+				},
+				{
+					key: 'block_on_miss',
+					group: 'Ripping',
+					tier: 'operator',
+					label: 'Block on miss',
+					help: '',
+					type: 'bool',
+					editable: true,
+					enum_values: null
+				}
 			]
 		},
 		{
 			name: 'Transcoding',
 			fields: [
-				{ key: 'auto_transcode_on_idle', group: 'Transcoding', tier: 'operator', label: 'Auto-transcode on idle', help: '', type: 'bool', editable: true, enum_values: null }
+				{
+					key: 'transcode_enabled',
+					group: 'Transcoding',
+					tier: 'operator',
+					label: 'Enable transcoding',
+					help: '',
+					type: 'bool',
+					editable: true,
+					enum_values: null
+				},
+				{
+					key: 'transcode_capable',
+					group: 'Transcoding',
+					tier: 'infra',
+					label: 'Transcode capable',
+					help: '',
+					type: 'bool',
+					editable: false,
+					enum_values: null
+				},
+				{
+					key: 'auto_transcode_on_idle',
+					group: 'Transcoding',
+					tier: 'operator',
+					label: 'Auto-transcode on idle',
+					help: '',
+					type: 'bool',
+					editable: true,
+					enum_values: null
+				},
+				{
+					key: 'max_parallel_transcodes',
+					group: 'Transcoding',
+					tier: 'operator',
+					label: 'Max parallel transcodes',
+					help: '',
+					type: 'int',
+					editable: true,
+					enum_values: null
+				}
 			]
 		},
 		{
 			name: 'Notifications',
 			fields: [
-				{ key: 'notifications_enabled', group: 'Notifications', tier: 'operator', label: 'Enable notifications', help: '', type: 'bool', editable: true, enum_values: null }
+				{
+					key: 'notifications_enabled',
+					group: 'Notifications',
+					tier: 'operator',
+					label: 'Enable notifications',
+					help: '',
+					type: 'bool',
+					editable: true,
+					enum_values: null
+				}
 			]
 		},
 		{
 			name: 'System',
 			fields: [
-				{ key: 'RAW_ROOT', group: 'System', tier: 'infra', label: 'Raw root', help: '', type: 'string', editable: false, enum_values: null }
+				{
+					key: 'RAW_ROOT',
+					group: 'System',
+					tier: 'infra',
+					label: 'Raw root',
+					help: '',
+					type: 'string',
+					editable: false,
+					enum_values: null
+				}
 			]
 		}
 	]
@@ -60,7 +191,12 @@ const mockConfig = {
 	tmdb_api_key: '<hidden>',
 	auto_rip_on_insert: true,
 	block_on_miss: true,
+	// The column's real default: a ripper-only box still has it true, so the
+	// not-capable branch must render the locked toggle off regardless.
+	transcode_enabled: true,
+	transcode_capable: true,
 	auto_transcode_on_idle: false,
+	max_parallel_transcodes: 2,
 	notifications_enabled: false
 };
 
@@ -81,9 +217,14 @@ vi.mock('$lib/api/settings', () => ({
 vi.mock('$lib/api/drives', () => ({
 	fetchDrives: vi.fn(() => Promise.resolve([])),
 	updateDrive: vi.fn(() => Promise.resolve()),
-	deleteDrive: vi.fn(() => Promise.resolve()),
-	fetchDriveDiagnostic: vi.fn(() => Promise.resolve({ success: true, drives: [], issues: [], udevd_running: true, kernel_drives: [] })),
-	rescanDrives: vi.fn(() => Promise.resolve({ success: true }))
+	unenrollDrive: vi.fn(() => Promise.resolve()),
+	enrollDrive: vi.fn(() => Promise.resolve()),
+	ignoreDrive: vi.fn(() => Promise.resolve()),
+	unignoreDrive: vi.fn(() => Promise.resolve()),
+	fetchDriveDiagnostic: vi.fn(() => Promise.resolve({ drives: [], system: [] })),
+	rescanDrives: vi.fn(() =>
+		Promise.resolve({ online: 0, stale: 0, detected: 0, enrolled: 0, ignored: 0, absent: 0, pruned: 0 })
+	)
 }));
 
 vi.mock('$lib/api/sessions', () => ({
@@ -94,6 +235,12 @@ vi.mock('$lib/api/sessions', () => ({
 	deleteSession: vi.fn(),
 	cloneSession: vi.fn(),
 	previewTemplate: vi.fn()
+}));
+
+vi.mock('$lib/api/sessionRoutes', () => ({
+	fetchSessionRoutes: vi.fn(() => Promise.resolve([])),
+	upsertSessionRoute: vi.fn(),
+	deleteSessionRoute: vi.fn()
 }));
 
 vi.mock('$lib/api/ripPresets', () => ({
@@ -113,6 +260,12 @@ vi.mock('$lib/api/transcodePresets', () => ({
 vi.mock('$lib/api/themes', () => ({
 	uploadTheme: vi.fn(() => Promise.resolve()),
 	deleteTheme: vi.fn(() => Promise.resolve())
+}));
+
+vi.mock('$lib/api/gpus', () => ({
+	fetchGpus: vi.fn(() => Promise.resolve([])),
+	updateGpu: vi.fn(),
+	deleteGpu: vi.fn()
 }));
 
 vi.mock('$lib/stores/theme', async () => {
@@ -156,7 +309,16 @@ vi.mock('$lib/api/channels', () => ({
 	fetchServices: vi.fn(() =>
 		Promise.resolve({
 			featured: ['discord'],
-			services: [{ id: 'discord', name: 'Discord', docs_url: '', url_scheme: 'discord', required_fields: [], advanced_fields: [] }]
+			services: [
+				{
+					id: 'discord',
+					name: 'Discord',
+					docs_url: '',
+					url_scheme: 'discord',
+					required_fields: [],
+					advanced_fields: []
+				}
+			]
 		})
 	),
 	fetchEventTypes: vi.fn(() =>
@@ -182,16 +344,28 @@ vi.mock('$lib/api/channels', () => ({
 vi.mock('$lib/stores/polling', async () => {
 	const { writable } = await import('svelte/store');
 	return {
-		createPollingStore: vi.fn(() => ({
-			subscribe: writable([]).subscribe,
-			data: writable([]),
-			loading: writable(false),
-			error: writable(null),
-			initialized: writable(true),
-			refresh: vi.fn(),
-			start: vi.fn(),
-			stop: vi.fn()
-		}))
+		// A minimal fake that actually calls the fetcher on start()/refresh(),
+		// so tests can assert on data that flows from e.g. fetchDrives.
+		createPollingStore: vi.fn((fetcher: () => Promise<unknown>, initialValue: unknown) => {
+			const data = writable(initialValue);
+			async function load() {
+				try {
+					data.set(await fetcher());
+				} catch {
+					// ignore — tests that care about errors use the error store directly
+				}
+			}
+			return {
+				subscribe: data.subscribe,
+				data,
+				loading: writable(false),
+				error: writable(null),
+				initialized: writable(true),
+				refresh: vi.fn(load),
+				start: vi.fn(load),
+				stop: vi.fn()
+			};
+		})
 	};
 });
 
@@ -202,6 +376,10 @@ describe('Settings Page', () => {
 		// which would leave the next render on a non-default tab. Reset so each
 		// test starts on the default Metadata tab.
 		window.location.hash = '';
+		// transcoderEnabled is a real (unmocked) store shared across tests in
+		// this file; reset to the capable default so it doesn't leak.
+		setTranscoderEnabled(true);
+		setTranscodeRuntimeEnabled(true);
 	});
 
 	// Render the page and wait for the tab bar to settle. Metadata is the
@@ -251,7 +429,7 @@ describe('Settings Page', () => {
 				expect(screen.getByLabelText(/tmdb api key/i)).toHaveFocus();
 			});
 			expect(scrollIntoView).toHaveBeenCalled();
-			expect(screen.getByTestId('setting-tmdb_api_key').className).toContain('ring-2');
+			expect(screen.getByTestId('setting-tmdb_api_key').className).toContain('settings-field-highlight');
 		});
 
 		it('renders the Metadata config tab with the provider select', async () => {
@@ -262,7 +440,7 @@ describe('Settings Page', () => {
 
 		it('renders the Ripping config tab', async () => {
 			await renderAndWait();
-			await fireEvent.click(screen.getByRole('button', { name: 'Ripping' }));
+			await fireEvent.click(screen.getByRole('tab', { name: 'Ripping' }));
 			await waitFor(() => expect(screen.getByRole('checkbox', { name: /auto-rip on insert/i })).toBeInTheDocument());
 		});
 
@@ -273,7 +451,7 @@ describe('Settings Page', () => {
 
 		it('renders a Sessions tab', async () => {
 			await renderAndWait();
-			expect(screen.getByRole('button', { name: 'Sessions' })).toBeInTheDocument();
+			expect(screen.getByRole('tab', { name: 'Sessions' })).toBeInTheDocument();
 		});
 
 		it('does not render a Rip Presets tab', async () => {
@@ -369,9 +547,7 @@ describe('Settings Page', () => {
 		it('hides the channels UI and shows a hint when notifications are disabled', async () => {
 			// default mockConfig has notifications_enabled: false
 			await renderAndOpenTab('Notifications');
-			await waitFor(() =>
-				expect(screen.getByText(/notifications are disabled/i)).toBeInTheDocument()
-			);
+			await waitFor(() => expect(screen.getByText(/notifications are disabled/i)).toBeInTheDocument());
 			expect(screen.queryByText('Family Discord')).not.toBeInTheDocument();
 			// the master toggle (a switch, not a checkbox — auto-saves, no Save button)
 			expect(screen.getByRole('switch', { name: /enable notifications/i })).toBeInTheDocument();
@@ -380,13 +556,9 @@ describe('Settings Page', () => {
 		it('master toggle auto-saves on click (no Save button)', async () => {
 			const { saveArmConfig } = await import('$lib/api/settings');
 			await renderAndOpenTab('Notifications');
-			await waitFor(() =>
-				expect(screen.getByRole('switch', { name: /enable notifications/i })).toBeInTheDocument()
-			);
+			await waitFor(() => expect(screen.getByRole('switch', { name: /enable notifications/i })).toBeInTheDocument());
 			await fireEvent.click(screen.getByRole('switch', { name: /enable notifications/i }));
-			await waitFor(() =>
-				expect(vi.mocked(saveArmConfig)).toHaveBeenCalledWith({ notifications_enabled: true })
-			);
+			await waitFor(() => expect(vi.mocked(saveArmConfig)).toHaveBeenCalledWith({ notifications_enabled: true }));
 			// the channels UI appears immediately (optimistic) without a Save action
 			await waitFor(() => expect(screen.getByText('Family Discord')).toBeInTheDocument());
 		});
@@ -398,6 +570,177 @@ describe('Settings Page', () => {
 			});
 			// Run Check button should not be visible when collapsed
 			expect(screen.queryByText('Run Check')).not.toBeInTheDocument();
+		});
+
+		it('renders enrolled cards, detected/ignored lists, and maintenance buttons', async () => {
+			vi.mocked(fetchDrives).mockResolvedValueOnce([
+				drive({ id: 'drv_enrolled', lifecycle: 'enrolled', display_name: 'Main Drive' }),
+				drive({ id: 'drv_detected', lifecycle: 'detected' }),
+				drive({ id: 'drv_ignored', lifecycle: 'ignored' })
+			]);
+			await renderAndOpenTab('Drives');
+			await waitFor(() => expect(screen.getByText('Main Drive')).toBeInTheDocument());
+			expect(screen.getByTestId('detected-row-drv_detected')).toBeInTheDocument();
+			expect(screen.getByTestId('ignored-toggle')).toBeInTheDocument();
+			expect(screen.getByTestId('drive-rescan')).toBeInTheDocument();
+			expect(screen.getByTestId('drive-force-rescan')).toBeInTheDocument();
+		});
+
+		it('diagnostics panel renders system notes and per-drive fields, with Issues Found', async () => {
+			vi.mocked(fetchDriveDiagnostic).mockResolvedValueOnce({
+				drives: [
+					{
+						id: 'drv_1',
+						lifecycle: 'enrolled',
+						present: false,
+						identity_kind: 'by_id',
+						device_path: '/dev/sr0',
+						status: 'offline',
+						media_status: 'detached',
+						media_status_at: null,
+						container: 'running',
+						last_error: null,
+						healthy: false,
+						notes: ['drive is detached: reconnect it']
+					}
+				],
+				system: ['ripper manager is not running: enroll is unavailable']
+			});
+			await renderAndOpenTab('Drives');
+			await waitFor(() => {
+				expect(screen.getByText('Udev & Drive Diagnostics')).toBeInTheDocument();
+			});
+			await fireEvent.click(screen.getByText('Udev & Drive Diagnostics'));
+			await fireEvent.click(screen.getByText('Run Check'));
+			await waitFor(() => {
+				expect(screen.getByText('ripper manager is not running: enroll is unavailable')).toBeInTheDocument();
+			});
+			expect(screen.getByText(/drive is detached: reconnect it/)).toBeInTheDocument();
+			expect(screen.getByText('Issues Found')).toBeInTheDocument();
+		});
+
+		it('diagnostics panel lists a healthy drive with its details and All OK', async () => {
+			vi.mocked(fetchDriveDiagnostic).mockResolvedValueOnce({
+				drives: [
+					{
+						id: 'drv_ok',
+						lifecycle: 'enrolled',
+						present: true,
+						identity_kind: 'by_id',
+						device_path: '/dev/sr2',
+						status: 'online',
+						media_status: 'tray_open',
+						media_status_at: '2026-09-05T01:36:29Z',
+						container: 'running',
+						last_error: null,
+						healthy: true,
+						notes: []
+					}
+				],
+				system: []
+			});
+			await renderAndOpenTab('Drives');
+			await waitFor(() => {
+				expect(screen.getByText('Udev & Drive Diagnostics')).toBeInTheDocument();
+			});
+			await fireEvent.click(screen.getByText('Udev & Drive Diagnostics'));
+			await fireEvent.click(screen.getByText('Run Check'));
+			await waitFor(() => {
+				expect(screen.getByText('All OK')).toBeInTheDocument();
+			});
+			const row = screen.getByTestId('diag-drive-drv_ok');
+			expect(row).toHaveTextContent('/dev/sr2');
+			expect(row).toHaveTextContent('enrolled');
+			expect(row).toHaveTextContent('connected');
+			expect(row).toHaveTextContent('container: running');
+			expect(row).toHaveTextContent('media: tray open');
+			expect(row).toHaveTextContent('OK');
+		});
+	});
+
+	describe('Transcoding tab', () => {
+		it('keeps the Transcoding tab visible even when the deployment is not transcode-capable', async () => {
+			setTranscoderEnabled(false);
+			await renderAndWait();
+			expect(screen.getByRole('tab', { name: 'Transcoding' })).toBeInTheDocument();
+		});
+
+		it('capable: renders the schema-driven transcode_enabled + auto_transcode_on_idle toggles and the GPU card', async () => {
+			setTranscoderEnabled(true);
+			await renderAndOpenTab('Transcoding');
+			await waitFor(() => {
+				expect(screen.getByRole('checkbox', { name: /enable transcoding/i })).toBeInTheDocument();
+			});
+			expect(screen.getByRole('checkbox', { name: /enable transcoding/i })).not.toBeDisabled();
+			expect(screen.getByRole('checkbox', { name: /auto-transcode on idle/i })).toBeInTheDocument();
+			await waitFor(() => {
+				expect(screen.getByTestId('gpus-card')).toBeInTheDocument();
+			});
+			expect(fetchGpus).toHaveBeenCalled();
+			// The GPU card sits above the Transcoding form's Save button.
+			const save = screen.getByRole('button', { name: 'Save' });
+			expect(
+				screen.getByTestId('gpus-card').compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING
+			).toBeTruthy();
+			// transcode_capable is a non-editable bool (an infra fact, not a
+			// setting) - it must render read-only, not as a clickable checkbox
+			// that silently no-ops on save.
+			expect(screen.queryByRole('checkbox', { name: /transcode capable/i })).not.toBeInTheDocument();
+			const capableField = screen.getByTestId('setting-transcode_capable');
+			expect(capableField).toHaveTextContent('Transcode capable');
+			expect(capableField).toHaveTextContent('True');
+		});
+
+		it('not capable: shows only a locked transcode_enabled toggle with a hint, hides auto_transcode_on_idle and the GPU card', async () => {
+			vi.mocked(fetchGpus).mockClear();
+			setTranscoderEnabled(false);
+			await renderAndOpenTab('Transcoding');
+			await waitFor(() => {
+				expect(
+					screen.getByText('This deployment is ripper-only; transcoding cannot be enabled here.')
+				).toBeInTheDocument();
+			});
+			// Locked OFF even though the backend column is true (fixture
+			// default): the column is meaningless without capability.
+			const locked = screen.getByRole('switch', { name: 'Enable transcoding' });
+			expect(locked).toBeDisabled();
+			expect(locked).toHaveAttribute('aria-checked', 'false');
+			expect(screen.queryByRole('checkbox', { name: /auto-transcode on idle/i })).not.toBeInTheDocument();
+			expect(screen.queryByTestId('gpus-card')).not.toBeInTheDocument();
+			expect(fetchGpus).not.toHaveBeenCalled();
+		});
+
+		it('saving the Transcoding form refreshes the app-wide runtime toggle (off, then back on)', async () => {
+			const { saveArmConfig } = await import('$lib/api/settings');
+			vi.mocked(saveArmConfig).mockClear();
+			setTranscoderEnabled(true);
+			setTranscodeRuntimeEnabled(true);
+			await renderAndOpenTab('Transcoding');
+			const toggle = await screen.findByRole('checkbox', { name: /enable transcoding/i });
+
+			await fireEvent.click(toggle);
+			await fireEvent.click(screen.getByRole('button', { name: /^save/i }));
+			await waitFor(() => expect(vi.mocked(saveArmConfig)).toHaveBeenCalledWith({ transcode_enabled: false }));
+			await waitFor(() => expect(get(transcodeRuntimeEnabled)).toBe(false));
+
+			// Re-enable in the same visit: the form must diff against the saved
+			// value (false), not the stale original (true), or nothing is sent.
+			await fireEvent.click(screen.getByRole('checkbox', { name: /enable transcoding/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /^save/i }));
+			await waitFor(() => expect(vi.mocked(saveArmConfig)).toHaveBeenLastCalledWith({ transcode_enabled: true }));
+			await waitFor(() => expect(get(transcodeRuntimeEnabled)).toBe(true));
+		});
+
+		it('a Transcoding save without transcode_enabled leaves the runtime toggle alone', async () => {
+			const { saveArmConfig } = await import('$lib/api/settings');
+			vi.mocked(saveArmConfig).mockClear();
+			setTranscoderEnabled(true);
+			setTranscodeRuntimeEnabled(false);
+			await renderAndOpenTab('Transcoding');
+			await fireEvent.click(await screen.findByRole('checkbox', { name: /auto-transcode on idle/i }));
+			await fireEvent.click(screen.getByRole('button', { name: /^save/i }));
+			await waitFor(() => expect(vi.mocked(saveArmConfig)).toHaveBeenCalledWith({ auto_transcode_on_idle: true }));
+			expect(get(transcodeRuntimeEnabled)).toBe(false);
 		});
 	});
 });

@@ -1,39 +1,87 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { ConfigFieldMeta } from '$lib/types/api.gen';
+	import Glyph from '$lib/components/Glyph.svelte';
+	import RankedListField from './RankedListField.svelte';
+	import MakemkvKeyField from './MakemkvKeyField.svelte';
+	import DiscHandlingField from './DiscHandlingField.svelte';
 
+	// `config` (the live form values, keyed by field key) lets a field type
+	// read a sibling's value - the `ranked` branch below uses it to flag a
+	// source whose required API key isn't set, and widgets write their
+	// `part_of` siblings through it. `context` is the full saved config, for
+	// widgets that read a value outside the form (setup steps render a subset).
+	// `onclear` reports that a saved secret was removed (the form sends null).
 	let {
 		field,
 		value = $bindable(),
-		action
-	}: { field: ConfigFieldMeta; value: unknown; action?: Snippet } = $props();
+		action,
+		config = {},
+		context = {},
+		onclear
+	}: {
+		field: ConfigFieldMeta;
+		value: unknown;
+		action?: Snippet;
+		config?: Record<string, unknown>;
+		context?: Record<string, unknown>;
+		onclear?: () => void;
+	} = $props();
 
 	const HIDDEN = '<hidden>';
 	const isSecret = $derived(field.tier === 'secret');
 	const isHiddenSecret = $derived(isSecret && value === HIDDEN);
+	let reveal = $state(false);
+	let removed = $state(false);
+
+	function removeSecret() {
+		value = null;
+		removed = true;
+		onclear?.();
+	}
 	const boolValue = $derived(Boolean(value));
 	const displayValue = $derived(isHiddenSecret ? '' : (value ?? ''));
 	const placeholder = $derived(isHiddenSecret ? '******** (set, leave blank to keep)' : '');
-
-	const inputClass =
-		'w-full rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm dark:border-primary/30 dark:bg-primary/10 dark:text-white';
+	const helpId = $derived(field.help ? `setting-help-${field.key}` : undefined);
 </script>
 
-<div class="space-y-1 scroll-mt-24 rounded-lg transition-shadow" id="setting-{field.key}" data-testid="setting-{field.key}">
-	{#if field.type === 'bool'}
-		<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-			<input
-				type="checkbox"
-				aria-label={field.label}
-				checked={boolValue}
-				onchange={(e) => (value = (e.currentTarget as HTMLInputElement).checked)}
-			/>
-			<span class="font-medium">{field.label}</span>
-		</label>
-	{:else}
-		<div class="text-sm font-medium text-gray-700 dark:text-gray-300">{field.label}</div>
+<div class="config-schema-field stack" id="setting-{field.key}" data-testid="setting-{field.key}">
+	{#if field.widget === 'makemkv_key' && field.editable}
+		<MakemkvKeyField {field} bind:value {onclear} />
+	{:else if field.widget === 'disc_handling' && field.editable}
+		<DiscHandlingField values={config} {context} />
+	{:else if field.type === 'bool'}
 		{#if !field.editable}
-			<div class="font-mono text-sm text-gray-500 dark:text-gray-400">{value ?? '-'}</div>
+			<!-- Same read-only idiom as the string/enum branch below (a plain
+			     muted value under the label, no interactive control) rather than
+			     a disabled checkbox, so every non-editable field in this
+			     schema-driven form reads consistently regardless of type. -->
+			<div class="field-label">{field.label}</div>
+			<div class="mono config-schema-field-value">{boolValue ? 'True' : 'False'}</div>
+		{:else}
+			<label class="field field-row">
+				<input
+					type="checkbox"
+					aria-label={field.label}
+					checked={boolValue}
+					onchange={(e) => (value = (e.currentTarget as HTMLInputElement).checked)}
+				/>
+				<span class="field-label">{field.label}</span>
+			</label>
+		{/if}
+	{:else if field.type === 'ranked'}
+		<div class="field-label">{field.label}</div>
+		{#if field.editable}
+			<RankedListField {field} bind:value {config} {helpId} />
+		{:else}
+			<div class="mono config-schema-field-value">
+				{(Array.isArray(value) ? (value as string[]) : []).map((v) => field.enum_labels?.[v] ?? v).join(', ') || '-'}
+			</div>
+		{/if}
+	{:else}
+		<div class="field-label">{field.label}</div>
+		{#if !field.editable}
+			<div class="mono config-schema-field-value">{value ?? '-'}</div>
 		{:else}
 			<!-- The control and an optional trailing action (e.g. a Check button)
 			     share one row so they align regardless of the help text below. -->
@@ -43,27 +91,116 @@
 						aria-label={field.label}
 						value={value ?? ''}
 						onchange={(e) => (value = (e.currentTarget as HTMLSelectElement).value)}
-						class={inputClass}
+						class="field-control w-full"
 					>
-						{#each field.enum_values ?? [] as opt}
-							<option value={opt}>{opt}</option>
+						{#each field.enum_values ?? [] as opt (opt)}
+							<option value={opt}>{field.enum_labels?.[opt] ?? opt}</option>
 						{/each}
 					</select>
+				{:else if field.type === 'int'}
+					<!-- Compact: an int field reads as a short number, not a full-width
+					     text box. Emits a number (or null when emptied), never a string -
+					     no min/max here, the backend's 400 on an out-of-range value is
+					     the validation (see SchemaConfigForm's save-error alert). -->
+					<input
+						type="number"
+						step="1"
+						inputmode="numeric"
+						aria-label={field.label}
+						value={value ?? ''}
+						oninput={(e) => {
+							const raw = (e.currentTarget as HTMLInputElement).value;
+							value = raw === '' ? null : Number(raw);
+						}}
+						class="field-control config-schema-field-number"
+					/>
 				{:else}
 					<input
-						type={isSecret ? 'password' : 'text'}
+						type={isSecret && !reveal ? 'password' : 'text'}
 						aria-label={field.label}
 						value={displayValue}
 						{placeholder}
-						oninput={(e) => (value = (e.currentTarget as HTMLInputElement).value)}
-						class={inputClass}
+						oninput={(e) => {
+							value = (e.currentTarget as HTMLInputElement).value;
+							removed = false;
+						}}
+						class="field-control w-full"
 					/>
+					{#if isSecret}
+						<button
+							type="button"
+							class="btn btn-icon"
+							aria-label="Show hidden value"
+							aria-pressed={reveal}
+							onclick={() => (reveal = !reveal)}
+						>
+							<Glyph name={reveal ? 'eye-off' : 'eye'} />
+						</button>
+					{/if}
 				{/if}
 				{#if action}{@render action()}{/if}
 			</div>
+			{#if field.signup_url}
+				<a class="config-schema-field-signup" href={field.signup_url} target="_blank" rel="noopener noreferrer">
+					Get a free key <Glyph name="external-link" class="h-3.5 w-3.5" />
+				</a>
+			{/if}
+			{#if isHiddenSecret}
+				<div class="config-schema-field-saved">
+					<span class="chip chip-sm chip-success"><Glyph name="check" class="h-3 w-3" /> Saved</span>
+					<span class="config-schema-field-saved-note">Type a new key to replace it.</span>
+					<button type="button" class="btn btn-link btn-sm" onclick={removeSecret}>Remove</button>
+				</div>
+			{:else if removed}
+				<div class="config-schema-field-saved">
+					<span class="chip chip-sm chip-warning"><Glyph name="minus-circle" class="h-3 w-3" /> Will be removed</span>
+					<span class="config-schema-field-saved-note">The key is cleared when you save.</span>
+				</div>
+			{/if}
 		{/if}
 	{/if}
-	{#if field.help}
-		<p class="text-xs text-gray-500 dark:text-gray-400">{field.help}</p>
+	{#if field.help && field.widget == null}
+		<p class="field-help" id={helpId}>{field.help}</p>
 	{/if}
 </div>
+
+<style>
+	/* scroll-mt-24 (the settings page scrolls a field to the top with an
+	   offset for the sticky header) and the highlight-flash transition aren't
+	   covered by any block. gap: the original was space-y-1 (0.25rem), tighter
+	   than the stack-sm modifier (0.5rem). */
+	.config-schema-field {
+		gap: 0.25rem;
+		scroll-margin-top: 6rem;
+		border-radius: var(--radius-lg);
+		transition: box-shadow var(--motion-base) var(--ease);
+	}
+	/* the read-only value was font-mono text-sm text-gray-500 (0.875rem/1.25rem);
+	   .mono is size-neutral, so this component supplies its own original size. */
+	.config-schema-field-value {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.config-schema-field-signup {
+		display: inline-flex;
+		align-self: flex-start;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.8125rem;
+	}
+	.config-schema-field-saved {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+		font-size: 0.8125rem;
+	}
+	.config-schema-field-saved-note {
+		color: var(--color-text-muted);
+	}
+	/* an int field is a short number, not a full-width text box. */
+	.config-schema-field-number {
+		width: 8rem;
+	}
+</style>

@@ -8,26 +8,31 @@ vi.mock('$lib/api/sessions', () => ({
 	updateSession: vi.fn(),
 	deleteSession: vi.fn(),
 	cloneSession: vi.fn(),
-	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null }),
+	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null })
 }));
 vi.mock('$lib/api/ripPresets', () => ({
 	fetchRipPresets: vi.fn(),
 	createRipPreset: vi.fn(),
 	updateRipPreset: vi.fn(),
-	deleteRipPreset: vi.fn(),
+	deleteRipPreset: vi.fn()
 }));
 vi.mock('$lib/api/transcodePresets', () => ({
 	fetchTranscodePresets: vi.fn(),
 	createTranscodePreset: vi.fn(),
 	updateTranscodePreset: vi.fn(),
-	deleteTranscodePreset: vi.fn(),
+	deleteTranscodePreset: vi.fn()
+}));
+// The preset form's encoders store follows transcode.events; keep jsdom off a real socket.
+vi.mock('$lib/api/ws', () => ({
+	wsClient: { start: vi.fn(), subscribe: vi.fn(() => () => {}) }
 }));
 
 import { fetchSessions } from '$lib/api/sessions';
 import { fetchRipPresets, createRipPreset } from '$lib/api/ripPresets';
-import { fetchTranscodePresets } from '$lib/api/transcodePresets';
+import { fetchTranscodePresets, createTranscodePreset } from '$lib/api/transcodePresets';
 import { deleteSession, cloneSession } from '$lib/api/sessions';
 import SessionsArea from '../SessionsArea.svelte';
+import { setTranscoderEnabled } from '$lib/stores/config';
 
 const makeSession = (id = 's1', name = 'ses Alpha') => ({
 	id,
@@ -40,7 +45,7 @@ const makeSession = (id = 's1', name = 'ses Alpha') => ({
 	overrides_json: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 const makeRip = (id = 'r1', name = 'rip r1') => ({
@@ -54,7 +59,7 @@ const makeRip = (id = 'r1', name = 'rip r1') => ({
 	track_filters_json: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 const makeTranscode = (id = 't1', name = 'tc t1') => ({
@@ -66,12 +71,11 @@ const makeTranscode = (id = 't1', name = 'tc t1') => ({
 	preset_ref: null,
 	preset_json: null,
 	container: 'mkv' as const,
-	codec: 'h265' as const,
-	hw_preference: 'any' as const,
+	encoder: 'any_h265',
 	extra_args: null,
 	created_by_user_id: null,
 	created_at: null,
-	updated_at: null,
+	updated_at: null
 });
 
 afterEach(() => {
@@ -102,6 +106,19 @@ it('Transcode presets tab shows the transcode presets section', async () => {
 	await screen.findByText(/ses /i);
 	await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
 	expect(screen.getByRole('heading', { name: /transcode presets/i })).toBeInTheDocument();
+});
+
+it('cloning a transcode preset carries its encoder', async () => {
+	vi.mocked(createTranscodePreset).mockResolvedValue(makeTranscode('t2', 'tc t1 (copy)') as any);
+	renderComponent(SessionsArea);
+	await screen.findByText(/ses /i);
+	await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
+	await fireEvent.click(screen.getByRole('button', { name: /^clone$/i }));
+	await waitFor(() =>
+		expect(createTranscodePreset).toHaveBeenCalledWith(
+			expect.objectContaining({ name: 'tc t1 (copy)', encoder: 'any_h265' })
+		)
+	);
 });
 
 it('tab switches back from a preset tab to sessions', async () => {
@@ -258,4 +275,57 @@ it('Rip presets tab Edit button opens RipPresetForm with the existing preset', a
 	// The form should be pre-populated with the preset's name
 	const nameInput = screen.getByTestId('preset-name') as HTMLInputElement;
 	expect(nameInput.value).toBe('rip r1');
+});
+
+describe('ripper-only deployment (not transcode-capable)', () => {
+	const passthroughPreset = () => ({ ...makeTranscode('t_none', 'tc passthrough'), tool: 'none' as const });
+
+	beforeEach(() => {
+		vi.mocked(fetchSessions).mockResolvedValue([
+			{ ...makeSession('s_raw', 'ses Raw'), transcode_preset_id: null },
+			{ ...makeSession('s_pass', 'ses Pass'), transcode_preset_id: 't_none' },
+			{ ...makeSession('s_enc', 'ses Encode'), transcode_preset_id: 't1' }
+		]);
+		vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode(), passthroughPreset()]);
+	});
+
+	afterEach(() => setTranscoderEnabled(true));
+
+	it('hub lists only passthrough sessions, with type counts to match', async () => {
+		setTranscoderEnabled(false);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Raw');
+		expect(screen.getByText('ses Pass')).toBeInTheDocument();
+		expect(screen.queryByText('ses Encode')).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'All 2' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Movie 2' })).toBeInTheDocument();
+	});
+
+	it('builder transcode picker offers only passthrough presets', async () => {
+		setTranscoderEnabled(false);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Raw');
+		await fireEvent.click(screen.getByRole('button', { name: /new session/i }));
+		const tcSel = screen.getByLabelText(/transcode preset/i) as HTMLSelectElement;
+		const labels = Array.from(tcSel.options).map((o) => o.textContent?.trim());
+		expect(labels).toContain('tc passthrough');
+		expect(labels).not.toContain('tc t1');
+	});
+
+	it('transcode preset library shows only passthrough presets', async () => {
+		setTranscoderEnabled(false);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Raw');
+		await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
+		expect(screen.getByText('tc passthrough')).toBeInTheDocument();
+		expect(screen.queryByText('tc t1')).not.toBeInTheDocument();
+	});
+
+	it('capable deployment keeps encode sessions and presets', async () => {
+		setTranscoderEnabled(true);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Encode');
+		await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
+		expect(screen.getByText('tc t1')).toBeInTheDocument();
+	});
 });

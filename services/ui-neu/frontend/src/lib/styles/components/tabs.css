@@ -1,0 +1,63 @@
+/* tabs: a horizontal tab strip.
+   Elements: tabs-tab.
+   Modifiers: tabs-pills (rounded segmented look).
+   State: [aria-selected="true"] on tabs-tab when the strip is a real ARIA
+   tablist (the ruled settings nav), [data-selected="true"] on plain-button
+   strips whose baselines carried no tab roles - aria-selected is invalid
+   ARIA without role="tab", and state-via-data is the vocabulary's own
+   convention. Both hooks style identically. */
+@layer components {
+	/* gap 1rem, not 1.5rem: the Settings tab strip (this block's first real
+	   consumer) was flex gap-4 in the original markup.
+	   The 1px rule is an inset shadow, not a border-bottom: a tab's own 2px
+	   underline then paints over it inside the strip's box, so the strip is
+	   exactly as tall as a tab. The old border-bottom plus a -1px tab margin
+	   made the content 1px taller than the box, and overflow-x: auto (which
+	   forces overflow-y to auto) drew a vertical scrollbar on the strip.
+	   overflow-y: hidden keeps it from ever scrolling vertically. */
+	.tabs {
+		display: flex;
+		gap: 1rem;
+		box-shadow: inset 0 -1px 0 var(--color-border);
+		overflow-x: auto;
+		overflow-y: hidden;
+	}
+	/* padding 0.25rem 0.625rem (px-1 py-2.5), weight 500, line-height 1.25rem
+	   (text-sm's bundled value, taller than the browser default for this
+	   font stack): matches the Settings tab strip's original tabClass()
+	   string exactly. The 2px border-bottom covers .tabs' inset 1px rule, so
+	   the strip's total height is the tab's own box. */
+	.tabs-tab {
+		padding: 0.625rem 0.25rem;
+		border-bottom: 2px solid transparent;
+		font-size: 0.875rem;
+		line-height: calc(1.25 / 0.875);
+		font-weight: 500;
+		color: var(--color-text-muted);
+		white-space: nowrap;
+		cursor: pointer;
+		transition: color var(--motion-fast) var(--ease);
+	}
+	.tabs-tab:hover {
+		color: var(--color-text);
+	}
+	.tabs-tab[aria-selected='true'],
+	.tabs-tab[data-selected='true'] {
+		border-bottom-color: var(--color-primary);
+		color: var(--color-primary-text);
+	}
+	.tabs-pills {
+		gap: 0.25rem;
+		box-shadow: none;
+	}
+	.tabs-pills .tabs-tab {
+		padding: 0.25rem 0.75rem;
+		border: 0;
+		border-radius: var(--radius-md);
+	}
+	.tabs-pills .tabs-tab[aria-selected='true'],
+	.tabs-pills .tabs-tab[data-selected='true'] {
+		background: var(--color-primary);
+		color: var(--color-on-primary);
+	}
+}

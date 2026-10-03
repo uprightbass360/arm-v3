@@ -1,21 +1,23 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderComponent, screen, cleanup, waitFor, fireEvent } from '$lib/test-utils';
 import Page from './+page.svelte';
-import { createJob, createTrack } from '$lib/components/__fixtures__/job';
+import { createJob, createJobDetail, createTrack } from '$lib/components/__fixtures__/job';
+import type { IdentityView, JobView, TrackView } from '$lib/types/api.gen';
 
 // --- Mocks ---
 
 const mockGoto = vi.fn();
 vi.mock('$app/navigation', () => ({ goto: (...args: unknown[]) => mockGoto(...args) }));
 
-vi.mock('$app/stores', () => ({
-	page: {
-		subscribe: (fn: (val: { params: { id: string } }) => void) => {
-			fn({ params: { id: 'job_42' } });
-			return () => {};
-		}
-	}
-}));
+vi.mock('$app/stores', async () => {
+	const { writable } = await import('svelte/store');
+	const _page = writable({ params: { id: 'job_42' } });
+	return {
+		page: { subscribe: _page.subscribe },
+		// Test-only helper: simulate client-side navigation to another job.
+		__setPageId: (id: string) => _page.set({ params: { id } })
+	};
+});
 
 vi.mock('$lib/stores/auth', async () => {
 	const { derived, writable } = await import('svelte/store');
@@ -45,11 +47,18 @@ vi.mock('$lib/api/jobs', () => ({
 	updateTrack: vi.fn(() => Promise.resolve()),
 	fetchNamingPreview: vi.fn(() => Promise.resolve({ job_output_dir: '', job_output_name: '', items: [] })),
 	resolveJob: vi.fn(() => Promise.resolve({ job: createJob({ id: 'job_42' }), fan_out: [] })),
-	applySession: vi.fn(() =>
-		Promise.resolve({ session_application: {}, tasks: [], collisions: [], idempotent: false })
-	),
+	applySession: vi.fn(() => Promise.resolve({ session_application: {}, tasks: [], collisions: [], idempotent: false })),
 	searchMusicMetadata: vi.fn(() => Promise.resolve({ candidates: [] })),
-	fetchMusicDetail: vi.fn(() => Promise.resolve({}))
+	fetchMusicDetail: vi.fn(() => Promise.resolve({})),
+	setJobMediaType: vi.fn(() => Promise.resolve(createJob({ id: 'job_42' })))
+}));
+
+// The Match Episodes panel reads the job's identity on mount.
+vi.mock('$lib/api/identity', () => ({
+	fetchIdentity: vi.fn(() => new Promise(() => {})),
+	matchIdentity: vi.fn(() => new Promise(() => {})),
+	unpinIdentity: vi.fn(() => new Promise(() => {})),
+	fetchEpisodes: vi.fn(() => new Promise(() => {}))
 }));
 
 vi.mock('$lib/api/sessions', () => ({
@@ -81,11 +90,27 @@ vi.mock('$lib/api/ws', () => ({
 	wsClient: { subscribe: vi.fn(() => vi.fn()), start: vi.fn(), stop: vi.fn() }
 }));
 
+// Capture the page's ripper-event listener so a test can fire an event for this job.
+type RipperListener = (jobIds: Set<string>, eventTypes: Map<string, Set<string>>) => void;
+const ripperListeners: RipperListener[] = [];
+function fireRipperEvent(jobId: string, eventType: string) {
+	ripperListeners.forEach((fn) => fn(new Set([jobId]), new Map([[jobId, new Set([eventType])]])));
+}
+vi.mock('$lib/stores/ripperEvents.svelte', () => ({
+	startRipperEvents: vi.fn(),
+	onRipperEvent: (fn: RipperListener) => {
+		ripperListeners.push(fn);
+		return () => ripperListeners.splice(ripperListeners.indexOf(fn), 1);
+	}
+}));
+
 vi.mock('$lib/api/settings', () => ({
 	fetchSettings: vi.fn(() => Promise.resolve({ transcoder_config: { config: {} } }))
 }));
 
-import { fetchJob, updateTrack, fetchNamingPreview } from '$lib/api/jobs';
+import { fetchJob, updateTrack, fetchNamingPreview, setJobMediaType } from '$lib/api/jobs';
+import * as authStore from '$lib/stores/auth';
+import { fetchIdentity } from '$lib/api/identity';
 const mockFetchJob = vi.mocked(fetchJob);
 const mockUpdateTrack = vi.mocked(updateTrack);
 const mockFetchNamingPreview = vi.mocked(fetchNamingPreview);
@@ -133,6 +158,16 @@ describe('Job detail page (v3)', () => {
 		});
 	});
 
+	it('reloads when client-side navigation changes the job id', async () => {
+		renderComponent(Page);
+		await waitFor(() => expect(mockFetchJob).toHaveBeenCalledWith('job_42'));
+		const stores = (await import('$app/stores')) as unknown as { __setPageId: (id: string) => void };
+		stores.__setPageId('job_43');
+		await waitFor(() => expect(mockFetchJob).toHaveBeenCalledWith('job_43'));
+		// The mocked store is module-wide: put the id back for the tests that follow.
+		stores.__setPageId('job_42');
+	});
+
 	it('redirects to home on 404', async () => {
 		mockFetchJob.mockRejectedValueOnce(new Error('404 Not Found'));
 		renderComponent(Page);
@@ -174,9 +209,7 @@ describe('Job detail page (v3)', () => {
 			fingerprints: []
 		});
 		renderComponent(Page);
-		await waitFor(() =>
-			expect(screen.getByRole('button', { name: 'Match CD' })).toBeInTheDocument()
-		);
+		await waitFor(() => expect(screen.getByRole('button', { name: 'Match CD' })).toBeInTheDocument());
 	});
 
 	it('does not show the Match CD tab for video jobs', async () => {
@@ -208,10 +241,13 @@ describe('Job detail page (v3)', () => {
 				title: 'Test Album',
 				disc_type: 'cd',
 				status: 'ripped',
-				metadata_json: { tracks: [{ title: 'Opening', duration_ms: 95000 }] }
+				metadata_json: { music: { tracks: [{ title: 'Opening', length_ms: 95000 }] } }
 			}),
 			tracks: [createTrack({ id: 'trk_1', kind: 'audio_track', status: 'done' })],
-			fingerprints: [{ algo: 'crc64', value: 'ABCDEF0123456789' }]
+			fingerprints: [
+				{ algo: 'crc64', value: 'ABCDEF0123456789' },
+				{ algo: 'matrix256', value: 'c0ffee' + 'ab'.repeat(29) }
+			]
 		});
 		mockFetchNamingPreview.mockResolvedValue({
 			job_output_dir: 'Album',
@@ -234,6 +270,9 @@ describe('Job detail page (v3)', () => {
 			expect(screen.getByText('Disc fingerprints')).toBeInTheDocument();
 		});
 		expect(screen.getByText('ABCDEF0123456789')).toBeInTheDocument();
+		// matrix256 rides the same generic algo/value table as every other algo.
+		expect(screen.getByText('matrix256')).toBeInTheDocument();
+		expect(screen.getByText('c0ffee' + 'ab'.repeat(29))).toBeInTheDocument();
 
 		// Filename cell renders the naming-preview output_name.
 		expect(screen.getByText('01 Opening.flac')).toBeInTheDocument();
@@ -250,7 +289,7 @@ describe('Job detail page (v3)', () => {
 				title: 'Test Album',
 				disc_type: 'cd',
 				status: 'ripped',
-				metadata_json: { tracks: [{ title: 'Opening', duration_ms: 95000 }] }
+				metadata_json: { music: { tracks: [{ title: 'Opening', length_ms: 95000 }] } }
 			}),
 			tracks: [],
 			fingerprints: []
@@ -271,7 +310,10 @@ describe('Job detail page (v3)', () => {
 				id: 'job_42',
 				title: 'Test Movie',
 				status: 'ripped',
-				metadata_json: { imdb_id: 'tt9999999', scan_result: { titles: [{ index: 0 }] } }
+				metadata_json: {
+					imdb_id: 'tt9999999',
+					scan_result: { disc_type: 'bluray', titles: [{ index: 0, duration_seconds: 0 }] }
+				}
 			}),
 			tracks: [],
 			fingerprints: []
@@ -320,7 +362,9 @@ describe('Job detail page (v3)', () => {
 		await waitFor(() => expect(screen.getByText('Tracks (1)')).toBeInTheDocument());
 		const imdb = screen.getByRole('link', { name: 'IMDb' });
 		expect(imdb.getAttribute('href')).toBe('https://www.imdb.com/title/tt5555555');
-		expect(document.querySelector('img[src="/api/images/proxy?url=https%3A%2F%2Fexample.test%2Fp.jpg"]')).not.toBeNull();
+		expect(
+			document.querySelector('img[src="/api/images/proxy?url=https%3A%2F%2Fexample.test%2Fp.jpg"]')
+		).not.toBeNull();
 	});
 
 	it('renders an Episode column only when a track is a series', async () => {
@@ -330,7 +374,7 @@ describe('Job detail page (v3)', () => {
 				createTrack({
 					id: 'trk_1',
 					status: 'done',
-					video_type: 'series',
+					role: 'episode',
 					episode_number: 3,
 					episode_name: 'The One With The Test'
 				})
@@ -348,6 +392,28 @@ describe('Job detail page (v3)', () => {
 		mockFetchJob.mockResolvedValue({
 			job: createJob({ id: 'job_42', title: 'Test Movie', status: 'ripped' }),
 			tracks: [createTrack({ id: 'trk_1', status: 'done' })],
+			fingerprints: []
+		});
+		renderComponent(Page);
+		await waitFor(() => expect(screen.getByText('Tracks (1)')).toBeInTheDocument());
+		expect(screen.queryByRole('columnheader', { name: 'Episode' })).not.toBeInTheDocument();
+	});
+
+	it('shows the Episode column for a TV job whose tracks have no role and no episode_number yet', async () => {
+		mockFetchJob.mockResolvedValue({
+			job: createJob({ id: 'job_42', title: 'Show', status: 'ripped', media_type: 'tv' }),
+			tracks: [createTrack({ id: 'trk_1', status: 'done', role: null })],
+			fingerprints: []
+		});
+		renderComponent(Page);
+		await waitFor(() => expect(screen.getByText('Tracks (1)')).toBeInTheDocument());
+		expect(screen.getByRole('columnheader', { name: 'Episode' })).toBeInTheDocument();
+	});
+
+	it('omits the Episode column for a TV job whose only track is role main', async () => {
+		mockFetchJob.mockResolvedValue({
+			job: createJob({ id: 'job_42', title: 'Show', status: 'ripped', media_type: 'tv' }),
+			tracks: [createTrack({ id: 'trk_1', status: 'done', role: 'main' })],
 			fingerprints: []
 		});
 		renderComponent(Page);
@@ -373,7 +439,10 @@ describe('Job detail page (v3)', () => {
 				title: 'Test Movie',
 				status: 'ripped',
 				disc_type: 'bluray',
-				metadata_json: { imdb_id: 'tt7777777', multi_title: true, source_type: 'iso' }
+				metadata_json: {
+					identity: { provider: 'tmdb', external_ids: { imdb: 'tt7777777' } },
+					provider_raw: { arm_server: { multi_title: true, source_type: 'iso' } }
+				}
 			}),
 			tracks: [],
 			fingerprints: []
@@ -421,8 +490,15 @@ describe('Job detail page (v3)', () => {
 
 	it('shows a Transcode badge when the track has a transcode_status', async () => {
 		mockFetchJob.mockResolvedValueOnce({
-			job: createJob({ id: 'job_42', status: 'ripped' }),
-			tracks: [createTrack({ id: 'trk_1', source_ref: 'title_01.mkv', status: 'done', transcode_status: 'failed' } as any)],
+			job: createJob({
+				id: 'job_42',
+				status: 'ripped',
+				// Not live: a live job opens the log panel, which has its own "Transcode" label.
+				transcode_progress: { state: 'done', tasks_total: 1, tasks_done: 1, tasks_failed: 0, percent: 100 }
+			}),
+			tracks: [
+				createTrack({ id: 'trk_1', source_ref: 'title_01.mkv', status: 'done', transcode_status: 'failed' } as any)
+			],
 			fingerprints: []
 		} as any);
 		renderComponent(Page);
@@ -445,5 +521,140 @@ describe('Job detail page (v3)', () => {
 		await waitFor(() => expect(screen.getByText('Done')).toBeInTheDocument());
 		const transcodeCell = document.querySelector('td[data-label="Transcode"]');
 		expect(transcodeCell?.textContent?.trim()).toBe('-');
+	});
+	describe('TV episode matching', () => {
+		afterEach(() => {
+			(authStore as unknown as { __setRole: (r: string | null) => void }).__setRole('admin');
+			vi.mocked(fetchIdentity).mockImplementation(() => new Promise(() => {}));
+		});
+
+		const tvJob = ({ tracks = [], ...job }: Partial<JobView> & { tracks?: TrackView[] } = {}) => ({
+			...createJobDetail({ tracks }),
+			job: createJob({
+				id: 'job_42',
+				media_type: 'tv',
+				disc_type: 'bluray',
+				has_series: true,
+				status: 'ripped',
+				...job
+			})
+		});
+
+		it('shows Match Episodes only for TV jobs', async () => {
+			mockFetchJob.mockResolvedValue(tvJob());
+			renderComponent(Page);
+			expect(await screen.findByRole('button', { name: 'Match Episodes' })).toBeInTheDocument();
+		});
+
+		it('hides Match Episodes for a movie job', async () => {
+			mockFetchJob.mockResolvedValue(tvJob({ media_type: 'movie', has_series: false }));
+			renderComponent(Page);
+			await screen.findByRole('button', { name: /Poster/ });
+			expect(screen.queryByRole('button', { name: 'Match Episodes' })).not.toBeInTheDocument();
+		});
+
+		it('the header switch flips a movie to TV and opens episode matching', async () => {
+			// First load is the movie; the refresh after the flip returns the TV job.
+			mockFetchJob.mockResolvedValueOnce(tvJob({ media_type: 'movie', has_series: false }));
+			mockFetchJob.mockResolvedValue(tvJob());
+			vi.mocked(setJobMediaType).mockResolvedValue(createJob({ id: 'job_42', media_type: 'tv' }));
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'TV' }));
+			expect(setJobMediaType).toHaveBeenCalledWith('job_42', 'tv');
+			await waitFor(() =>
+				expect(screen.getByRole('button', { name: 'Match Episodes' })).toHaveAttribute('aria-pressed', 'true')
+			);
+		});
+
+		it('shows matching after the flip until job.identity_updated arrives for the job', async () => {
+			mockFetchJob.mockResolvedValueOnce(tvJob({ media_type: 'movie', has_series: false }));
+			mockFetchJob.mockResolvedValue(tvJob());
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'TV' }));
+			expect(await screen.findByText('Matching episodes…')).toBeInTheDocument();
+			// The page awaits the panel's reload before clearing, so the identity must load.
+			vi.mocked(fetchIdentity).mockResolvedValue({ sources: {}, pin: null } as unknown as IdentityView);
+			const identityCalls = vi.mocked(fetchIdentity).mock.calls.length;
+			// Another job's identity update leaves it matching.
+			fireRipperEvent('job_other', 'job.identity_updated');
+			expect(screen.getByText('Matching episodes…')).toBeInTheDocument();
+			// The resolve's own event refreshes the job but the stage is still running.
+			const fetches = mockFetchJob.mock.calls.length;
+			fireRipperEvent('job_42', 'rip.identify_resolved');
+			await waitFor(() => expect(mockFetchJob.mock.calls.length).toBeGreaterThan(fetches));
+			await waitFor(() => expect(vi.mocked(fetchIdentity).mock.calls.length).toBeGreaterThan(identityCalls));
+			// Let the refresh fully settle before checking the state stuck.
+			await new Promise((r) => setTimeout(r, 50));
+			expect(screen.getByText('Matching episodes…')).toBeInTheDocument();
+			fireRipperEvent('job_42', 'job.identity_updated');
+			await waitFor(() => expect(screen.queryByText('Matching episodes…')).not.toBeInTheDocument());
+			expect(vi.mocked(fetchIdentity).mock.calls.length).toBeGreaterThan(identityCalls);
+		});
+
+		it('clears matching after a bounded timeout when no event arrives', async () => {
+			vi.useFakeTimers({ shouldAdvanceTime: true });
+			try {
+				mockFetchJob.mockResolvedValueOnce(tvJob({ media_type: 'movie', has_series: false }));
+				mockFetchJob.mockResolvedValue(tvJob());
+				renderComponent(Page);
+				await fireEvent.click(await screen.findByRole('radio', { name: 'TV' }));
+				expect(await screen.findByText('Matching episodes…')).toBeInTheDocument();
+				await vi.advanceTimersByTimeAsync(60_000);
+				await waitFor(() => expect(screen.queryByText('Matching episodes…')).not.toBeInTheDocument());
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it('keeps the type and shows an alert when the switch fails', async () => {
+			mockFetchJob.mockResolvedValue(tvJob({ media_type: 'movie', has_series: false }));
+			vi.mocked(setJobMediaType).mockRejectedValueOnce(new Error('409 Conflict'));
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'TV' }));
+			expect(await screen.findByRole('alert')).toHaveTextContent('409 Conflict');
+			expect(screen.getByRole('radio', { name: 'TV' })).toHaveAttribute('aria-checked', 'false');
+			expect(screen.getByRole('radio', { name: 'Movie' })).toHaveAttribute('aria-checked', 'true');
+			expect(screen.queryByRole('button', { name: 'Match Episodes' })).not.toBeInTheDocument();
+		});
+
+		it('asks before switching a job with hand-set episodes to Movie', async () => {
+			const tracks = [createTrack({ id: 'trk_1', identity_provenance: { episode_number: 'manual' } })];
+			mockFetchJob.mockResolvedValue(tvJob({ tracks }));
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'Movie' }));
+			expect(setJobMediaType).not.toHaveBeenCalled();
+			expect(screen.getByText('1 track has episodes you set by hand. Switch to Movie anyway?')).toBeInTheDocument();
+			await fireEvent.click(screen.getByRole('button', { name: 'Switch to Movie' }));
+			await waitFor(() => expect(setJobMediaType).toHaveBeenCalledWith('job_42', 'movie'));
+		});
+
+		it('pluralises the confirm message for several hand-set tracks', async () => {
+			const tracks = [
+				createTrack({ id: 'trk_1', identity_provenance: { episode_number: 'manual' } }),
+				createTrack({ id: 'trk_2', identity_provenance: { role: 'manual' } }),
+				createTrack({ id: 'trk_3', identity_provenance: { episode_number: 'auto' } })
+			];
+			mockFetchJob.mockResolvedValue(tvJob({ tracks }));
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'Movie' }));
+			expect(screen.getByText('2 tracks have episodes you set by hand. Switch to Movie anyway?')).toBeInTheDocument();
+		});
+
+		it('switches straight to Movie when no episodes were set by hand', async () => {
+			mockFetchJob.mockResolvedValue(tvJob());
+			renderComponent(Page);
+			await fireEvent.click(await screen.findByRole('radio', { name: 'Movie' }));
+			await waitFor(() => expect(setJobMediaType).toHaveBeenCalledWith('job_42', 'movie'));
+		});
+
+		it('guests see the type as text, not a switch, and can still open Match Episodes', async () => {
+			(authStore as unknown as { __setRole: (r: string | null) => void }).__setRole('guest');
+			mockFetchJob.mockResolvedValue(tvJob());
+			renderComponent(Page);
+			expect(await screen.findByRole('button', { name: 'Match Episodes' })).toBeInTheDocument();
+			expect(screen.queryByRole('radiogroup', { name: 'Media type' })).not.toBeInTheDocument();
+			expect(screen.getByTestId('media-type-text')).toHaveTextContent('TV');
+			expect(screen.getByTestId('media-type-text')).toHaveClass('badge');
+		});
 	});
 });

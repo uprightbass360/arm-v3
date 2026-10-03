@@ -4,10 +4,11 @@ Everything the backend can fix silently, it fixes (missing root dirs are
 created at startup and re-ensured before every read — see `ensure_roots`);
 this endpoint reports only what cannot be healed from inside a container:
 a mount that is read-only or wrong-owner (v3 never chowns user mounts —
-docs/arch/06-deployment.md), no rippers registered yet, a missing config
+docs/developers/architecture/06-deployment.md), no rippers registered yet, a missing config
 row. The ported UI's settings System-Health panel and first-run wizard
 render it (Tier-12)."""
 
+import asyncio
 import functools
 import importlib.metadata
 import logging
@@ -25,14 +26,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from arm_backend.auth import require_jwt, require_writer
-from arm_backend.config import settings
+from arm_backend.config import effective_transcode_capable, settings
 from arm_backend.db import get_session
 from arm_backend.makemkv_status import makemkv_state_detail
 from arm_backend.seeders import CONFIG_SINGLETON_ID
-from arm_backend.thediscdb.snapshot import refresh as thediscdb_refresh
+from arm_backend.identity.sources.thediscdb_snapshot import refresh as thediscdb_refresh
 from arm_backend.utils import default_roots
 from arm_common import Config, Drive, DriveStatus, Event, Job, KeydbState, MakemkvSdfState, User
 from arm_common.schemas import (
+    DiagnosticDetail,
     MemoryInfo,
     PathStatus,
     StatsResponse,
@@ -58,10 +60,37 @@ def _roots(request: Request) -> dict[str, str]:
     return default_roots()
 
 
+# Host-side bind source for each container root, so the report can print the
+# exact `chown` the operator runs on the server (setup spec §6.3).
+_HOST_PATH_SETTING = {
+    "MEDIA_ROOT": "ARM_HOST_MEDIA_PATH",
+    "RAW_ROOT": "ARM_HOST_RAW_PATH",
+    "LOG_DIR": "ARM_HOST_LOGS_PATH",
+}
+
+
 def _path_status(name: str, path: str) -> PathStatus:
     exists = os.path.isdir(path)
     writable = exists and os.access(path, os.W_OK)
-    return PathStatus(name=name, path=path, exists=exists, writable=writable)
+    setting = _HOST_PATH_SETTING.get(name)
+    host = (getattr(settings, setting, "") or None) if setting else None
+    return PathStatus(
+        name=name, path=path, exists=exists, writable=writable, host_path=host, uid=os.getuid(), gid=os.getgid()
+    )
+
+
+def _docker_details(image_label: str, ok: bool, detail: str | None) -> list[DiagnosticDetail]:
+    """Split one docker probe result into socket + image rows for the UI. The
+    probe reports a single message, so an image problem is told apart by its
+    wording; anything else is a daemon/socket problem."""
+    if ok:
+        return [DiagnosticDetail(label="Docker socket", ok=True), DiagnosticDetail(label=image_label, ok=True)]
+    if "image" in (detail or "").lower():
+        return [
+            DiagnosticDetail(label="Docker socket", ok=True),
+            DiagnosticDetail(label=image_label, ok=False, message=detail),
+        ]
+    return [DiagnosticDetail(label="Docker socket", ok=False, message=detail)]
 
 
 @router.get("/diagnostics", response_model=SystemDiagnosticsResponse)
@@ -70,6 +99,11 @@ async def diagnostics(
     _: User = Depends(require_jwt),
     db: AsyncSession = Depends(get_session),
 ) -> SystemDiagnosticsResponse:
+    return await collect_diagnostics(request, db)
+
+
+async def collect_diagnostics(request: Request, db: AsyncSession) -> SystemDiagnosticsResponse:
+    """The diagnostics report, reusable by the setup router's system-step reconciliation."""
     roots = _roots(request)
     # Heal-on-read: the report never shows a problem the backend could
     # have fixed itself.
@@ -151,13 +185,60 @@ async def diagnostics(
     checks.append(SystemDiagnosticCheck(name="makemkv_sdf", status=sdf_status_v, detail=sdf_detail))
 
     dispatcher = getattr(request.app.state, "transcode_dispatcher", None)
-    if dispatcher is None:
-        tc_status, tc_detail = "warning", "transcoder disabled: docker socket unavailable"
+    tc_details: list[DiagnosticDetail] = []
+    if not effective_transcode_capable(settings):
+        # Ripper-only is a supported deployment, not a degraded one: the
+        # dispatcher runs without a docker client by design, so reporting its
+        # (absent) container path as a warning would be permanent noise.
+        tc_status, tc_detail = "ok", "ripper-only deployment (transcoding not installed)"
+    elif dispatcher is None:
+        tc_status, tc_detail = "warning", "transcoder dispatcher not running"
     elif not dispatcher.host_paths_set():
         tc_status, tc_detail = "warning", "transcoder disabled: ARM_HOST_*_PATH not set"
     else:
-        tc_status, tc_detail = "ok", None
-    checks.append(SystemDiagnosticCheck(name="transcoder", status=tc_status, detail=tc_detail))
+        # probe() pings a possibly-remote ssh docker host; run it off the
+        # event loop so a slow/unreachable host doesn't block the server.
+        ok, detail = await asyncio.to_thread(dispatcher.probe)
+        tc_details = _docker_details("Transcode image", ok, detail)
+        if not ok:
+            tc_status, tc_detail = "warning", detail
+        elif dispatcher.last_spawn_error:
+            tc_status, tc_detail = "warning", f"last spawn failed: {dispatcher.last_spawn_error}"
+        else:
+            tc_status, tc_detail = "ok", None
+    remote = settings.ARM_TRANSCODE_DOCKER_HOST or ""
+    if not effective_transcode_capable(settings):
+        location, remote_host = "none", None
+    elif remote:
+        location, remote_host = "remote", remote.removeprefix("ssh://").split("/", 1)[0] or None
+    else:
+        location, remote_host = "local", None
+    checks.append(
+        SystemDiagnosticCheck(
+            name="transcoder",
+            status=tc_status,
+            detail=tc_detail,
+            details=tc_details,
+            location=location,
+            remote_host=remote_host,
+        )
+    )
+
+    manager = getattr(request.app.state, "ripper_manager", None)
+    if manager is None:
+        rm_status, rm_detail = "warning", "ripper manager disabled: docker socket unavailable"
+        rm_details = [DiagnosticDetail(label="Docker socket", ok=False, message="docker socket unavailable")]
+    elif not manager.host_paths_set():
+        rm_status, rm_detail = "warning", "ripper manager disabled: ARM_HOST_*_PATH not set"
+        rm_details = [DiagnosticDetail(label="Host paths", ok=False, message="ARM_HOST_*_PATH not set")]
+    else:
+        ok, detail = await asyncio.to_thread(manager.probe)
+        rm_details = _docker_details("Ripper image", ok, detail)
+        if not ok:
+            rm_status, rm_detail = "warning", detail
+        else:
+            rm_status, rm_detail = "ok", None
+    checks.append(SystemDiagnosticCheck(name="ripper_manager", status=rm_status, detail=rm_detail, details=rm_details))
 
     overall = "ok"
     for ch in checks:

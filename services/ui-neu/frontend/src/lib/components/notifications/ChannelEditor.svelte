@@ -1,9 +1,10 @@
 <script lang="ts">
 	import type { Channel, Catalog, CatalogService, AppriseConfig } from '$lib/types/notifications';
 	import type { ChannelTemplate } from '$lib/types/notifications';
-	import type { EventTypeInfo } from '$lib/api/channels';
+	import type { EventTypeInfo, ScriptInput, BashScriptInfo } from '$lib/api/channels';
 	import ConfigureSection from './sections/ConfigureSection.svelte';
 	import EventsSection from './sections/EventsSection.svelte';
+	import BashTestPanel from './BashTestPanel.svelte';
 
 	export interface EditorBody {
 		name: string;
@@ -37,21 +38,23 @@
 	let enabled = $state(channel.enabled);
 	let config = $state<Record<string, unknown>>({ ...channel.config });
 	let events = $state<string[]>([...channel.subscribed_events]);
-	let templates = $state<Record<string, ChannelTemplate>>({ ...channel.templates });
+	// Deep copy: a shallow spread shares the per-event objects with the prop, so
+	// editing a title/body/input would mutate `channel.templates` too and the
+	// dirty check below would never fire.
+	let templates = $state<Record<string, ChannelTemplate>>(
+		structuredClone($state.snapshot(channel.templates)) as Record<string, ChannelTemplate>
+	);
+	let scriptInputs = $state<ScriptInput[]>([]);
 
 	// Apprise channels store config.service_id, so resolve the service from the
 	// loaded catalog to render the per-service re-entry fields.
 	const serviceId = $derived(
-		channel.type === 'apprise'
-			? ((channel.config as AppriseConfig).service_id ?? null)
-			: null
+		channel.type === 'apprise' ? ((channel.config as AppriseConfig).service_id ?? null) : null
 	);
 	const service = $derived<CatalogService | null>(
-		serviceId ? catalog.services.find((s) => s.id === serviceId) ?? null : null
+		serviceId ? (catalog.services.find((s) => s.id === serviceId) ?? null) : null
 	);
-	const unknownService = $derived(
-		channel.type === 'apprise' && serviceId !== null && service === null
-	);
+	const unknownService = $derived(channel.type === 'apprise' && serviceId !== null && service === null);
 
 	// Apprise re-entry values live in a separate state from config (which holds the
 	// composed url + service_id). Seed from stored fields so private values show as
@@ -60,20 +63,18 @@
 	let appriseFields = $state<Record<string, unknown>>({
 		...((channel.config as AppriseConfig).fields ?? {})
 	});
-	const noFields = $derived(
-		channel.type === 'apprise' && !(channel.config as AppriseConfig).fields
-	);
+	const noFields = $derived(channel.type === 'apprise' && !(channel.config as AppriseConfig).fields);
 	const appriseTouched = $derived(
 		Object.values(appriseFields).some((v) => v !== undefined && v !== null && String(v).trim() !== '')
 	);
 
 	const dirty = $derived(
 		name !== channel.name ||
-		enabled !== channel.enabled ||
-		(channel.type !== 'apprise' && JSON.stringify(config) !== JSON.stringify(channel.config)) ||
-		JSON.stringify(events) !== JSON.stringify(channel.subscribed_events) ||
-		JSON.stringify(templates) !== JSON.stringify(channel.templates) ||
-		appriseTouched
+			enabled !== channel.enabled ||
+			(channel.type !== 'apprise' && JSON.stringify(config) !== JSON.stringify(channel.config)) ||
+			JSON.stringify(events) !== JSON.stringify(channel.subscribed_events) ||
+			JSON.stringify(templates) !== JSON.stringify(channel.templates) ||
+			appriseTouched
 	);
 
 	function body(): EditorBody {
@@ -81,28 +82,56 @@
 	}
 </script>
 
-<div class="space-y-4 border-t border-primary/20 px-4 py-4 dark:border-primary/20">
+<div class="stack channel-editor">
 	{#if channel.type === 'apprise'}
 		{#if unknownService}
-			<p class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-300">
+			<p class="alert alert-warning">
 				Unknown service '{serviceId}' - recreate this channel to edit its destination.
 			</p>
 		{:else if noFields}
-			<p class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-500/40 dark:bg-amber-900/20 dark:text-amber-300">
+			<p class="alert alert-warning">
 				This channel was added via a raw URL. Delete and re-add it to edit its destination.
 			</p>
 		{:else}
 			<ConfigureSection type="apprise" bind:name bind:enabled bind:config={appriseFields} {service} preserveExisting />
 		{/if}
 	{:else}
-		<ConfigureSection type={channel.type} bind:name bind:enabled bind:config {service} />
+		<ConfigureSection
+			type={channel.type}
+			bind:name
+			bind:enabled
+			bind:config
+			{service}
+			preserveExisting
+			onscript={(i: BashScriptInfo | null) => (scriptInputs = i?.inputs ?? [])}
+		/>
 	{/if}
-	<EventsSection bind:selected={events} bind:templates {eventTypes} />
+	<EventsSection bind:selected={events} bind:templates {eventTypes} inputs={scriptInputs} />
+	{#if channel.type === 'bash'}
+		<BashTestPanel {config} {templates} {events} {eventTypes} channelId={String(channel.id)} inputs={scriptInputs} />
+	{/if}
 
-	<div class="flex flex-wrap items-center gap-2">
-		<button type="button" disabled={!dirty} onclick={() => onsave(body())} class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40">Save changes</button>
-		<button type="button" onclick={() => ontest(body())} class="rounded-md border border-primary/25 px-4 py-2 text-sm text-primary-text hover:bg-primary/10 dark:border-primary/30 dark:text-primary-text-dark">Send test</button>
-		<button type="button" onclick={onclose} class="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-600 hover:bg-primary/10 dark:border-gray-600 dark:text-gray-300">Close</button>
-		<button type="button" onclick={ondelete} class="ml-auto rounded-md border border-red-300 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-900/20">Delete</button>
+	<div class="cluster">
+		<button type="button" disabled={!dirty} onclick={() => onsave(body())} class="btn btn-primary">Save changes</button>
+		{#if channel.type !== 'bash'}
+			<button type="button" onclick={() => ontest(body())} class="btn">Send test</button>
+		{/if}
+		<button type="button" onclick={onclose} class="btn">Close</button>
+		<button type="button" onclick={ondelete} class="btn btn-danger channel-editor-delete">Delete</button>
 	</div>
 </div>
+
+<style>
+	.channel-editor {
+		border-top: 1px solid var(--color-border);
+		padding: 1rem;
+	}
+	/* the original Close button's border was a genuinely neutral grey
+	   (border-gray-300/600), not the primary-tinted --color-border-strong
+	   every other bare .btn uses - no neutral-border role exists in spec 5.1,
+	   so this is a deliberate, unfixable-without-inventing-a-token collapse
+	   (kept as bare .btn per the reference's precedent, spec section 3). */
+	.channel-editor-delete {
+		margin-left: auto;
+	}
+</style>

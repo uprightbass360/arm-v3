@@ -16,7 +16,11 @@ import {
 	updateDrive,
 	deleteDrive,
 	rescanDrives,
-	fetchDriveDiagnostic
+	fetchDriveDiagnostic,
+	enrollDrive,
+	ignoreDrive,
+	unignoreDrive,
+	unenrollDrive
 } from '../api/drives';
 
 beforeEach(() => mockFetch.mockReset());
@@ -28,16 +32,28 @@ describe('fetchDrives', () => {
 		expect(mockFetch).toHaveBeenCalledWith('/api/drives', expect.objectContaining({ method: 'GET' }));
 		expect(result).toEqual([{ id: 'drv_1' }]);
 	});
+
+	it('adds include_retired=true when asked', async () => {
+		mockFetch.mockResolvedValue(jsonResponse([]));
+		await fetchDrives({ includeRetired: true });
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/drives?include_retired=true',
+			expect.objectContaining({ method: 'GET' })
+		);
+	});
 });
 
 describe('updateDrive', () => {
 	it('PATCHes /api/drives/:id', async () => {
 		mockFetch.mockResolvedValue(jsonResponse({ id: 'drv_x', display_name: 'New Name' }));
 		const result = await updateDrive('drv_x', { display_name: 'New Name' });
-		expect(mockFetch).toHaveBeenCalledWith('/api/drives/drv_x', expect.objectContaining({
-			method: 'PATCH',
-			body: JSON.stringify({ display_name: 'New Name' })
-		}));
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/drives/drv_x',
+			expect.objectContaining({
+				method: 'PATCH',
+				body: JSON.stringify({ display_name: 'New Name' })
+			})
+		);
 		expect(result).toEqual({ id: 'drv_x', display_name: 'New Name' });
 	});
 });
@@ -61,7 +77,10 @@ describe('rescanDrives', () => {
 	it('POSTs /api/drives/rescan?force=true when force is set', async () => {
 		mockFetch.mockResolvedValue(jsonResponse({ online: 1, stale: 0 }));
 		await rescanDrives(true);
-		expect(mockFetch).toHaveBeenCalledWith('/api/drives/rescan?force=true', expect.objectContaining({ method: 'POST' }));
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/drives/rescan?force=true',
+			expect.objectContaining({ method: 'POST' })
+		);
 	});
 });
 
@@ -71,5 +90,40 @@ describe('fetchDriveDiagnostic', () => {
 		const result = await fetchDriveDiagnostic();
 		expect(mockFetch).toHaveBeenCalledWith('/api/drives/diagnostic', expect.objectContaining({ method: 'GET' }));
 		expect(result).toEqual({ drives: [] });
+	});
+});
+
+describe('enrollDrive', () => {
+	it('POSTs /api/drives/:id/enroll', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ id: 'drv_x', lifecycle: 'enrolled' }));
+		const result = await enrollDrive('drv_x');
+		expect(mockFetch).toHaveBeenCalledWith('/api/drives/drv_x/enroll', expect.objectContaining({ method: 'POST' }));
+		expect(result).toEqual({ id: 'drv_x', lifecycle: 'enrolled' });
+	});
+});
+
+describe('ignoreDrive', () => {
+	it('POSTs /api/drives/:id/ignore', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ id: 'drv_x', lifecycle: 'ignored' }));
+		const result = await ignoreDrive('drv_x');
+		expect(mockFetch).toHaveBeenCalledWith('/api/drives/drv_x/ignore', expect.objectContaining({ method: 'POST' }));
+		expect(result).toEqual({ id: 'drv_x', lifecycle: 'ignored' });
+	});
+});
+
+describe('unignoreDrive', () => {
+	it('POSTs /api/drives/:id/unignore', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ id: 'drv_x', lifecycle: 'detected' }));
+		const result = await unignoreDrive('drv_x');
+		expect(mockFetch).toHaveBeenCalledWith('/api/drives/drv_x/unignore', expect.objectContaining({ method: 'POST' }));
+		expect(result).toEqual({ id: 'drv_x', lifecycle: 'detected' });
+	});
+});
+
+describe('unenrollDrive', () => {
+	it('POSTs /api/drives/:id/unenroll and resolves without reading a body', async () => {
+		mockFetch.mockResolvedValue(emptyResponse());
+		await expect(unenrollDrive('drv_x')).resolves.toBeUndefined();
+		expect(mockFetch).toHaveBeenCalledWith('/api/drives/drv_x/unenroll', expect.objectContaining({ method: 'POST' }));
 	});
 });

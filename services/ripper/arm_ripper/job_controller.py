@@ -12,13 +12,14 @@ from arm_common import DiscType, Job, JobStatus, TrackStatus, with_log_context
 from arm_common.schemas import JobView, RipperConfigView, RipStartResponse, ScanResult, TrackView, WSEnvelope
 from arm_ripper.backend_client import BackendClient
 from arm_ripper.community_keydb import refresh_community_keydb
+from arm_ripper.drive_handle import DriveHandle
 from arm_ripper.makemkv_sdf import refresh_makemkv_sdf
 from arm_ripper.makemkv_key import refresh_makemkv_key
 from arm_ripper.rip import RipResult, rip_all
-from arm_ripper.rip.dispatcher import DEFAULT_MIN_LENGTH_SECONDS
-from arm_ripper.drive_poll import DriveState, read_drive_status
+from arm_ripper.rip.dispatcher import DEFAULT_MIN_LENGTH_SECONDS, TransferStats
+from arm_ripper.drive_poll import _ABSENT_ERRNOS, DriveState, read_drive_status
 from arm_ripper.scan import ScanError, scan as scan_disc
-from arm_ripper.source import is_iso_source
+from arm_ripper.source import is_file_source
 from arm_ripper.ws_client import WSClient
 
 logger = logging.getLogger("arm_ripper.job_controller")
@@ -92,6 +93,16 @@ RAW_ROOT = Path("/raw")
 SCAN_NOT_READY_MAX_ATTEMPTS = 5
 SCAN_NOT_READY_BACKOFFS = (2.0, 4.0, 8.0, 12.0)  # between attempts 1→2, 2→3, 3→4, 4→5
 
+# Sentinel distinguishing "resolution_timeout not passed" (defer to
+# whatever RESOLUTION_WAIT_TIMEOUT_SECONDS currently is) from an explicit
+# `resolution_timeout=None` (wait forever). A plain
+# `resolution_timeout: float | None = RESOLUTION_WAIT_TIMEOUT_SECONDS`
+# default would bind to that module constant's value once, at import time —
+# invisible to a caller (or test) that reads/patches the live module
+# attribute afterward, which is how every existing wait test already
+# configures the timeout.
+_RESOLUTION_TIMEOUT_UNSET = object()
+
 
 class JobController:
     """Drives one disc through scan → identify → rip → eject."""
@@ -102,18 +113,26 @@ class JobController:
         drive_id: str,
         *,
         ws: WSClient | None = None,
-        device_path: str | None = None,
+        device_path: str | DriveHandle | None = None,
         default_min_length_seconds: int = DEFAULT_MIN_LENGTH_SECONDS,
+        resolution_timeout: float | None = _RESOLUTION_TIMEOUT_UNSET,  # type: ignore[assignment]
     ) -> None:
         self._client = client
         self._keydb_tasks: set[asyncio.Task[None]] = set()
         self._sdf_tasks: set[asyncio.Task[None]] = set()
         self._drive_id = drive_id
         self._ws = ws
-        # Each ripper container owns exactly one optical drive; storing the
-        # device path here lets `handle_manual_trigger` run without re-reading
-        # settings (which a unit test environment may not have populated).
-        self._device_path = device_path
+        # Each ripper container owns exactly one optical drive. The node it
+        # occupies can change while we run (replug under a new srN), so we
+        # hold the shared DriveHandle rather than a copy of the path — the
+        # poll loop keeps it current and every read here sees the move. A
+        # plain str (ISO source, tests) is wrapped as a fixed handle.
+        if isinstance(device_path, DriveHandle):
+            self._device = device_path
+        elif device_path is None:
+            self._device = DriveHandle()
+        else:
+            self._device = DriveHandle.fixed(device_path)
         # Host-side baseline `--minlength` for `makemkvcon mkv all`. The
         # backend can override per-rip via `RipStartResponse.min_length_seconds`
         # (resolved from the Session's `overrides_json["min_length_seconds"]`);
@@ -121,6 +140,13 @@ class JobController:
         # `main.py` from `ARM_MIN_LENGTH_SECONDS`; tests get the dispatcher
         # default (600).
         self._default_min_length_seconds = default_min_length_seconds
+        # Ceiling on an AWAITING_USER_ID / AWAITING_REVIEW park, in seconds.
+        # None means wait indefinitely — source mode's one-shot container must
+        # not exit (and have the backend watchdog mark the job FAILED) while
+        # the operator is still reviewing; see `_wait_for_resolution`.
+        self._resolution_timeout: float | None = (
+            RESOLUTION_WAIT_TIMEOUT_SECONDS if resolution_timeout is _RESOLUTION_TIMEOUT_UNSET else resolution_timeout
+        )
         # job_id → asyncio.Event signalled when an `identify.resolved`
         # arrives over WS. Populated by `_await_resolution`, drained by
         # `on_ws_command`.
@@ -138,6 +164,13 @@ class JobController:
         # sync); kept here so overlapping abandon signals don't stack
         # umount/eject subprocess retries. Set inside `_spawn_eject` only.
         self._eject_task: asyncio.Task[None] | None = None
+
+    @property
+    def _device_path(self) -> str | None:
+        """Read-only view of the shared DriveHandle. Only the poll loop writes
+        the handle (spec §4) — a controller-side write would let a stale
+        pickup path override the node the loop just resolved."""
+        return self._device.current
 
     @property
     def is_active(self) -> bool:
@@ -162,8 +195,6 @@ class JobController:
         if not self.is_idle():
             logger.debug("pickup ignored: controller already busy")
             return
-        if self._device_path is None and device_path:
-            self._device_path = device_path
         async with self._active_lock:
             self._active_task = asyncio.current_task()
             self._active_job_id = job.id
@@ -256,7 +287,7 @@ class JobController:
         """True when the drive currently reports a seated disc (DISC_OK) —
         guards abandon-eject so abandoning an old job from history with an
         empty (or already-ejected) drive doesn't pop the tray."""
-        if self._device_path is None or is_iso_source(self._device_path):
+        if self._device_path is None or is_file_source(self._device_path):
             return False
         try:
             return read_drive_status(self._device_path) == DriveState.DISC_OK
@@ -317,6 +348,11 @@ class JobController:
                     scan_result = await self._scan_with_ready_retry(device_path)
                 except ScanError as e:
                     logger.error("scan failed device=%s err=%s", device_path, e)
+                    return
+                except OSError as e:
+                    if e.errno not in _ABSENT_ERRNOS:
+                        raise
+                    logger.warning("drive went absent during scan device=%s — pipeline abandoned", device_path)
                     return
 
                 try:
@@ -401,6 +437,13 @@ class JobController:
             result = await scan_disc(device_path)
             last = result
             if result.titles:
+                return result
+
+            # An ISO file has no drive to settle: the CDROM_DRIVE_STATUS ioctl
+            # below is invalid on a regular file (ENOTTY) and would crash the
+            # one-shot source pipeline. Zero titles from a file is final.
+            if is_file_source(device_path):
+                logger.warning("scan: 0 titles from ISO source %s — nothing to retry", device_path)
                 return result
 
             state = read_drive_status(device_path)
@@ -530,9 +573,12 @@ class JobController:
                 return None
 
         # Long wait: WS-driven, with periodic REST sanity polls so we
-        # don't hang forever on a torn WS connection.
-        deadline = asyncio.get_event_loop().time() + RESOLUTION_WAIT_TIMEOUT_SECONDS
-        while asyncio.get_event_loop().time() < deadline:
+        # don't hang forever on a torn WS connection. `deadline is None`
+        # means wait indefinitely (source mode): the periodic POLL_MAX_SECONDS
+        # sanity poll below still runs unchanged, just with no ceiling on it.
+        timeout = self._resolution_timeout
+        deadline = None if timeout is None else asyncio.get_event_loop().time() + timeout
+        while deadline is None or asyncio.get_event_loop().time() < deadline:
             woke_via_ws = True
             try:
                 await asyncio.wait_for(event.wait(), timeout=POLL_MAX_SECONDS)
@@ -554,7 +600,7 @@ class JobController:
             if woke_via_ws:
                 event.clear()
 
-        logger.warning("job %s %s wait timed out after %.0fs", job_id, spec.label, RESOLUTION_WAIT_TIMEOUT_SECONDS)
+        logger.warning("job %s %s wait timed out after %.0fs", job_id, spec.label, timeout)
         return None
 
     async def _review_countdown_expired(self, view: JobView) -> bool:
@@ -722,21 +768,33 @@ class JobController:
         The backend's `/resume` endpoint resets tracks to QUEUED and
         sets `resumed_from_crash=True`; we then run the same rip-loop
         as a fresh disc would.
+
+        Claims the single-flight gate exactly like `recover_held_job`, so a
+        crash-resumed rip is abandonable via `job.abandoned` and makes
+        `is_idle()` False (no double-rip from the heartbeat re-probe or from
+        a reattach boot probe).
         """
-        with with_log_context(job_id=job.id):
-            # Crash-resume skips the scan path, so refresh the key here too —
-            # a rip resumed days after a crash must not run on a stale key.
-            await refresh_makemkv_key(key=await self._configured_makemkv_key())
-            self._spawn_keydb_refresh(enabled=await self._community_keydb_enabled())
-            self._spawn_sdf_refresh(enabled=await self._makemkv_sdf_enabled())
-            rip_start = await self._client.resume(job.id)
-            logger.info("rip-resume job_id=%s tracks=%d", job.id, len(rip_start.tracks))
-            await self._execute_rip(
-                job_id=job.id,
-                disc_type=job.disc_type,
-                device_path=device_path,
-                rip_start=rip_start,
-            )
+        async with self._active_lock:
+            self._active_task = asyncio.current_task()
+            self._active_job_id = job.id
+            try:
+                with with_log_context(job_id=job.id):
+                    # Crash-resume skips the scan path, so refresh the key here too —
+                    # a rip resumed days after a crash must not run on a stale key.
+                    await refresh_makemkv_key(key=await self._configured_makemkv_key())
+                    self._spawn_keydb_refresh(enabled=await self._community_keydb_enabled())
+                    self._spawn_sdf_refresh(enabled=await self._makemkv_sdf_enabled())
+                    rip_start = await self._client.resume(job.id)
+                    logger.info("rip-resume job_id=%s tracks=%d", job.id, len(rip_start.tracks))
+                    await self._execute_rip(
+                        job_id=job.id,
+                        disc_type=job.disc_type,
+                        device_path=device_path,
+                        rip_start=rip_start,
+                    )
+            finally:
+                self._active_task = None
+                self._active_job_id = None
 
     async def _execute_rip(
         self,
@@ -782,17 +840,24 @@ class JobController:
                     )
                     logger.warning("track %s failed err=%s", track.id, result.error)
 
-        async def on_track_progress(track: TrackView, fraction: float) -> None:
+        async def on_track_progress(track: TrackView, fraction: float, stats: TransferStats | None = None, /) -> None:
             with with_log_context(track_id=track.id):
                 logger.debug("track %s progress=%.2f", track.id, fraction)
                 if self._ws is not None:
+                    payload: dict[str, object] = {
+                        "track_id": track.id,
+                        "progress_pct": round(fraction * 100, 1),
+                    }
+                    if stats is not None:
+                        # Byte detail for a copy (the full-disc dump): the UI shows
+                        # "X of Y GB at R MB/s" and derives the ETA from the rate.
+                        payload["bytes_done"] = stats["bytes_done"]
+                        payload["bytes_total"] = stats["bytes_total"]
+                        payload["rate_bps"] = round(stats["rate_bps"]) if stats["rate_bps"] is not None else None
                     await self._ws.publish(
                         topic=f"ripper.progress.{job_id}",
                         event_type="ripper.progress",
-                        payload={
-                            "track_id": track.id,
-                            "progress_pct": round(fraction * 100, 1),
-                        },
+                        payload=payload,
                     )
 
         await rip_all(
@@ -813,7 +878,9 @@ class JobController:
         completed = await self._rip_complete_with_retry(job_id)
         logger.info("rip-complete job_id=%s status=%s", job_id, completed.status.value)
 
-        await self._eject_with_retry(device_path)
+        # Eject the node the drive is at NOW — it may have renumbered during
+        # the rip (USB replug); the path captured at rip start is a hint only.
+        await self._eject_with_retry(self._device_path or device_path)
         await asyncio.sleep(EJECT_GRACE_SECONDS)
 
     async def _eject_with_retry(self, device_path: str) -> None:
@@ -832,10 +899,18 @@ class JobController:
         container or the ripper's own scan-poster path mounted the
         device internally.
         """
+        # The drive vanished (unplugged / powered off) between rip-complete
+        # and here — there's no live node to umount/eject, and retrying just
+        # produces a misleading "failed after N attempts" for a drive that
+        # was never coming back. The poll loop's absence handling owns
+        # recovery once it reattaches.
+        if self._device_path is None:
+            logger.info("eject skipped: drive is absent")
+            return
         # ISO sources have no tray to eject. probe_disc reads the file
         # directly via PyCdlib and makemkvcon opens it read-only; nothing
         # mounts it, so there's nothing to umount or eject.
-        if is_iso_source(device_path):
+        if is_file_source(device_path):
             logger.info("eject skipped: source is ISO file %s", device_path)
             return
         await self._run_command("umount", device_path, log_failure=False)

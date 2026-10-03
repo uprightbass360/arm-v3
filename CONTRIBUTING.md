@@ -2,9 +2,9 @@
 
 Thank you for contributing to the Automatic Ripping Machine.
 
-This is **ARM v3** — a greenfield rebuild (FastAPI backend, Vue UI, Postgres, a
+This is **ARM v3** — a greenfield rebuild (FastAPI backend, SvelteKit UI, Postgres, a
 ripper-per-drive and an ephemeral transcoder). The architecture is documented
-under [docs/arch/](docs/arch/); start at [docs/arch/README.md](docs/arch/README.md).
+under [docs/developers/architecture/](docs/developers/architecture/); start at [docs/developers/architecture/README.md](docs/developers/architecture/README.md).
 ARM v2 is frozen — no new work targets it. Its code remains in the
 repository's pre-cutover git history.
 
@@ -18,7 +18,7 @@ Open an issue on GitHub. For a bug report, please include:
   attaching. You can drag-and-drop a log file onto an issue comment.
 - Because ARM drives external tools (MakeMKV, HandBrake), try the underlying
   tool by hand to rule out an upstream problem — see
-  [docs/ops/makemkv.md](docs/ops/makemkv.md).
+  [docs/user/MakeMKV-Ripper.md](docs/user/MakeMKV-Ripper.md).
 
 When filing a bug, enhancement, or feature request, please say whether you are
 able/willing to make the change yourself in a pull request.
@@ -51,9 +51,9 @@ always-releasable.
   share a PR.
 - **Rebase before review** so your branch is current with `main`; we squash-merge
   to keep the trunk linear.
-- **CI must pass** (`.github/workflows/ci.yml`): ruff format/lint, mypy and
-  `vue-tsc` type checks, the per-service `pytest` suites, and the OpenAPI
-  drift check.
+- **CI must pass** (`.github/workflows/ci.yml`): ruff format/lint, mypy, the
+  UI's `svelte-check` and vitest suites, the per-service `pytest` suites, and the
+  OpenAPI and UI codegen drift checks.
 - Update affected docs / `README.md` in the same PR.
 
 ## Local development
@@ -77,7 +77,7 @@ Postgres, drives, or network:
 uv run pytest                  # all backend / ripper / transcode suites
 ```
 
-See [docs/arch/09-testing.md](docs/arch/09-testing.md) for the two-tier design
+See [docs/developers/architecture/09-testing.md](docs/developers/architecture/09-testing.md) for the two-tier design
 (fast fake-session unit tests + the real-DB e2e harness) and the coverage policy.
 
 Heavier end-to-end drills live in `devtools/`:
@@ -95,8 +95,20 @@ uv run pre-commit install              # install the git hook once
 uv run pre-commit run --all-files      # run everything manually
 ```
 
-Hooks: `ruff-format` + `ruff` and `mypy` on Python; ESLint, Prettier and
-`vue-tsc` on the UI; `shellcheck` on shell scripts. Line length is **120**.
+Hooks: `ruff-format` + `ruff` and `mypy` on Python; `eslint-ui-neu` and
+`prettier-ui-neu` on the UI; `shellcheck` on shell scripts. Line length is
+**120**. The UI hooks run the frontend's own tooling, so install it once with
+`npm ci --prefix services/ui-neu/frontend` (`devtools/setup-dev.sh` already
+does). The UI (`services/ui-neu/frontend`) is also checked with `npm run check`
+(svelte-check) and `npx vitest run`; `npm run lint` and `npm run format` run
+ESLint and Prettier by hand.
+
+The one-time Prettier reformat of the UI is listed in `.git-blame-ignore-revs`.
+To have `git blame` skip it:
+
+```bash
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+```
 
 ## Wire contract (OpenAPI)
 
@@ -105,8 +117,8 @@ job fails if they diverge. If you change a backend router or an `arm_common`
 schema that affects the API:
 
 ```bash
-bash devtools/regen-openapi-snapshot.sh   # refresh services/ui/openapi.snapshot.json
-cd services/ui && npm run openapi-types    # regenerate the TypeScript types
+bash devtools/regen-openapi-snapshot.sh   # refresh services/ui-neu/openapi.snapshot.json
+bash services/ui-neu/scripts/codegen.sh   # regenerate the TypeScript types (api.gen.ts)
 ```
 
 Commit both regenerated artifacts with your change.

@@ -1,6 +1,7 @@
 import type { JobView } from '$lib/types/api.gen';
 import { statusLabel } from '$lib/utils/format';
-import { discTypeLabel, isJobActive } from '$lib/utils/job-type';
+import { discTypeLabel } from '$lib/utils/job-type';
+import { isLive, isPostRipStatus } from '$lib/utils/job-status-groups';
 import { driveLabel } from '$lib/utils/drive-name';
 
 export interface MetadataField {
@@ -38,31 +39,50 @@ function asScalarString(v: unknown): string | undefined {
  * for that key (never throws). Structured values (scan_result, tracks, raw)
  * are intentionally NOT surfaced here — they belong to the raw viewer.
  */
+const MEDIA_TYPE_TO_VIDEO_TYPE: Record<string, string> = {
+	tv: 'series'
+};
+
 export function readJobMetadata(
-	metadata_json: Record<string, unknown> | null | undefined
+	metadata_json: Record<string, unknown> | null | undefined,
+	job?: Pick<JobView, 'season' | 'pending_session_id' | 'media_type'> | null
 ): JobMetadata {
 	const md = (metadata_json ?? {}) as Record<string, unknown>;
 	const out: JobMetadata = {};
 
-	const imdb = asScalarString(md.imdb_id);
+	// Step 2 (backend): season and pending_session_id are job COLUMNS now.
+	if (job?.season != null) out.season = String(job.season).padStart(2, '0');
+	if (job?.pending_session_id) out.pending_session_id = job.pending_session_id;
+
+	// Step 2 (§3.4): the typed sections are authoritative — external ids
+	// live under identity.external_ids, the 1337-server extras under
+	// provider_raw.arm_server, music naming under music.
+	const asRecord = (v: unknown): Record<string, unknown> =>
+		v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+	const identity = asRecord(md.identity);
+	const ext = asRecord(identity.external_ids);
+	const armServer = asRecord(asRecord(md.provider_raw).arm_server);
+	const music = asRecord(md.music);
+
+	const imdb = asScalarString(ext.imdb);
 	if (imdb !== undefined) out.imdb_id = imdb;
-	const tmdb = asScalarString(md.tmdb_id);
+	const tmdb = asScalarString(ext.tmdb);
 	if (tmdb !== undefined) out.tmdb_id = tmdb;
-	const tvdb = asScalarString(md.tvdb_id);
+	const tvdb = asScalarString(ext.tvdb);
 	if (tvdb !== undefined) out.tvdb_id = tvdb;
-	const vt = asScalarString(md.video_type);
-	if (vt !== undefined) out.video_type = vt;
-	const season = asScalarString(md.season);
-	if (season !== undefined) out.season = season;
-	const artist = asScalarString(md.artist);
+	const vt = asScalarString(armServer.video_type);
+	if (vt !== undefined) {
+		out.video_type = vt;
+	} else if (job?.media_type) {
+		out.video_type = MEDIA_TYPE_TO_VIDEO_TYPE[job.media_type] ?? job.media_type;
+	}
+	const artist = asScalarString(music.artist);
 	if (artist !== undefined) out.artist = artist;
-	const album = asScalarString(md.album);
+	const album = asScalarString(music.album);
 	if (album !== undefined) out.album = album;
-	if (typeof md.multi_title === 'boolean') out.multi_title = md.multi_title;
-	const source = asScalarString(md.source_type);
+	if (typeof armServer.multi_title === 'boolean') out.multi_title = armServer.multi_title;
+	const source = asScalarString(armServer.source_type);
 	if (source !== undefined) out.source_type = source;
-	const pendingSession = asScalarString(md.pending_session_id);
-	if (pendingSession !== undefined) out.pending_session_id = pendingSession;
 
 	const scan = md.scan_result;
 	if (scan && typeof scan === 'object') {
@@ -89,11 +109,27 @@ export function videoTypeLabel(vt: string | null | undefined): string {
 // (video_type, label, devpath, multi_title, crc_id, imdb_id, season,
 // tvdb_id, artist/album, output paths, stop_time, job_length, …) has no
 // v3 equivalent, so those fields are dropped here rather than synthesized.
+function shortSessionId(id: string): string {
+	return id.length > 15 ? `${id.slice(0, 15)}...` : id;
+}
+
+/** "Name[, Name], applies when the rip finishes" pre-rip, "..., waiting" post-rip; null if none parked. */
+export function parkedSessionLine(
+	job: Pick<JobView, 'parked_session_ids' | 'status'>,
+	names: Map<string, string>
+): string | null {
+	const ids = job.parked_session_ids ?? [];
+	if (ids.length === 0) return null;
+	const label = ids.map((id) => names.get(id) ?? shortSessionId(id)).join(', ');
+	return `${label}, ${isPostRipStatus(job.status) ? 'waiting' : 'applies when the rip finishes'}`;
+}
+
 export function buildMetadataFields(
 	job: JobView,
-	driveNames?: Record<string, string> | null
+	driveNames?: Record<string, string> | null,
+	sessionNames?: Map<string, string>
 ): MetadataField[] {
-	const active = isJobActive(job.status);
+	const active = isLive(job);
 
 	const fields: MetadataField[] = [];
 
@@ -118,11 +154,12 @@ export function buildMetadataFields(
 	} else {
 		fields.push({ label: 'State', value: 'Finished' });
 	}
+	const parked = parkedSessionLine(job, sessionNames ?? new Map());
+	if (parked) fields.push({ label: 'Session', value: parked });
 
 	// --- Promoted real JobView columns ---
 	if (job.disc_number != null) {
-		const discValue =
-			job.disc_total != null ? `${job.disc_number} of ${job.disc_total}` : String(job.disc_number);
+		const discValue = job.disc_total != null ? `${job.disc_number} of ${job.disc_total}` : String(job.disc_number);
 		fields.push({ label: 'Disc #', value: discValue });
 	}
 	if (job.poster_url_manual) {
@@ -132,7 +169,7 @@ export function buildMetadataFields(
 	}
 
 	// --- Promoted metadata_json known scalars ---
-	const md = readJobMetadata(job.metadata_json);
+	const md = readJobMetadata(job.metadata_json, job);
 	if (md.video_type) {
 		fields.push({ label: 'Type', value: videoTypeLabel(md.video_type) });
 	}
@@ -170,4 +207,3 @@ export function buildMetadataFields(
 
 	return fields;
 }
-

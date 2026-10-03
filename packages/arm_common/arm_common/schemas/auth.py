@@ -50,9 +50,27 @@ class ConfigView(BaseModel):
     auto_rip_on_insert: bool
     block_on_miss: bool
     community_keydb_enabled: bool
+    # Drive scanner tunables (spec §2) — operator-editable, read every tick.
+    drive_scan_interval_seconds: int
+    drive_detected_prune_days: int
+    # Transcode dispatcher parallelism cap — operator-editable, read every
+    # tick (moved from the MAX_PARALLEL_TRANSCODES env var, which now only
+    # seeds this on first boot).
+    max_parallel_transcodes: int
+    # ISO-source ripping: concurrent ISO rips, 1 to 8 (default 1).
+    max_parallel_iso_rips: int
+    # transcode_enabled: the runtime switch (a Config DB column, editable).
+    # transcode_capable: the deployment capability (read-only, derived from env
+    # Settings, not a Config column). capable=False renders the toggle locked.
+    transcode_enabled: bool
+    transcode_capable: bool
     makemkv_sdf_enabled: bool
     thediscdb_enabled: bool
     thediscdb_refresh_days: int
+    episode_sources: list[str]
+    disc_hint_sources: list[str]
+    episode_match_tolerance_seconds: int
+    episode_auto_apply: bool
     ripping_paused: bool
     hold_for_review: bool
     manual_wait_seconds: int
@@ -63,6 +81,8 @@ class ConfigView(BaseModel):
     makemkv_key_valid: bool | None = None
     makemkv_key_state: str | None = None
     makemkv_key_checked_at: datetime | None = None
+    # Drive whose ripper last reported the key status (setup step 4 "checked by").
+    makemkv_key_checked_by_drive_id: str | None = None
     updated_by_user_id: str | None
     updated_at: datetime | None
 
@@ -77,9 +97,18 @@ class ConfigUpdateRequest(BaseModel):
     auto_rip_on_insert: bool | None = None
     block_on_miss: bool | None = None
     community_keydb_enabled: bool | None = None
+    drive_scan_interval_seconds: int | None = None
+    drive_detected_prune_days: int | None = None
+    max_parallel_transcodes: int | None = None
+    max_parallel_iso_rips: int | None = None
+    transcode_enabled: bool | None = None
     makemkv_sdf_enabled: bool | None = None
     thediscdb_enabled: bool | None = None
     thediscdb_refresh_days: int | None = None
+    episode_sources: list[str] | None = None
+    disc_hint_sources: list[str] | None = None
+    episode_match_tolerance_seconds: int | None = None
+    episode_auto_apply: bool | None = None
     ripping_paused: bool | None = None
     hold_for_review: bool | None = None
     manual_wait_seconds: int | None = None

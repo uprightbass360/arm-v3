@@ -12,9 +12,8 @@ vi.mock('$lib/api/jobs', () => ({
 	updateTrack: vi.fn(() => Promise.resolve())
 }));
 
-import { searchMetadata, fetchMediaDetail, updateTrackTitle, clearTrackTitle, updateTrack } from '$lib/api/jobs';
+import { searchMetadata, updateTrackTitle, clearTrackTitle, updateTrack } from '$lib/api/jobs';
 const mockSearchMetadata = vi.mocked(searchMetadata);
-const mockFetchDetail = vi.mocked(fetchMediaDetail);
 const mockUpdateTrackTitle = vi.mocked(updateTrackTitle);
 const mockClearTrackTitle = vi.mocked(clearTrackTitle);
 const mockUpdateTrack = vi.mocked(updateTrack);
@@ -61,7 +60,9 @@ describe('TrackTitleSearch', () => {
 
 	describe('interactions', () => {
 		it('calls searchMetadata on search', async () => {
-			mockSearchMetadata.mockResolvedValue({ candidates: [createCandidate({ title: 'Found Title', provider_id: 'tt2222' })] });
+			mockSearchMetadata.mockResolvedValue({
+				candidates: [createCandidate({ title: 'Found Title', provider_id: 'tt2222' })]
+			});
 			renderComponent(TrackTitleSearch, {
 				props: { jobId: 'job_1', track: createTrack() }
 			});
@@ -95,7 +96,9 @@ describe('TrackTitleSearch', () => {
 		});
 
 		it('shows detail editor when result is selected', async () => {
-			mockSearchMetadata.mockResolvedValue({ candidates: [createCandidate({ title: 'Picked', provider_id: 'tt3333' })] });
+			mockSearchMetadata.mockResolvedValue({
+				candidates: [createCandidate({ title: 'Picked', provider_id: 'tt3333' })]
+			});
 			renderComponent(TrackTitleSearch, {
 				props: { jobId: 'job_1', track: createTrack() }
 			});
@@ -153,7 +156,47 @@ describe('TrackTitleSearch', () => {
 			await fireEvent.click(screen.getByText('Picked'));
 			await fireEvent.click(screen.getByText('Apply'));
 			await waitFor(() => {
-				expect(mockUpdateTrackTitle).toHaveBeenCalledWith('job_3', 'trk_5', expect.objectContaining({ title: 'Picked', year: 2021 }));
+				expect(mockUpdateTrackTitle).toHaveBeenCalledWith(
+					'job_3',
+					'trk_5',
+					expect.objectContaining({ title: 'Picked', year: 2021 })
+				);
+			});
+		});
+
+		it('applying with Type=Series sends role: episode', async () => {
+			mockSearchMetadata.mockResolvedValue({
+				candidates: [createCandidate({ title: 'Picked Show', kind: 'series' })]
+			});
+			renderComponent(TrackTitleSearch, {
+				props: { jobId: 'job_3', track: createTrack({ id: 'trk_5' }) }
+			});
+			await fireEvent.click(screen.getByText('Search'));
+			await waitFor(() => expect(screen.getByText('Picked Show')).toBeInTheDocument());
+			await fireEvent.click(screen.getByText('Picked Show'));
+			await fireEvent.click(screen.getByText('Apply'));
+			await waitFor(() => {
+				expect(mockUpdateTrackTitle).toHaveBeenCalledWith(
+					'job_3',
+					'trk_5',
+					expect.objectContaining({ role: 'episode' })
+				);
+			});
+		});
+
+		it('applying with Type=Movie sends role: main', async () => {
+			mockSearchMetadata.mockResolvedValue({
+				candidates: [createCandidate({ title: 'Picked Movie', kind: 'movie' })]
+			});
+			renderComponent(TrackTitleSearch, {
+				props: { jobId: 'job_3', track: createTrack({ id: 'trk_5' }) }
+			});
+			await fireEvent.click(screen.getByText('Search'));
+			await waitFor(() => expect(screen.getByText('Picked Movie')).toBeInTheDocument());
+			await fireEvent.click(screen.getByText('Picked Movie'));
+			await fireEvent.click(screen.getByText('Apply'));
+			await waitFor(() => {
+				expect(mockUpdateTrackTitle).toHaveBeenCalledWith('job_3', 'trk_5', expect.objectContaining({ role: 'main' }));
 			});
 		});
 
@@ -184,14 +227,14 @@ describe('TrackTitleSearch', () => {
 
 		it('hides episode inputs for non-series tracks', () => {
 			renderComponent(TrackTitleSearch, {
-				props: { jobId: 'job_9', track: createTrack({ video_type: 'movie' }) }
+				props: { jobId: 'job_9', track: createTrack({ role: 'main' }) }
 			});
 			expect(screen.queryByPlaceholderText('Episode #')).toBeNull();
 		});
 
 		it('shows episode inputs for series tracks and sends them', async () => {
 			renderComponent(TrackTitleSearch, {
-				props: { jobId: 'job_9', track: createTrack({ id: 'trk_8', video_type: 'series' }) }
+				props: { jobId: 'job_9', track: createTrack({ id: 'trk_8', role: 'episode' }) }
 			});
 			await fireEvent.input(screen.getByPlaceholderText('Episode #'), { target: { value: '3' } });
 			await fireEvent.input(screen.getByPlaceholderText('Episode name'), {
@@ -209,7 +252,7 @@ describe('TrackTitleSearch', () => {
 
 		it('coerces a non-numeric episode # to null', async () => {
 			renderComponent(TrackTitleSearch, {
-				props: { jobId: 'job_9', track: createTrack({ id: 'trk_9', video_type: 'series' }) }
+				props: { jobId: 'job_9', track: createTrack({ id: 'trk_9', role: 'episode' }) }
 			});
 			await fireEvent.input(screen.getByPlaceholderText('Episode #'), { target: { value: 'abc' } });
 			await fireEvent.click(screen.getByRole('button', { name: 'Save options' }));
@@ -220,6 +263,29 @@ describe('TrackTitleSearch', () => {
 					episode_name: null
 				})
 			);
+		});
+	});
+
+	describe('episode inputs: role, then job media type', () => {
+		it('shows episode inputs for an episode-role track', () => {
+			renderComponent(TrackTitleSearch, {
+				props: { jobId: 'job_1', track: createTrack({ role: 'episode' }), mediaType: 'movie' }
+			});
+			expect(screen.queryByLabelText(/^episode$/i)).not.toBeNull();
+		});
+
+		it('falls back to the job media type when role is unset', () => {
+			renderComponent(TrackTitleSearch, {
+				props: { jobId: 'job_1', track: createTrack({ role: null }), mediaType: 'tv' }
+			});
+			expect(screen.queryByLabelText(/^episode$/i)).not.toBeNull();
+		});
+
+		it('hides episode inputs for a main-feature track on a TV disc', () => {
+			renderComponent(TrackTitleSearch, {
+				props: { jobId: 'job_1', track: createTrack({ role: 'main' }), mediaType: 'tv' }
+			});
+			expect(screen.queryByLabelText(/^episode$/i)).toBeNull();
 		});
 	});
 });

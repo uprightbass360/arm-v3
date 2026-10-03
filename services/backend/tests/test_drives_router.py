@@ -20,9 +20,11 @@ from arm_common import (  # noqa: E402
     ContainerFormat,
     DiscType,
     Drive,
+    DriveKind,
+    DriveLifecycle,
     DriveMode,
+    DriveSourceKind,
     DriveStatus,
-    HwPreference,
     IdentificationMode,
     Job,
     JobStatus,
@@ -86,7 +88,7 @@ def _seed(db: FakeSession) -> None:
             is_builtin=True,
             tool=TranscodeTool.HANDBRAKE,
             container=ContainerFormat.MKV,
-            hw_preference=HwPreference.CPU_ONLY,
+            encoder="preset",
         )
     ]
     db.rows["sessions"] = [
@@ -117,6 +119,94 @@ def _make_app(signing_key: bytes, db: FakeSession) -> tuple[FastAPI, str]:
 
 def _auth(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _drive(
+    *,
+    id: str = "drv_v",
+    kind: DriveKind = DriveKind.OPTICAL,
+    lifecycle: DriveLifecycle = DriveLifecycle.DETECTED,
+    source_kind: DriveSourceKind | None = None,
+    source_path: str | None = None,
+    hostname: str = "scan-drv_v",
+    device_path: str = "/dev/sr0",
+    present: bool = True,
+) -> Drive:
+    return Drive(
+        id=id,
+        hostname=hostname,
+        device_path=device_path,
+        status=DriveStatus.ONLINE,
+        lifecycle=lifecycle,
+        kind=kind,
+        source_kind=source_kind,
+        source_path=source_path,
+        present=present,
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("post", "/api/drives/{id}/enroll"),
+        ("post", "/api/drives/{id}/ignore"),
+        ("post", "/api/drives/{id}/unignore"),
+        ("post", "/api/drives/{id}/unenroll"),
+        ("patch", "/api/drives/{id}"),
+        ("delete", "/api/drives/{id}"),
+    ],
+)
+def test_virtual_drive_refused_by_optical_endpoints(signing_key: bytes, method: str, path: str) -> None:
+    db = FakeSession()
+    db.rows["users"] = [User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)]
+    drive = _drive(
+        id="drv_iso",
+        kind=DriveKind.VIRTUAL,
+        lifecycle=DriveLifecycle.ENROLLED,
+        source_kind=DriveSourceKind.ISO,
+        source_path="Movies/x.iso",
+        hostname="iso-abc",
+        device_path="/source/x.iso",
+    )
+    db.rows["drives"] = [drive]
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as client:
+        kwargs: dict[str, object] = {"headers": _auth(token)}
+        if method == "patch":
+            kwargs["json"] = {}
+        r = getattr(client, method)(path.format(id=drive.id), **kwargs)
+    assert r.status_code == 409, r.text
+    assert "ISO rip drive" in r.json()["detail"]
+
+
+def test_list_hides_retired_unless_asked(signing_key: bytes) -> None:
+    db = FakeSession()
+    db.rows["users"] = [User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)]
+    live = _drive(
+        id="drv_live",
+        kind=DriveKind.VIRTUAL,
+        lifecycle=DriveLifecycle.ENROLLED,
+        source_kind=DriveSourceKind.ISO,
+        source_path="a.iso",
+        hostname="iso-a",
+        device_path="/source/a.iso",
+    )
+    gone = _drive(
+        id="drv_gone",
+        kind=DriveKind.VIRTUAL,
+        lifecycle=DriveLifecycle.RETIRED,
+        source_kind=DriveSourceKind.ISO,
+        source_path="b.iso",
+        hostname="iso-b",
+        device_path="/source/b.iso",
+    )
+    db.rows["drives"] = [live, gone]
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as client:
+        ids = {d["id"] for d in client.get("/api/drives", headers=_auth(token)).json()}
+        assert ids == {live.id}
+        ids = {d["id"] for d in client.get("/api/drives?include_retired=true", headers=_auth(token)).json()}
+        assert ids == {live.id, gone.id}
 
 
 def test_patch_display_name_only(signing_key: bytes) -> None:
@@ -204,7 +294,9 @@ def test_patch_unauthenticated_denied_as_guest(signing_key: bytes) -> None:
 def test_delete_drive_ok(signing_key: bytes) -> None:
     db = FakeSession()
     db.rows["users"] = [User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)]
-    db.rows.setdefault("drives", []).append(Drive(id="drv_1", device_path="/dev/sr0", hostname="h1"))
+    db.rows.setdefault("drives", []).append(
+        Drive(id="drv_1", device_path="/dev/sr0", hostname="h1", lifecycle=DriveLifecycle.DETECTED)
+    )
     app, token = _make_app(signing_key, db)
     with TestClient(app) as client:
         r = client.delete("/api/drives/drv_1", headers=_auth(token))
@@ -224,7 +316,9 @@ def test_delete_drive_404(signing_key: bytes) -> None:
 def test_delete_drive_with_active_job_409(signing_key: bytes) -> None:
     db = FakeSession()
     db.rows["users"] = [User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)]
-    db.rows.setdefault("drives", []).append(Drive(id="drv_1", device_path="/dev/sr0", hostname="h1"))
+    db.rows.setdefault("drives", []).append(
+        Drive(id="drv_1", device_path="/dev/sr0", hostname="h1", lifecycle=DriveLifecycle.DETECTED)
+    )
     db.rows.setdefault("jobs", []).append(
         Job(id="job_1", drive_id="drv_1", status=JobStatus.RIPPING, disc_type=DiscType.DVD)
     )
@@ -247,7 +341,15 @@ def test_delete_drive_with_non_ripping_job_succeeds(signing_key: bytes) -> None:
     db.rows.setdefault("users", []).append(
         User(id="usr_admin", username="admin", password_hash="x", password_must_change=False)
     )
-    db.rows.setdefault("drives", []).append(Drive(id="drv_1", device_path="/dev/sr0", hostname="h1", serial="SN1"))
+    db.rows.setdefault("drives", []).append(
+        Drive(
+            id="drv_1",
+            device_path="/dev/sr0",
+            hostname="h1",
+            serial="SN1",
+            lifecycle=DriveLifecycle.DETECTED,
+        )
+    )
     db.rows.setdefault("jobs", []).append(
         Job(id="job_1", drive_id="drv_1", drive_serial="SN1", status=JobStatus.RIPPED, disc_type=DiscType.DVD)
     )
@@ -261,7 +363,9 @@ def test_delete_drive_with_non_ripping_job_succeeds(signing_key: bytes) -> None:
     assert db.rows["jobs"][0].drive_serial == "SN1"
 
 
-def _job(job_id: str, *, drive_id: str = "drv_x", status: JobStatus, title: str | None = "T", created: int = 0) -> Job:
+def _job(
+    job_id: str, *, drive_id: str | None = "drv_x", status: JobStatus, title: str | None = "T", created: int = 0
+) -> Job:
     return Job(
         id=job_id,
         drive_id=drive_id,
@@ -347,6 +451,21 @@ def test_current_job_picks_most_recent_active(signing_key: bytes) -> None:
     assert row["current_job"]["id"] == "job_new"
 
 
+def test_list_drives_ignores_jobs_whose_drive_was_deleted(signing_key: bytes) -> None:
+    """A job's drive_id is SET NULL when its drive row is deleted (migration
+    0016_2). list_drives groups jobs by drive_id in Python — a None
+    drive_id must be skipped, not crash the grouping or attach to nothing."""
+    db = FakeSession()
+    _seed(db)
+    db.rows["jobs"] = [_job("job_orphan", drive_id=None, status=JobStatus.RIPPING)]
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.get("/api/drives", headers=_auth(token))
+    assert r.status_code == 200, r.text
+    row = next(d for d in r.json() if d["id"] == "drv_x")
+    assert row["current_job"] is None
+
+
 def test_current_job_grouped_per_drive_no_crossleak(signing_key: bytes) -> None:
     db = FakeSession()
     _seed(db)
@@ -424,6 +543,112 @@ def test_patch_unknown_tuning_field_422(signing_key: bytes) -> None:
     assert r.status_code == 422
 
 
+class _StubScanner:
+    def __init__(self, summary) -> None:
+        self.summary = summary
+        self.calls = 0
+        self.prune_now: bool | None = None
+
+    async def scan_once(self, session, *, prune_now: bool = False):
+        self.calls += 1
+        self.prune_now = prune_now
+        return self.summary
+
+
+class _PruneUnavailableStubScanner:
+    """scan_once raises PruneUnavailable when prune_now, as the real
+    DriveScanner does on a degraded host enumeration."""
+
+    async def scan_once(self, session, *, prune_now: bool = False):
+        if prune_now:
+            from arm_backend.drive_scanner import PruneUnavailable
+
+            raise PruneUnavailable("x")
+        raise AssertionError("not exercised by this test")
+
+
+def test_rescan_runs_the_scanner_and_reports_counts(signing_key: bytes) -> None:
+    from arm_backend.drive_scanner import ScanSummary
+
+    db = FakeSession()
+    _seed(db)
+    app, token = _make_app(signing_key, db)
+    scanner = _StubScanner(ScanSummary(detected=2, ignored=1, enrolled=1, absent=1, pruned=0))
+    app.state.drive_scanner = scanner
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan", headers=_auth(token))
+    assert r.status_code == 200
+    body = r.json()
+    assert scanner.calls == 1
+    assert (body["detected"], body["ignored"], body["enrolled"], body["absent"], body["pruned"]) == (2, 1, 1, 1, 0)
+    assert "online" in body and "stale" in body
+
+
+def test_rescan_without_scanner_is_503(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed(db)
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan", headers=_auth(token))
+    assert r.status_code == 503
+
+
+def test_rescan_force_prunes_now_for_admins(signing_key: bytes) -> None:
+    from arm_backend.drive_scanner import ScanSummary
+
+    db = FakeSession()
+    _seed(db)
+    app, token = _make_app(signing_key, db)
+    stub = _StubScanner(ScanSummary(detected=0, ignored=0, enrolled=1, absent=0, pruned=2))
+    app.state.drive_scanner = stub
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan?force=true", headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["pruned"] == 2
+    assert stub.prune_now is True
+
+
+def test_rescan_without_force_keeps_the_window(signing_key: bytes) -> None:
+    from arm_backend.drive_scanner import ScanSummary
+
+    db = FakeSession()
+    _seed(db)
+    app, token = _make_app(signing_key, db)
+    stub = _StubScanner(ScanSummary(detected=0, ignored=0, enrolled=0, absent=0, pruned=0))
+    app.state.drive_scanner = stub
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan", headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert stub.prune_now is False
+
+
+def test_rescan_force_prune_unavailable_is_409(signing_key: bytes) -> None:
+    db = FakeSession()
+    _seed(db)
+    app, token = _make_app(signing_key, db)
+    app.state.drive_scanner = _PruneUnavailableStubScanner()
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan?force=true", headers=_auth(token))
+    assert r.status_code == 409
+    assert "cannot remove missing drives: x" in r.json()["detail"]
+
+
+def test_rescan_force_is_403_for_a_read_only_role(signing_key: bytes) -> None:
+    from arm_backend.drive_scanner import ScanSummary
+
+    db = FakeSession()
+    _seed(db)
+    app, _token = _make_app(signing_key, db)
+    stub = _StubScanner(ScanSummary(detected=0, ignored=0, enrolled=0, absent=0, pruned=0))
+    app.state.drive_scanner = stub
+    guest_token, _ = issue_access_token("usr_guest", "guest", signing_key)
+    with TestClient(app) as client:
+        r = client.post("/api/drives/rescan?force=true", headers=_auth(guest_token))
+    assert r.status_code == 403
+    assert "write access" in r.json()["detail"]
+    assert stub.calls == 0
+
+
 def test_current_job_handles_none_created_at(signing_key: bytes) -> None:
     db = FakeSession()
     _seed(db)
@@ -447,3 +672,34 @@ def test_current_job_handles_none_created_at(signing_key: bytes) -> None:
     assert r.status_code == 200, r.text
     row = next(d for d in r.json() if d["id"] == "drv_x")
     assert row["current_job"]["id"] == "job_ts"  # real timestamp beats the None-sentinel
+
+
+def test_patch_drive_mode_null_returns_to_global_default(signing_key: bytes) -> None:
+    """drive_mode NULL means "follow the global auto-rip default" (setup spec D1);
+    an explicit null must clear an override, not be ignored."""
+    db = FakeSession()
+    _seed(db)
+    db.rows["drives"][0].drive_mode = DriveMode.MANUAL
+    app, token = _make_app(signing_key, db)
+    with TestClient(app) as c:
+        r = c.patch("/api/drives/drv_x", json={"drive_mode": None}, headers=_auth(token))
+    assert r.status_code == 200, r.text
+    assert r.json()["drive_mode"] is None
+    assert db.rows["drives"][0].drive_mode is None
+
+
+@pytest.mark.parametrize(
+    ("by_id", "expected"),
+    [
+        ("usb-HL-DT-ST_BD-RE_WH16NS60_KLAM6E92143-0:0", "usb"),
+        ("ata-ASUS_DRW-24B1ST_K8D0CL123456", "sata"),
+        ("scsi-SATA_something", "other"),
+        (None, None),
+    ],
+)
+def test_drive_view_connection_from_by_id_prefix(by_id: str | None, expected: str | None) -> None:
+    """The setup drive card's USB / SATA chip (setup spec §6.6): derived, not stored."""
+    from arm_backend.routers import drives as drives_router
+
+    d = Drive(id="drv_1", hostname="h", device_path="/dev/sr0", status=DriveStatus.ONLINE, by_id_name=by_id)
+    assert drives_router._to_view(d, []).connection == expected

@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { Catalog, CatalogService, ChannelType } from '$lib/types/notifications';
 	import type { ChannelTemplate } from '$lib/types/notifications';
-	import type { EventTypeInfo } from '$lib/api/channels';
+	import type { EventTypeInfo, ScriptInput, BashScriptInfo } from '$lib/api/channels';
 	import ConfigureSection from './sections/ConfigureSection.svelte';
 	import LabelEnabledRow from './sections/LabelEnabledRow.svelte';
 	import EventsSection from './sections/EventsSection.svelte';
 	import ServiceDropdown from './ServiceDropdown.svelte';
+	import BashTestPanel from './BashTestPanel.svelte';
 	import { missingRequirements } from './channelHelpers';
 	import Glyph from '$lib/components/Glyph.svelte';
 
@@ -19,33 +20,44 @@
 		serviceId: string | null;
 	}
 
+	// `compact` (setup walkthrough): a service channel only, no header, no
+	// Save/Cancel (the parent saves on Continue through getBody()/isReady()),
+	// with the three events most people want preselected.
 	let {
 		catalog,
 		eventTypes = [],
 		onsave,
 		oncancel,
-		ontest
+		ontest,
+		variant = 'full'
 	}: {
 		catalog: Catalog;
 		eventTypes?: EventTypeInfo[];
-		onsave: (body: AddChannelBody) => void;
-		oncancel: () => void;
+		onsave?: (body: AddChannelBody) => void;
+		oncancel?: () => void;
 		ontest: (body: AddChannelBody) => void;
+		variant?: 'full' | 'compact';
 	} = $props();
+
+	const COMPACT_EVENTS = ['rip.completed', 'rip.needs_user_input', 'rip.failed'];
 
 	let type = $state<ChannelType>('apprise');
 	let serviceId = $state<string | null>(null);
 	let name = $state('');
 	let enabled = $state(true);
 	let config = $state<Record<string, unknown>>({});
-	let events = $state<string[]>([]);
+	// svelte-ignore state_referenced_locally
+	let events = $state<string[]>(variant === 'compact' ? [...COMPACT_EVENTS] : []);
 	let templates = $state<Record<string, ChannelTemplate>>({});
+	let scriptInputs = $state<ScriptInput[]>([]);
 
 	const service = $derived<CatalogService | null>(
-		serviceId ? catalog.services.find((s) => s.id === serviceId) ?? null : null
+		serviceId ? (catalog.services.find((s) => s.id === serviceId) ?? null) : null
 	);
 
-	const missing = $derived(missingRequirements({ type, name, config, events, service }));
+	const missing = $derived(
+		missingRequirements({ type, name, config, events, service, inputs: type === 'bash' ? scriptInputs : undefined })
+	);
 	const ready = $derived(missing.length === 0);
 
 	function setType(t: ChannelType) {
@@ -56,9 +68,21 @@
 	function pickService(id: string) {
 		serviceId = id;
 		config = {};
+		// Compact has no label row: name the channel after its service.
+		if (variant === 'compact' && !name.trim()) name = catalog.services.find((s) => s.id === id)?.name ?? id;
 	}
 	function body(): AddChannelBody {
 		return { type, name, enabled, config, subscribed_events: events, templates, serviceId };
+	}
+	export function getBody(): AddChannelBody {
+		return body();
+	}
+	export function isReady(): boolean {
+		return ready;
+	}
+	/** True once a service is picked (compact: Continue then means "add it"). */
+	export function isStarted(): boolean {
+		return serviceId !== null;
 	}
 
 	const types: { key: ChannelType; label: string; recommended?: boolean }[] = [
@@ -68,44 +92,189 @@
 	];
 </script>
 
-<div class="rounded-xl border border-primary/25 bg-surface shadow-xl dark:border-primary/30 dark:bg-surface-dark">
-	<div class="flex items-center justify-between border-b border-primary/20 px-5 py-4">
-		<h3 class="text-sm font-semibold text-primary">Add notification channel</h3>
-		<button type="button" onclick={oncancel} class="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"><Glyph name="x" /> Cancel</button>
-	</div>
+<div class="add-channel-form" data-variant={variant}>
+	{#if variant === 'full'}
+		<div class="add-channel-form-header">
+			<h3 class="add-channel-form-title">Add notification channel</h3>
+			<button type="button" onclick={() => oncancel?.()} class="btn btn-link add-channel-form-cancel"
+				><Glyph name="x" /> Cancel</button
+			>
+		</div>
+	{/if}
 
-	<div class="space-y-5 p-5">
-		<fieldset class="relative grid grid-cols-1 gap-3 sm:grid-cols-3">
-			<legend class="sr-only">Delivery type</legend>
-			{#each types as t}
-				<label class="relative flex cursor-pointer flex-col gap-1 rounded-lg border p-4 {type === t.key ? 'border-primary bg-primary/10' : 'border-primary/20 bg-page dark:bg-primary/5'}">
-					<input type="radio" name="delivery" class="sr-only" aria-label={t.label} checked={type === t.key} onchange={() => setType(t.key)} />
-					<span class="text-sm font-semibold text-gray-800 dark:text-gray-100">{t.label}</span>
-					{#if t.recommended}<span class="absolute right-3 top-3 rounded bg-primary/15 px-1.5 py-0.5 text-[9.5px] tracking-wider text-primary">RECOMMENDED</span>{/if}
-				</label>
-			{/each}
-		</fieldset>
+	<div class="stack add-channel-form-body">
+		{#if variant === 'full'}
+			<fieldset class="add-channel-form-types">
+				<legend class="sr-only">Delivery type</legend>
+				{#each types as t (t.key)}
+					<label class="channel-type-option" aria-checked={type === t.key}>
+						<input
+							type="radio"
+							name="delivery"
+							class="sr-only"
+							aria-label={t.label}
+							checked={type === t.key}
+							onchange={() => setType(t.key)}
+						/>
+						<span class="channel-type-option-label">{t.label}</span>
+						{#if t.recommended}<span class="badge badge-sm channel-type-option-badge">RECOMMENDED</span>{/if}
+					</label>
+				{/each}
+			</fieldset>
 
-		<LabelEnabledRow bind:name bind:enabled />
+			<LabelEnabledRow bind:name bind:enabled />
+		{/if}
 
 		{#if type === 'apprise'}
-			<div class="rounded-lg border border-primary/15 bg-page p-4 dark:border-primary/20 dark:bg-primary/5">
+			<div class="panel-section">
 				<ServiceDropdown {catalog} selectedId={serviceId} onpick={pickService} />
 			</div>
 		{/if}
 
-		<ConfigureSection {type} bind:name bind:enabled bind:config {service} showLabelRow={false} />
-		<EventsSection bind:selected={events} bind:templates {eventTypes} />
+		<ConfigureSection
+			{type}
+			bind:name
+			bind:enabled
+			bind:config
+			{service}
+			showLabelRow={false}
+			onscript={(i: BashScriptInfo | null) => (scriptInputs = i?.inputs ?? [])}
+		/>
+		{#if variant === 'full' || serviceId}
+			<EventsSection
+				bind:selected={events}
+				bind:templates
+				{eventTypes}
+				inputs={scriptInputs}
+				compact={variant === 'compact'}
+			/>
+		{/if}
+		{#if type === 'bash'}
+			<BashTestPanel {config} {templates} {events} {eventTypes} inputs={scriptInputs} />
+		{/if}
 	</div>
 
-	<div class="flex items-center justify-between border-t border-primary/20 px-5 py-3.5">
-		<span class="flex items-center gap-1 text-xs {ready ? 'text-status-success' : 'text-gray-500 dark:text-gray-400'}">
+	<div class="add-channel-form-footer">
+		<span class="add-channel-form-ready" data-ready={ready}>
 			{#if ready}<Glyph name="check" class="h-3.5 w-3.5" /> Ready to save{:else}Needs: {missing.join(', ')}{/if}
 		</span>
-		<div class="flex gap-2">
-			<button type="button" onclick={oncancel} class="rounded-md px-4 py-2 text-sm text-gray-600 hover:bg-primary/10 dark:text-gray-300">Cancel</button>
-			<button type="button" onclick={() => ontest(body())} class="rounded-md border border-primary/25 px-4 py-2 text-sm text-primary-text hover:bg-primary/10 dark:border-primary/30 dark:text-primary-text-dark">Send test</button>
-			<button type="button" disabled={!ready} onclick={() => onsave(body())} class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover disabled:opacity-40">Save channel</button>
+		<div class="cluster">
+			{#if variant === 'full'}
+				<button type="button" onclick={() => oncancel?.()} class="btn btn-ghost">Cancel</button>
+			{/if}
+			{#if type !== 'bash'}
+				<button type="button" onclick={() => ontest(body())} disabled={variant === 'compact' && !ready} class="btn"
+					>Send test</button
+				>
+			{/if}
+			{#if variant === 'full'}
+				<button type="button" disabled={!ready} onclick={() => onsave?.(body())} class="btn btn-primary"
+					>Save channel</button
+				>
+			{/if}
 		</div>
 	</div>
 </div>
+
+<style>
+	/* Same border/radius/shadow as .panel (an elevated surface), but the
+	   original's header/body/footer each carry their own independent padding
+	   rather than one uniform pad, so this stays a local shell instead of .panel. */
+	.add-channel-form {
+		border: 1px solid var(--color-border-strong);
+		border-radius: var(--radius-xl);
+		background: var(--color-surface);
+		box-shadow: var(--shadow-2);
+	}
+	.add-channel-form-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 1rem 1.25rem;
+		border-bottom: 1px solid var(--color-border);
+	}
+	.add-channel-form-title {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+	.add-channel-form-cancel {
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+	/* space-y-5 (1.25rem) is wider than .stack's default gap (1rem). */
+	.add-channel-form-body {
+		padding: 1.25rem;
+		gap: 1.25rem;
+	}
+	.add-channel-form-types {
+		position: relative;
+		display: grid;
+		grid-template-columns: 1fr;
+		gap: 0.75rem;
+	}
+	@media (min-width: 640px) {
+		.add-channel-form-types {
+			grid-template-columns: repeat(3, minmax(0, 1fr));
+		}
+	}
+	.add-channel-form-footer {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.875rem 1.25rem;
+		border-top: 1px solid var(--color-border);
+	}
+	.add-channel-form-ready {
+		display: flex;
+		align-items: center;
+		gap: 0.25rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		color: var(--color-text-muted);
+	}
+	.add-channel-form-ready[data-ready='true'] {
+		color: var(--color-status-success);
+	}
+
+	/* channel-type-option: a selectable card, one per delivery type. No block
+	   covers this shape (a bordered card wrapping a hidden radio input, with
+	   an aria-checked state on the label carrying the selected look). */
+	.channel-type-option {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-primary-tint-1);
+		padding: 1rem;
+		cursor: pointer;
+	}
+	.channel-type-option[aria-checked='true'] {
+		border-color: var(--color-primary);
+		background: var(--color-primary-tint-2);
+	}
+	.channel-type-option-label {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		font-weight: 600;
+		color: var(--color-text-secondary);
+	}
+	/* badge-sm's default tint-2/primary-text pairing was bg-primary/15
+	   text-primary here (fix round 1: the nearest documented tint, tint-3 at
+	   20%, was visibly more saturated than the original's literal 15% -
+	   color-mix against --color-primary at the exact 15% reproduces it,
+	   the same pattern tokens.css itself uses for tint-1/2/3), and the
+	   original size (9.5px) sits a hair under badge-sm's 0.625rem. */
+	.channel-type-option-badge {
+		position: absolute;
+		top: 0.75rem;
+		right: 0.75rem;
+		background: color-mix(in srgb, var(--color-primary) 15%, transparent);
+		color: var(--color-primary);
+		font-size: 9.5px;
+		letter-spacing: 0.05em;
+	}
+</style>

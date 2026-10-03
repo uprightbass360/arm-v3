@@ -20,19 +20,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
 
+from paramiko.ssh_exception import SSHException  # type: ignore[import-untyped]
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col, select
 
-from arm_backend.config import Settings
+from arm_backend.config import Settings, settings
+from arm_backend.docker_probe import TtlProbe, probe_docker
+from arm_backend.transcode_images import (
+    VARIANT_SUFFIX,
+    image_for,
+    split_reference,
+    variant_image,
+    vendor_override,
+)
 from arm_common import (
+    Config,
     Gpu,
     GpuStatus,
     GpuVendor,
-    HwPreference,
     Session,
     SessionApplication,
     SessionApplicationStatus,
@@ -40,6 +52,15 @@ from arm_common import (
     TranscodeTask,
     TranscodeTaskStatus,
     with_log_context,
+)
+from arm_common.encoders import (
+    VENDOR_RANK,
+    EncoderSpec,
+    cpu_encoder_for,
+    get_encoder,
+    gpu_could_serve,
+    gpu_encoder_for,
+    gpu_is_eligible,
 )
 
 if TYPE_CHECKING:
@@ -52,17 +73,76 @@ logger = logging.getLogger("arm_backend.transcode_dispatcher")
 # gracefully before falling back to `docker stop`.
 _CANCEL_GRACE_SECONDS = 10
 _DOCKER_LABEL_KEY = "arm.task_id"
+# Why a deployment cannot run encode work (or a GPU probe) at all: shared by
+# `probe()` and the GPU probe endpoints so both report the same reason.
+NO_DOCKER_CLIENT_DETAIL = "no docker client (ripper-only deployment or docker unavailable)"
+
+# How long a failed pull of a per-vendor variant image is remembered before
+# the pull is tried again. A variant tag that exists only on a dev host (or a
+# registry that is down) would otherwise cost a registry round trip on every
+# spawn and GPU probe.
+VARIANT_PULL_RETRY_SECONDS = 600.0
+
+# Per-tick cap on how many ENCODE rows spawn_pending examines (spawn
+# attempts, GPU claim checks, etc). Passthrough tasks are exempt from this
+# cap entirely and the queued scan itself is unbounded, so a run of 50+
+# held/queued encode rows at the head of the FIFO queue can never crowd a
+# passthrough task further back out of the scan window.
+_QUEUE_SCAN_LIMIT = 50
+
+# A dead docker-over-SSH transport (idle paramiko connection reset by the
+# remote end) surfaces as one of these, either raw or wrapped inside
+# docker-py's APIError cause chain. EOFError is included because paramiko
+# commonly surfaces a dead transport that way (the read side hits EOF when
+# the remote end has silently closed the connection).
+_TRANSPORT_DEAD_ERRORS = (SSHException, ConnectionResetError, BrokenPipeError, EOFError)
+
+
+def _is_transport_death(exc: BaseException) -> bool:
+    """A dead docker-over-SSH transport surfaces either as a raw paramiko
+    SSHException or wrapped inside docker's APIError cause chain (docker-py
+    wraps the underlying requests/urllib3 error, whose root cause is
+    paramiko's SSHException). Walk __cause__/__context__ to find it.
+    """
+    seen: set[int] = set()
+    cur: BaseException | None = exc
+    while cur is not None and id(cur) not in seen:
+        seen.add(id(cur))
+        if isinstance(cur, _TRANSPORT_DEAD_ERRORS):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
 
 
 class GpuAssignment(NamedTuple):
-    """Outcome of `_claim_gpu_for_task`. `gpu` is None for the CPU spawn path;
-    `action="queue"` means leave the task queued so a later tick can retry
-    when a matching GPU frees up (NULL hw_preference + all matching GPUs busy).
+    """Outcome of `_claim_gpu_for_task`.
+
+    `gpu` is the claimed device, or None for a CPU spawn. `encoder` is the
+    RESOLVED catalog encoder the worker runs: for an `any_<codec>` preset it
+    is the claimed vendor's GPU encoder or the `cpu_<codec>` fallback; it is
+    None for the `preset` encoder (HandBrake's own). `action="queue"` leaves
+    the task queued for a later tick (every eligible device busy or being
+    probed, or a device still awaiting its first probe); `action="fail"`
+    means the task can never run as configured and `reason` says why.
     """
 
     gpu: Gpu | None
-    codec: str | None
-    action: Literal["spawn", "queue"]
+    encoder: EncoderSpec | None
+    action: Literal["spawn", "queue", "fail"]
+    reason: str | None = None
+
+
+async def max_parallel_transcodes(db: AsyncSession, *, default: int | None = None) -> int:
+    """The dispatcher parallelism cap from operator config (Settings >
+    Transcoding). Falls back to `default` (the caller's env-derived value)
+    only while the config row predates the column (the seeder backfills it
+    on the next boot)."""
+    from arm_backend.seeders import CONFIG_SINGLETON_ID  # noqa: PLC0415 — avoid module cycle
+
+    cfg = (await db.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))).scalar_one_or_none()
+    if cfg is None or cfg.max_parallel_transcodes is None:
+        return default if default is not None else settings.MAX_PARALLEL_TRANSCODES
+    return cfg.max_parallel_transcodes
 
 
 async def release_gpu_for_task(db: AsyncSession, task_id: str) -> None:
@@ -78,6 +158,24 @@ async def release_gpu_for_task(db: AsyncSession, task_id: str) -> None:
         gpu.claimed_by_task_id = None
 
 
+WAITING_FOR_PROBE_REASON = "waiting for GPU probe"
+
+# The running backend's dispatcher, for code paths with no app handle (the
+# apply-time encoder gate). None outside a running backend.
+_active_dispatcher: TranscodeDispatcher | None = None
+
+
+def set_active_dispatcher(dispatcher: TranscodeDispatcher | None) -> None:
+    global _active_dispatcher  # noqa: PLW0603 - one dispatcher per backend process
+    _active_dispatcher = dispatcher
+
+
+def gpu_awaiting_probe(gpu: Gpu) -> bool:
+    """`TranscodeDispatcher.awaiting_probe` on the running dispatcher; False
+    when none is running."""
+    return _active_dispatcher is not None and _active_dispatcher.awaiting_probe(gpu)
+
+
 class TranscodeDispatcher:
     def __init__(
         self,
@@ -85,20 +183,71 @@ class TranscodeDispatcher:
         db_factory: async_sessionmaker[AsyncSession],
         docker_client: Any,
         hub: WSHub,
+        docker_client_factory: Callable[[], Any] | None = None,
     ) -> None:
         self._settings = settings
         self._db_factory = db_factory
         self._docker = docker_client
+        self._docker_factory = docker_client_factory
         self._hub = hub
         self._stop = asyncio.Event()
         self._tick_interval = settings.ARM_TRANSCODE_DISPATCH_INTERVAL_SECONDS
+        # Surfaced by /api/system/diagnostics so a crash-looping or
+        # un-pullable transcoder is visible in the UI, not only in the log.
+        self.last_spawn_error: str | None = None
+        self._probe = TtlProbe(lambda: probe_docker(self._docker, self._settings.ARM_TRANSCODE_IMAGE))
+        # GPU rows currently running a device probe; the claim never hands
+        # one of these to a task.
+        self.probing_gpu_ids: set[str] = set()
+        # GPU rows a probe pass has reserved but not yet finished (queued
+        # behind other rows of the boot pass), and whether the boot pass is
+        # still listing its rows. Together with `probing_gpu_ids` they say
+        # whether an unprobed row is about to be verified (`awaiting_probe`),
+        # so work waits for it instead of falling back to the CPU or failing.
+        self.pending_probe_gpu_ids: set[str] = set()
+        self.boot_probe_listing = False
+        # GPU rows this process has claimed (BUSY in the claim's session) but
+        # not yet committed or rolled back. Other sessions still read those
+        # rows as AVAILABLE until the per-task commit, which only happens
+        # after the container spawn (an image pull or ssh rebuild can take
+        # minutes), so the probe runner and the re-probe endpoints treat an
+        # id in this set exactly like a BUSY row. Kept in-process: the claim
+        # and the probes share one event loop.
+        self.claimed_gpu_ids: set[str] = set()
+        # Per-image TtlProbe cache for `image_exists` (one entry per distinct
+        # variant image ever checked, e.g. the derived "-intel"/"-amd" tag).
+        self._image_probes: dict[str, TtlProbe] = {}
+        # Variant image -> time.monotonic() of its last failed pull (see
+        # `variant_available`); separate from the 30 s presence cache above.
+        self._variant_pull_failed: dict[str, float] = {}
+        # One lock per variant image being pulled, so concurrent callers (a
+        # spawn and a GPU probe in two worker threads) share a single pull:
+        # the second waits for the first and reuses its outcome.
+        self._pull_locks: dict[str, threading.Lock] = {}
+        self._pull_locks_guard = threading.Lock()
+        # Vendors seen holding an enabled GPU row. Refreshed once per tick
+        # (see `_refresh_enabled_gpu_vendors`, called from `_tick`) so it
+        # reflects the current inventory even with an idle queue or a
+        # freshly-started process, and again whenever `_claim_gpu_for_task`
+        # loads the gpus table for a GPU-eligible encoder. `probe()` is
+        # synchronous (no DB access), so it reads this cache rather than
+        # querying live; it is only ever stale for the window between a GPU
+        # being enabled and the next tick or claim.
+        self._enabled_gpu_vendors: set[GpuVendor] = set()
+
+    @property
+    def docker_client(self) -> Any:
+        """The current docker client (None for a ripper-only deployment). A
+        property rather than a cached reference: a dead ssh transport can
+        rebuild it during a spawn."""
+        return self._docker
 
     def stop(self) -> None:
         self._stop.set()
 
     async def run(self) -> None:
         logger.info(
-            "transcode dispatcher starting: max_parallel=%d image=%s tick=%ds",
+            "transcode dispatcher starting: max_parallel=db-config (env seed %d) image=%s tick=%ds",
             self._settings.MAX_PARALLEL_TRANSCODES,
             self._settings.ARM_TRANSCODE_IMAGE,
             self._tick_interval,
@@ -116,10 +265,26 @@ class TranscodeDispatcher:
 
     async def _tick(self) -> None:
         async with self._db_factory() as db:
+            await self._refresh_enabled_gpu_vendors(db)
             await self.sweep_stale_claims(db)
             await self.sweep_orphaned_applications(db)
             await db.commit()
             await self.spawn_pending(db)
+
+    async def _refresh_enabled_gpu_vendors(self, db: AsyncSession) -> None:
+        """Refresh `self._enabled_gpu_vendors` once per tick, independent of
+        queue state (the gpus table is tiny -- 1-4 rows on real hosts -- so
+        one extra unconditional select is trivial). Without this, a fresh
+        process or an idle queue never populates the set at all (only a
+        GPU-eligible claim in `_claim_gpu_for_task` did), which meant
+        `probe()`'s missing-variant note could never appear until a job
+        actually queued -- defeating its purpose of catching a forgotten
+        variant build before jobs fail over to base. Read-only and
+        best-effort: it never raises past this method's own select (a DB
+        error here surfaces the same as any other tick-body exception, via
+        `run()`'s per-tick catch-all) and never affects `ok`."""
+        all_gpus = (await db.execute(select(Gpu))).scalars().all()
+        self._enabled_gpu_vendors = {g.vendor for g in all_gpus if g.enabled}
 
     # --- stale claim sweep ---------------------------------------------------
 
@@ -330,14 +495,48 @@ class TranscodeDispatcher:
     # --- spawn loop ---------------------------------------------------------
 
     async def spawn_pending(self, db: AsyncSession) -> int:
-        """Spawn new transcoder containers up to MAX_PARALLEL_TRANSCODES.
+        """Execute queued passthrough tasks in-process and spawn transcoder
+        containers for encode tasks up to `config.max_parallel_transcodes`.
 
-        Counts in_progress rows live (cheap). For each available slot,
-        dequeues one queued task and spawns. Returns the spawn count.
+        Passthrough (no preset, or TranscodeTool.NONE) never spawns a
+        container and is not counted against encode slots; it always runs
+        when queued, FIFO. Encode tasks are additionally gated by
+        `config.transcode_enabled` (held in QUEUED when off) and by having a
+        docker client + host paths at all (a ripper-only deployment has
+        neither); held tasks stay queued for a later tick, never dropped.
+
+        The queued scan is unbounded (no LIMIT) so a run of held encode
+        tasks at the head of the FIFO queue can never crowd passthrough
+        tasks further back out of this tick entirely; `_QUEUE_SCAN_LIMIT`
+        instead caps how many ENCODE tasks are examined per tick (a
+        passthrough task never counts against that cap either). Each
+        passthrough task commits its own claim + terminal state internally
+        (see `execute_passthrough_task`), so the `FOR UPDATE SKIP LOCKED`
+        row locks from the initial select are released well before any
+        (possibly slow, cross-mount) file move runs.
+
+        Only task ids are kept from that initial batch select. Every task's
+        SQLAlchemy identity-map object is expired by ANY commit or rollback
+        that happens earlier in this same loop (the session's
+        `expire_on_commit=False` only suppresses expiry after OUR OWN
+        commits above the ORM layer; `Session.rollback()` always expires
+        the whole identity map, and a plain `db.commit()` for a DIFFERENT
+        row still ends the transaction those FOR UPDATE locks were taken
+        under). A plain attribute read on an expired object triggers an
+        async lazy load outside any `await` we control, raising
+        `sqlalchemy.exc.MissingGreenlet` -- unprotected, aborting the whole
+        tick (FakeSession's no-op rollback hides this entirely; it only
+        reproduces against a real session). Worse, even a NOT-expired but
+        stale object (this session's identity map hasn't been told about a
+        concurrent writer's committed change) would silently reuse
+        out-of-date state without `populate_existing`. So every iteration
+        re-loads its own row fresh, locked, and forced to repopulate from
+        the current row before touching a single attribute of it.
         """
-        if not self.host_paths_set():
-            logger.warning("transcode dispatcher disabled: ARM_HOST_*_PATH not set (set them via .env)")
-            return 0
+        from arm_backend.passthrough_executor import execute_passthrough_task
+        from arm_backend.transcode_apply import is_passthrough_preset, transcode_enabled_now
+
+        enabled = await transcode_enabled_now(db)
 
         in_progress = (
             (
@@ -348,29 +547,44 @@ class TranscodeDispatcher:
             .scalars()
             .all()
         )
-        slots = self._settings.MAX_PARALLEL_TRANSCODES - len(in_progress)
-        if slots <= 0:
-            return 0
+        encode_slots = await max_parallel_transcodes(db, default=self._settings.MAX_PARALLEL_TRANSCODES) - len(
+            in_progress
+        )
 
-        queued_all = (
+        queued_rows = (
             (
                 await db.execute(
                     select(TranscodeTask)
                     .where(col(TranscodeTask.status) == TranscodeTaskStatus.QUEUED)
                     .order_by(col(TranscodeTask.created_at).asc())
-                    .limit(slots)
                     .with_for_update(skip_locked=True)
                 )
             )
             .scalars()
             .all()
         )
-        # `.limit(slots)` is honoured by Postgres but the in-memory test fake
-        # returns the full set; cap defensively here so the cap test passes
-        # without leaking SQL-only behaviour into the test fixture.
-        queued = list(queued_all)[:slots]
+        queued_ids = [row.id for row in queued_rows]
         spawned = 0
-        for task in queued:
+        held_encode = 0
+        encode_examined = 0
+        for task_id in queued_ids:
+            # Fresh, locked, forcibly-repopulated load of this row's CURRENT
+            # state -- never the batch-select object above (see docstring).
+            # `populate_existing=True` is required even though the row is
+            # also `with_for_update()`-locked here: an identity-map hit that
+            # ISN'T expired would otherwise silently keep serving whatever
+            # attributes it already had cached, ignoring this query's result.
+            task = (
+                await db.execute(
+                    select(TranscodeTask)
+                    .where(col(TranscodeTask.id) == task_id)
+                    .with_for_update()
+                    .execution_options(populate_existing=True)
+                )
+            ).scalar_one_or_none()
+            if task is None or task.status != TranscodeTaskStatus.QUEUED:
+                logger.debug("task_id=%s no longer claimable (gone or status changed); skipping", task_id)
+                continue
             # Load the owning application once so the spawn log lines carry
             # job_id for the per-job log view (Phase 12).
             application = (
@@ -381,23 +595,140 @@ class TranscodeDispatcher:
             job_id = application.job_id if application is not None else None
             with with_log_context(job_id=job_id, session_application_id=task.session_application_id):
                 preset = await self._resolve_preset_for_task(db, task)
+                if is_passthrough_preset(preset):
+                    # Never counted against encode_slots/encode_examined and
+                    # never held by the disabled/docker-less gates below: a
+                    # file move needs neither a container nor an encode slot.
+                    # Isolated per-task try/except: a raise here (hub.emit,
+                    # aggregate, or an unexpected DB error) must never abort
+                    # the tick and roll back other tasks' already-committed
+                    # work or in-flight GPU claims (see execute_passthrough_task
+                    # for the commit-per-task structure that makes this safe).
+                    # `db.rollback()` on the way out is required, not optional:
+                    # a raise from inside a flush/commit leaves the session in
+                    # "pending rollback" state, and the NEXT statement this
+                    # function issues (for the next queued task) would raise
+                    # PendingRollbackError outside any try/except and abort the
+                    # whole tick. The log line uses the loop variable
+                    # `task_id`, never `task.id`: after a failed flush/commit
+                    # every identity-mapped object is unreadable until the
+                    # rollback, so an ORM attribute read here would raise
+                    # PendingRollbackError out of this except block.
+                    try:
+                        await execute_passthrough_task(db, task, self._hub, self._settings)
+                    except Exception as exc:
+                        logger.exception("passthrough execution failed task_id=%s: %s", task_id, exc)
+                        await db.rollback()
+                    continue
+                if encode_examined >= _QUEUE_SCAN_LIMIT:
+                    # Encode-only cap; passthrough tasks further back in the
+                    # queue are still scanned and still run.
+                    continue
+                encode_examined += 1
+                if not enabled:
+                    held_encode += 1
+                    continue
+                if self._docker is None or not self.host_paths_set():
+                    held_encode += 1
+                    continue
+                if encode_slots - spawned <= 0:
+                    # No free slot this tick; later passthrough tasks in the
+                    # queue must still run, so `continue` (not `break`).
+                    continue
+                # No separate re-verify needed here: the fresh,
+                # `populate_existing`-forced, FOR UPDATE-locked load at the
+                # top of this iteration already confirmed `task` is
+                # current and still QUEUED, right before we act on it.
                 assignment = await self._claim_gpu_for_task(db, task, preset)
                 if assignment.action == "queue":
                     logger.info(
-                        "transcode task waiting for GPU codec=%s task_id=%s",
-                        assignment.codec,
+                        "transcode task waiting for GPU encoder=%s task_id=%s%s",
+                        assignment.encoder.id if assignment.encoder is not None else None,
                         task.id,
+                        f" ({assignment.reason})" if assignment.reason else "",
                     )
                     continue
+                if assignment.action == "fail":
+                    # Same isolation as the passthrough branch: a raise while
+                    # failing this task (hub.emit, aggregate, commit) rolls
+                    # back and moves on, never aborting the tick; `task_id`
+                    # (loop variable) is logged, never an ORM attribute.
+                    try:
+                        await self._fail_queued_task(db, task, str(assignment.reason))
+                    except Exception as exc:
+                        logger.exception("failing unrunnable transcode task failed task_id=%s: %s", task_id, exc)
+                        await db.rollback()
+                    continue
+                # Read before the try: after a failed flush/commit no ORM
+                # attribute is readable until the rollback (see below).
+                claimed_gpu_id = assignment.gpu.id if assignment.gpu is not None else None
                 try:
-                    self._spawn_container(task, assignment=assignment)
+                    # `_spawn_container` is a blocking call: a plain docker
+                    # socket round-trip normally, but on the SSH-transport-
+                    # rebuild path (see `_is_transport_death`) it also does a
+                    # blocking TCP+SSH handshake that can take tens of
+                    # seconds against a black-holed remote host. Run it off
+                    # the event loop so a stuck spawn doesn't freeze
+                    # HTTP/WS/ripper callbacks for the whole tick.
+                    # `_spawn_container` touches only `self._docker`,
+                    # `self._docker_factory`, `self._settings`, and its own
+                    # locals/args (never the AsyncSession), so moving it to a
+                    # thread doesn't put any DB access off the loop.
+                    await asyncio.to_thread(self._spawn_container, task, assignment=assignment)
                     spawned += 1
+                    self.last_spawn_error = None
+                    # Commit this task's GPU claim promptly, per-task, right
+                    # after its container is confirmed running: a later
+                    # task's exception (and rollback, see the passthrough
+                    # branch above) must never be able to revert a GPU claim
+                    # whose container already exists.
+                    await db.commit()
                 except Exception as exc:
-                    logger.exception("transcode spawn failed task_id=%s: %s", task.id, exc)
-                    # Release the GPU claim so the task can retry on a later tick.
+                    self.last_spawn_error = f"{type(exc).__name__}: {exc}"[:300]
+                    # `task_id` (loop variable), never `task.id`: see the
+                    # passthrough except block above for why no ORM
+                    # attribute may be read before the rollback below.
+                    logger.exception("transcode spawn failed task_id=%s: %s", task_id, exc)
+                    # A raise here can come from `_spawn_container` itself
+                    # (the container never started) OR from the commit right
+                    # above (the container IS running but the GPU-claim
+                    # commit failed) -- either way, mirroring the passthrough
+                    # except block, roll back first: a raise from inside a
+                    # flush/commit leaves the session in "pending rollback"
+                    # state, and the NEXT statement issued for the NEXT
+                    # queued task would raise PendingRollbackError outside
+                    # any try/except and abort the whole tick.
+                    await db.rollback()
+                    # Release the GPU claim so the task can retry claiming a
+                    # GPU on a later tick. A real SQLAlchemy session's
+                    # rollback (expire_on_rollback=True by default) already
+                    # discards whatever uncommitted BUSY assignment
+                    # `_claim_gpu_for_task` made and expires the gpu object
+                    # back to its last-committed value, but relying on that
+                    # implicit expire-on-rollback behavior for correctness is
+                    # fragile (and the in-memory test fake doesn't model it
+                    # at all), so the revert is re-applied explicitly here,
+                    # AFTER the rollback -- applying it before would just
+                    # have the rollback above discard it again. It's
+                    # committed immediately rather than deferred to the
+                    # trailing end-of-loop commit: an uncommitted revert
+                    # sitting in the shared session for the rest of the loop
+                    # would be discarded again by a LATER task's own rollback
+                    # (the same hazard the passthrough branch's per-task
+                    # commits guard against).
                     if assignment.gpu is not None:
                         assignment.gpu.status = GpuStatus.AVAILABLE
                         assignment.gpu.claimed_by_task_id = None
+                        await db.commit()
+                finally:
+                    # Committed (other sessions now read BUSY) or rolled back
+                    # and released: either way the in-process marker is done.
+                    if claimed_gpu_id is not None:
+                        self.claimed_gpu_ids.discard(claimed_gpu_id)
+        if held_encode:
+            logger.debug(
+                "%d encode task(s) held (enabled=%s docker=%s)", held_encode, enabled, self._docker is not None
+            )
         await db.commit()
         return spawned
 
@@ -416,45 +747,120 @@ class TranscodeDispatcher:
             await db.execute(select(TranscodePreset).where(col(TranscodePreset.id) == sess.transcode_preset_id))
         ).scalar_one_or_none()
 
+    def awaiting_probe(self, gpu: Gpu) -> bool:
+        """A never-probed row whose probe is reserved, running, or about to be
+        listed by the boot pass."""
+        return gpu.probed_at is None and (
+            self.boot_probe_listing or gpu.id in self.pending_probe_gpu_ids or gpu.id in self.probing_gpu_ids
+        )
+
     async def _claim_gpu_for_task(
         self, db: AsyncSession, task: TranscodeTask, preset: TranscodePreset | None
     ) -> GpuAssignment:
-        """Implements the `hw_preference` × GPU-availability matrix.
+        """Encoder-first claim: map the preset's catalog encoder onto the
+        devices whose probe verified its codec.
 
-        Branches:
-        - `cpu_only`, or no preset, or preset has no codec → CPU spawn.
-        - matching GPU AVAILABLE → claim it, GPU spawn.
-        - all matching GPUs BUSY + `any` → CPU spawn.
-        - all matching GPUs BUSY + NULL → queue (retry next tick).
-        - no GPU advertises this codec at all → CPU spawn (NULL fallback).
+        - no preset, or the `preset` encoder -> spawn, no GPU, no encoder.
+        - a `cpu_<codec>` encoder -> spawn on CPU with that encoder.
+        - eligible device free -> claim the best-ranked one (vendor rank,
+          then device path) and spawn with the resolved GPU encoder.
+        - eligible devices all busy, or the only eligible ones are being
+          probed right now -> queue (retry next tick).
+        - no eligible device, but a never-probed device that could serve the
+          encoder is awaiting its probe (`awaiting_probe`) -> queue.
+        - otherwise no eligible device: `any_<codec>` falls back to
+          `cpu_<codec>`; a vendor-pinned encoder fails the task.
+        - an encoder id missing from the catalog fails the task.
+
+        Eligibility (enabled, probed, codec verified) is `gpu_is_eligible`;
+        a device in `probing_gpu_ids` is never claimed.
         """
-        if preset is None or preset.codec is None:
-            return GpuAssignment(gpu=None, codec=None, action="spawn")
-        if preset.hw_preference == HwPreference.CPU_ONLY:
-            return GpuAssignment(gpu=None, codec=preset.codec.value, action="spawn")
-
-        codec = preset.codec.value
-        # Filter in Python — `text[]` ANY predicates are awkward to express in
+        if preset is None:
+            return GpuAssignment(gpu=None, encoder=None, action="spawn")
+        try:
+            spec = get_encoder(preset.encoder)
+        except ValueError:
+            return GpuAssignment(
+                gpu=None,
+                encoder=None,
+                action="fail",
+                reason=f"preset {preset.id} has unknown encoder {preset.encoder!r}",
+            )
+        if spec.kind == "preset":
+            return GpuAssignment(gpu=None, encoder=None, action="spawn")
+        if spec.kind == "cpu":
+            return GpuAssignment(gpu=None, encoder=spec, action="spawn")
+        codec = str(spec.codec)
+        # Filter in Python: `text[]` ANY predicates are awkward to express in
         # SQLAlchemy ORM and the in-memory test fake doesn't grok them. The
         # gpus table is small (1-4 rows on real hosts) so the cost is trivial.
         all_gpus = (await db.execute(select(Gpu))).scalars().all()
-        matching = [g for g in all_gpus if codec in (g.encoder_kinds or [])]
-        if not matching:
-            # No silicon on this host advertises the requested codec — CPU.
-            return GpuAssignment(gpu=None, codec=codec, action="spawn")
+        self._enabled_gpu_vendors = {g.vendor for g in all_gpus if g.enabled}
+        eligible = [
+            g for g in all_gpus if gpu_is_eligible(g, codec) and (spec.kind == "any" or g.vendor == spec.vendor)
+        ]
+        candidates = [g for g in eligible if g.id not in self.probing_gpu_ids]
+        if not candidates:
+            if eligible:
+                # Every eligible device is mid-probe; it is only absent for
+                # this tick, so wait rather than fail or fall back to CPU.
+                return GpuAssignment(gpu=None, encoder=spec, action="queue")
+            if any(gpu_could_serve(g, spec) and self.awaiting_probe(g) for g in all_gpus):
+                # A never-probed device that could serve this encoder has a
+                # probe scheduled or running; its result decides the device.
+                return GpuAssignment(gpu=None, encoder=spec, action="queue", reason=WAITING_FOR_PROBE_REASON)
+            if spec.kind == "any":
+                return GpuAssignment(gpu=None, encoder=cpu_encoder_for(codec), action="spawn")
+            return GpuAssignment(
+                gpu=None,
+                encoder=spec,
+                action="fail",
+                reason=f"no enabled device has verified {spec.id}; re-probe or enable it in Settings > GPUs",
+            )
+        # Deterministic pick instead of row order: vendor rank, then device
+        # path, so a mixed-vendor host always prefers the same silicon.
+        free = sorted(
+            (g for g in candidates if g.status == GpuStatus.AVAILABLE),
+            key=lambda g: (VENDOR_RANK.get(g.vendor, 99), g.device_path),
+        )
+        if not free:
+            return GpuAssignment(gpu=None, encoder=spec, action="queue")
+        gpu = free[0]
+        gpu.status = GpuStatus.BUSY
+        gpu.claimed_by_task_id = task.id
+        self.claimed_gpu_ids.add(gpu.id)
+        resolved = spec if spec.kind == "gpu" else gpu_encoder_for(gpu.vendor, codec)
+        return GpuAssignment(gpu=gpu, encoder=resolved, action="spawn")
 
-        available = [g for g in matching if g.status == GpuStatus.AVAILABLE]
-        if available:
-            gpu = available[0]
-            gpu.status = GpuStatus.BUSY
-            gpu.claimed_by_task_id = task.id
-            return GpuAssignment(gpu=gpu, codec=codec, action="spawn")
+    async def _fail_queued_task(self, db: AsyncSession, task: TranscodeTask, reason: str) -> None:
+        """Terminal-fail a queued task that can never run as configured, emit
+        `task.failed`, settle its session application, and commit."""
+        from arm_backend.transcode_apply import aggregate_session_application
 
-        # All matching GPUs are busy.
-        if preset.hw_preference == HwPreference.ANY:
-            return GpuAssignment(gpu=None, codec=codec, action="spawn")
-        # NULL semantics: hold the task in queued so a later tick retries.
-        return GpuAssignment(gpu=None, codec=codec, action="queue")
+        task.status = TranscodeTaskStatus.FAILED
+        task.last_error = reason
+        logger.error("transcode task failed before spawn task_id=%s: %s", task.id, reason)
+        await self._emit_task_failed(db, task)
+        application = (
+            await db.execute(
+                select(SessionApplication).where(col(SessionApplication.id) == task.session_application_id)
+            )
+        ).scalar_one()
+        outcome = await aggregate_session_application(db, application)
+        if outcome.event_type is not None:
+            await self._hub.emit(
+                topic="transcode.events",
+                event_type=outcome.event_type,
+                payload={
+                    "session_application_id": application.id,
+                    "session_id": application.session_id,
+                    "job_id": application.job_id,
+                    "status": application.status.value,
+                },
+                job_id=application.job_id,
+                session=db,
+            )
+        await db.commit()
 
     def host_paths_set(self) -> bool:
         return bool(
@@ -463,6 +869,133 @@ class TranscodeDispatcher:
             and self._settings.ARM_HOST_LOGS_PATH
             and self._settings.ARM_HOST_CERTS_PATH
         )
+
+    def probe(self) -> tuple[bool, str | None]:
+        """Can this dispatcher actually run a transcode right now? Pings the
+        docker host and checks the BASE image exists there. Never raises;
+        cached for docker_probe.PROBE_TTL_SECONDS (see there for why). A
+        ripper-only deployment (no docker client at all) can't run encode
+        tasks; that's not a probe failure to retry, just a fixed fact, so
+        short-circuit before touching `self._probe`.
+
+        The base image is the gate for `ok`; a missing per-vendor variant
+        never fails the probe, since `image_for` falls back to the base
+        image automatically. When `ok` and a vendor with an enabled GPU row
+        (per `self._enabled_gpu_vendors`, see its docstring for how that's
+        kept current) lacks its derived variant image, that's noted in the
+        detail so an operator who built the split images can see a stale
+        vendor build without it ever showing up as a failure.
+        """
+        if self._docker is None:
+            return (False, NO_DOCKER_CLIENT_DETAIL)
+        ok, detail = self._probe()
+        if not ok:
+            return ok, detail
+        notes = self._missing_variant_notes()
+        return ok, "; ".join(notes) if notes else detail
+
+    def image_exists(self, image: str) -> bool:
+        """Cached `probe_docker` check for a specific image reference (the
+        base image or a derived per-vendor variant). False when there's no
+        docker client at all (ripper-only deployment)."""
+        if self._docker is None:
+            return False
+        cached = self._image_probes.get(image)
+        if cached is None:
+            # `image` is this call's own local (not a loop variable), so a
+            # plain closure captures the right value with no late-binding
+            # hazard; each distinct image gets its own TtlProbe + closure.
+            cached = TtlProbe(lambda: probe_docker(self._docker, image))
+            self._image_probes[image] = cached
+        ok, _ = cached()
+        return ok
+
+    def _pull_failed_recently(self, image: str) -> float | None:
+        """Seconds until a failed pull of `image` may be retried, or None when
+        there is no failure inside the VARIANT_PULL_RETRY_SECONDS window."""
+        failed_at = self._variant_pull_failed.get(image)
+        if failed_at is None:
+            return None
+        remaining = VARIANT_PULL_RETRY_SECONDS - (time.monotonic() - failed_at)
+        return remaining if remaining > 0 else None
+
+    def _pull_lock(self, image: str) -> threading.Lock:
+        with self._pull_locks_guard:
+            return self._pull_locks.setdefault(image, threading.Lock())
+
+    def variant_available(self, image: str) -> bool:
+        """Can the per-vendor variant `image` be spawned on the docker host?
+
+        True when it is already present (the cached `image_exists` check) or
+        a pull of it succeeds now. A failed pull returns False and is not
+        retried for VARIANT_PULL_RETRY_SECONDS, so the caller falls back to
+        the base image without a registry round trip each time. A digest
+        reference has no tag to pull and is never pulled. Concurrent callers
+        for the same image share one pull. Only derived variants come
+        through here; the base image is never pulled by this path. Used by
+        the spawn and GPU-probe paths only, never by diagnostics. Blocking
+        (a pull can take minutes): callers run it off the event loop."""
+        if self._docker is None:
+            return False
+        if self.image_exists(image):
+            return True
+        parts = split_reference(image)
+        if parts is None:
+            return False
+        with self._pull_lock(image):
+            # Re-check under the lock: a concurrent caller may have just
+            # finished a pull of this image, successful or not.
+            if self._pull_failed_recently(image) is not None:
+                return False
+            if self.image_exists(image):
+                return True
+            repo, tag = parts
+            logger.info("variant image %s not present on the docker host; pulling it", image)
+            try:
+                self._docker.images.pull(repo, tag=tag)
+            except Exception as exc:  # noqa: BLE001 - any pull failure means "use the base image"
+                logger.warning(
+                    "could not pull variant image %s (%s); using the base image, next pull attempt in %.0f s",
+                    image,
+                    exc,
+                    VARIANT_PULL_RETRY_SECONDS,
+                )
+                self._variant_pull_failed[image] = time.monotonic()
+                return False
+            self._variant_pull_failed.pop(image, None)
+            # Drop the cached "absent" answer so the next presence check sees it.
+            self._image_probes.pop(image, None)
+            logger.info("pulled variant image %s", image)
+            return True
+
+    def _missing_variant_notes(self) -> list[str]:
+        """One note per vendor that has an enabled GPU row, has a derivable
+        variant, isn't overridden, and whose variant image isn't present on
+        this docker host. Presence-only: diagnostics never pulls, so a poll
+        costs no registry traffic and never records a pull failure that would
+        deny the next spawn its pull. The wording says whether the variant
+        will be pulled on first use or recently failed to pull."""
+        notes: list[str] = []
+        for vendor in sorted(self._enabled_gpu_vendors, key=lambda v: v.value):
+            if vendor_override(self._settings, vendor):
+                continue
+            suffix = VARIANT_SUFFIX.get(vendor)
+            if suffix is None:
+                continue
+            candidate = variant_image(self._settings.ARM_TRANSCODE_IMAGE, suffix)
+            if candidate is None or self.image_exists(candidate):
+                continue
+            retry_in = self._pull_failed_recently(candidate)
+            if retry_in is None:
+                notes.append(
+                    f"{vendor.value} variant image {candidate} not present locally; it will be pulled on first use"
+                )
+            else:
+                notes.append(
+                    f"{vendor.value} variant image {candidate} could not be pulled; "
+                    f"falling back to the base image (retry after {retry_in:.0f} s)"
+                )
+        return notes
 
     def _spawn_container(self, task: TranscodeTask, *, assignment: GpuAssignment | None = None) -> Any:
         remote = bool(self._settings.ARM_TRANSCODE_DOCKER_HOST)
@@ -501,11 +1034,17 @@ class TranscodeDispatcher:
             str(certs_root / "arm-ca.crt"): {"bind": "/etc/ssl/arm/arm-ca.crt", "mode": "ro"},
         }
         extra_run_kwargs: dict[str, Any] = {}
+        if assignment is not None and assignment.encoder is not None:
+            # The worker resolves everything from the catalog id. The
+            # ARM_GPU_* vars below are a harmless fallback only: an image that
+            # predates --probe-device can never verify a row, so it is never
+            # handed a GPU; the upgrade path is rebuilding or pulling it.
+            env["ARM_TRANSCODE_ENCODER"] = assignment.encoder.id
         if assignment is not None and assignment.gpu is not None:
             env["ARM_GPU_VENDOR"] = assignment.gpu.vendor.value
             env["ARM_GPU_DEVICE"] = assignment.gpu.device_path
-            if assignment.codec is not None:
-                env["ARM_GPU_CODEC"] = assignment.codec
+            if assignment.encoder is not None:
+                env["ARM_GPU_CODEC"] = str(assignment.encoder.codec)
             # VAAPI/QSV: the entrypoint self-derives the render gid from the
             # mounted node; an explicit ARM_RENDER_GID is a forced OVERRIDE
             # (passed through as RENDER_GID, which wins in the entrypoint).
@@ -516,8 +1055,10 @@ class TranscodeDispatcher:
         # for `docker ps` and unique enough that two simultaneous transcoders
         # never collide.
         hostname = f"arm-transcode-{task.id[-12:]}"
-        container = self._docker.containers.run(
-            image=self._settings.ARM_TRANSCODE_IMAGE,
+        gpu_vendor = assignment.gpu.vendor if assignment is not None and assignment.gpu is not None else None
+        image = image_for(self._settings, gpu_vendor, exists=self.variant_available)
+        run_kwargs: dict[str, Any] = dict(
+            image=image,
             name=hostname,
             hostname=hostname,
             labels={_DOCKER_LABEL_KEY: task.id},
@@ -528,11 +1069,56 @@ class TranscodeDispatcher:
             auto_remove=True,
             **extra_run_kwargs,
         )
+        try:
+            container = self._docker.containers.run(**run_kwargs)
+        except Exception as exc:
+            if self._docker_factory is not None and _is_transport_death(exc):
+                logger.warning(
+                    "docker ssh transport dead; rebuilding client and retrying spawn task_id=%s: %s",
+                    task.id,
+                    exc,
+                )
+                old_docker = self._docker
+                try:
+                    rebuilt = self._docker_factory()
+                except Exception as factory_exc:  # noqa: BLE001 - factory failure must not wedge the dispatcher
+                    logger.warning(
+                        "docker client rebuild failed; keeping old client task_id=%s: %s",
+                        task.id,
+                        factory_exc,
+                    )
+                    raise
+                if rebuilt is None:
+                    # _build_docker_client (main.py) returns None on any
+                    # failure (dev without the socket, unreachable/
+                    # misconfigured remote host). Assigning self._docker =
+                    # None here would make every LATER spawn raise
+                    # AttributeError instead of the transport-death path
+                    # that can actually recover — permanently wedging the
+                    # dispatcher. Keep the old (dead) client instead: this
+                    # tick's spawn still fails via the original exception
+                    # below, and the next tick's spawn attempt will detect
+                    # transport death again and retry the rebuild.
+                    logger.warning(
+                        "docker client rebuild returned None; keeping old client task_id=%s",
+                        task.id,
+                    )
+                    raise
+                self._docker = rebuilt
+                try:
+                    old_docker.close()
+                except Exception:  # noqa: BLE001 - best-effort cleanup of the dead client
+                    pass
+                # A second failure here propagates into the existing
+                # error handling in spawn_pending — no infinite retry.
+                container = self._docker.containers.run(**run_kwargs)
+            else:
+                raise
         logger.info(
             "transcode spawned task_id=%s container=%s image=%s gpu=%s",
             task.id,
             hostname,
-            self._settings.ARM_TRANSCODE_IMAGE,
+            image,
             assignment.gpu.device_path if assignment and assignment.gpu else "cpu",
         )
         return container
@@ -655,8 +1241,10 @@ class TranscodeDispatcher:
             track_id = row.source_track_id
 
         # Force-stop the container if the transcoder didn't honour the WS
-        # cancel inside the grace window.
-        if still_running:
+        # cancel inside the grace window. No docker client (ripper-only
+        # deployment) means there's no container to stop; the row delete
+        # below still runs.
+        if still_running and self._docker is not None:
             try:
                 survivors = self._docker.containers.list(filters={"label": f"{_DOCKER_LABEL_KEY}={task_id}"})
                 for container in survivors:

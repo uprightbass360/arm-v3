@@ -4,6 +4,16 @@ import ChannelEditor from '../ChannelEditor.svelte';
 import type { Channel, Catalog } from '$lib/types/notifications';
 import type { EventTypeInfo } from '$lib/api/channels';
 import { discordCatalog, appriseChannel, webhookChannel } from './apprise-fixtures';
+import * as channelsApi from '$lib/api/channels';
+
+vi.mock('$lib/api/channels', async (orig) => ({
+	...(await orig<typeof import('$lib/api/channels')>()),
+	fetchScripts: vi.fn().mockResolvedValue([]),
+	fetchScript: vi.fn().mockRejectedValue(new Error('no script selected')),
+	previewBash: vi
+		.fn()
+		.mockResolvedValue({ title: '', body: '', inputs: {}, env: {}, argv: [], error: null, result: null })
+}));
 
 const catalog: Catalog = { featured: [], services: [] };
 const ch: Channel = webhookChannel({ id: 3 });
@@ -23,7 +33,16 @@ describe('ChannelEditor', () => {
 	afterEach(() => cleanup());
 
 	function renderEditor(channel: Channel, cat: Catalog = catalog, overrides: Record<string, unknown> = {}) {
-		const props = { channel, catalog: cat, eventTypes: editorEventTypes, onsave: () => {}, ontest: () => {}, onclose: () => {}, ondelete: () => {}, ...overrides };
+		const props = {
+			channel,
+			catalog: cat,
+			eventTypes: editorEventTypes,
+			onsave: () => {},
+			ontest: () => {},
+			onclose: () => {},
+			ondelete: () => {},
+			...overrides
+		};
 		return renderComponent(ChannelEditor, { props });
 	}
 
@@ -64,7 +83,7 @@ describe('ChannelEditor', () => {
 
 	it('apprise editor renders the service fields resolved from service_id', async () => {
 		renderEditor(appriseDiscord(), discordCatalog);
-		const wid = await screen.findByLabelText(/Webhook ID/i) as HTMLInputElement;
+		const wid = (await screen.findByLabelText(/Webhook ID/i)) as HTMLInputElement;
 		expect(wid).toBeInTheDocument();
 		expect(wid.value).toBe('');
 	});
@@ -95,18 +114,25 @@ describe('ChannelEditor', () => {
 	});
 
 	it('apprise editor seeds appriseFields from stored channel.config.fields', async () => {
-		renderEditor(appriseDiscord({
-			id: 8,
-			config: { type: 'apprise', url: 'discord://...', service_id: 'discord',
-			          fields: { webhook_id: '<hidden>', webhook_token: '<hidden>', thread: '5' } }
-		}), discordCatalog);
-		const wid = await screen.findByLabelText(/Webhook ID/i) as HTMLInputElement;
+		renderEditor(
+			appriseDiscord({
+				id: 8,
+				config: {
+					type: 'apprise',
+					url: 'discord://...',
+					service_id: 'discord',
+					fields: { webhook_id: '<hidden>', webhook_token: '<hidden>', thread: '5' }
+				}
+			}),
+			discordCatalog
+		);
+		const wid = (await screen.findByLabelText(/Webhook ID/i)) as HTMLInputElement;
 		expect(wid.type).toBe('password');
 		expect(wid.value).toBe('');
 		expect(wid.placeholder).toMatch(/leave blank to keep/i);
 		const adv = screen.getByText(/Advanced \(/).closest('details') as HTMLDetailsElement;
 		adv.open = true;
-		const thread = await screen.findByLabelText(/Thread/i) as HTMLInputElement;
+		const thread = (await screen.findByLabelText(/Thread/i)) as HTMLInputElement;
 		expect(thread.value).toBe('5');
 	});
 
@@ -117,5 +143,57 @@ describe('ChannelEditor', () => {
 		);
 		expect(await screen.findByText(/added via a raw URL/i)).toBeInTheDocument();
 		expect(screen.queryByLabelText(/Webhook ID/i)).toBeNull();
+	});
+
+	it('bash shows the test panel instead of the Send test button', async () => {
+		const bashChannel: Channel = {
+			...webhookChannel({ id: 5 }),
+			type: 'bash',
+			config: { type: 'bash', script: 'plex.sh' }
+		};
+		renderEditor(bashChannel);
+		expect(screen.queryByRole('button', { name: 'Send test' })).toBeNull();
+		expect(screen.getByText('Test')).toBeInTheDocument();
+	});
+
+	it('bash editor masks a stored secret input and keeps a non-secret input filled', async () => {
+		vi.mocked(channelsApi.fetchScripts).mockResolvedValueOnce([
+			{ name: 'send-email.sh', executable: true, description: '' }
+		]);
+		vi.mocked(channelsApi.fetchScript).mockResolvedValueOnce({
+			name: 'send-email.sh',
+			executable: true,
+			description: '',
+			size_bytes: 100,
+			modified_at: new Date().toISOString(),
+			preview: '#!/bin/bash',
+			inputs: [
+				{ key: 'TO', label: 'Recipient', required: true, secret: false, default: '', values: null },
+				{ key: 'SMTP_PASS', label: 'SMTP password', required: true, secret: true, default: '', values: null }
+			]
+		});
+		const bashChannel: Channel = {
+			...webhookChannel({ id: 6 }),
+			type: 'bash',
+			config: {
+				type: 'bash',
+				script: 'send-email.sh',
+				timeout_seconds: 30,
+				inputs: { TO: 'me@x', SMTP_PASS: '<hidden>' },
+				secret_keys: ['SMTP_PASS']
+			}
+		};
+		renderEditor(bashChannel);
+
+		const smtpPass = (await screen.findByLabelText('SMTP password')) as HTMLInputElement;
+		expect(smtpPass.type).toBe('password');
+		expect(smtpPass.value).toBe('');
+		expect(smtpPass.placeholder).toMatch(/leave blank to keep/i);
+		expect(smtpPass.required).toBe(false);
+
+		const to = (await screen.findByLabelText('Recipient', {
+			selector: '[aria-label="Recipient"]'
+		})) as HTMLInputElement;
+		expect(to.value).toBe('me@x');
 	});
 });

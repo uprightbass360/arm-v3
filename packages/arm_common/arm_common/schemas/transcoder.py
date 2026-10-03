@@ -7,9 +7,11 @@ encoder, and these schemas carry the state-machine transitions.
 """
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from arm_common.enums import GpuStatus, GpuVendor
 from arm_common.schemas.jobs import TrackView
 from arm_common.schemas.sessions import (
     SessionView,
@@ -79,6 +81,69 @@ class TranscodeStatsView(BaseModel):
     gpus_total: int
     gpus_available: int
     max_parallel: int
+
+
+class GpuView(BaseModel):
+    """One row of the DB-authoritative GPU inventory (Settings > GPUs)."""
+
+    id: str
+    vendor: GpuVendor
+    device_path: str
+    encoder_kinds: list[str]
+    status: GpuStatus
+    enabled: bool
+    claimed_by_task_id: str | None = None
+    last_seen_at: datetime | None = None
+    probed_at: datetime | None = None
+    probe_error: str | None = None
+
+
+class GpuUpdateRequest(BaseModel):
+    """PATCH body for a GPU row - the enable/disable switch only. Vendor,
+    path and encoder kinds describe hardware; they are re-seeded, not edited."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool
+
+
+class GpuProbeScheduled(BaseModel):
+    """202 body for a single-row re-probe: the probe runs in the background
+    and the row updates when `gpu.probed` arrives on `transcode.events`."""
+
+    scheduled: bool
+
+
+class GpuProbeAllScheduled(BaseModel):
+    """202 body for a re-probe of every enabled, idle row: the ids whose
+    background probe was scheduled."""
+
+    scheduled: list[str]
+
+
+class EncoderAvailabilityView(BaseModel):
+    """One `arm_common.encoders.ENCODERS` catalog entry, with availability
+    computed server-side from the live `gpus` inventory (GET /api/encoders).
+
+    `group` buckets `preset`/`cpu`/`any` kinds by themselves and `gpu` kinds
+    by vendor, so the transcode preset picker can render sections without
+    re-deriving the grouping client-side. `available` is always true for
+    `preset`/`cpu`/`any` (an `any_*` encoder falls back to CPU at dispatch
+    time); for a vendor-pinned `gpu` encoder it reflects whether any enabled
+    device's probe currently verifies that vendor/codec. `reason` explains
+    an unavailable `gpu` entry, or an `any_*` entry that would currently run
+    on the CPU for lack of a verified GPU; it is `None` otherwise.
+    """
+
+    id: str
+    label: str
+    group: Literal["preset", "cpu", "any", "qsv", "nvenc", "vaapi"]
+    engine: str
+    kind: str
+    vendor: GpuVendor | None
+    codec: str | None
+    available: bool
+    reason: str | None
 
 
 class TranscodeWorkerView(BaseModel):

@@ -35,8 +35,6 @@ vi.mock('$lib/api/jobs', () => ({
 	fetchMusicDetail: vi.fn(),
 	updateJobTitle: vi.fn(() => Promise.resolve(createJob())),
 	updateJobConfig: vi.fn(() => Promise.resolve(createJob())),
-	updateJobNaming: vi.fn(() => Promise.reject(new Error('not available'))),
-	updateJobTranscodeConfig: vi.fn(() => Promise.reject(new Error('not available'))),
 	updateTrackTitle: vi.fn(() => Promise.resolve(createJob())),
 	clearTrackTitle: vi.fn(() => Promise.resolve(createJob())),
 	fetchNamingVariables: vi.fn(() => Promise.resolve({ variables: {} })),
@@ -45,7 +43,6 @@ vi.mock('$lib/api/jobs', () => ({
 }));
 
 vi.mock('$lib/api/settings', () => ({
-	fetchTranscoderScheme: vi.fn(() => Promise.resolve(null)),
 	fetchTranscoderPresets: vi.fn(() => Promise.resolve(null))
 }));
 
@@ -68,7 +65,10 @@ const mockStart = vi.mocked(startWaitingJob);
 const mockPause = vi.mocked(pauseWaitingJob);
 
 /** Render the widget with a JobView. */
-function renderWidget(jobOverrides: Partial<Parameters<typeof createJob>[0]> = {}, extraProps: Record<string, unknown> = {}) {
+function renderWidget(
+	jobOverrides: Partial<Parameters<typeof createJob>[0]> = {},
+	extraProps: Record<string, unknown> = {}
+) {
 	return renderComponent(DiscReviewWidget, {
 		props: { job: createJob({ status: 'identified', ...jobOverrides }), ...extraProps }
 	});
@@ -95,6 +95,11 @@ describe('DiscReviewWidget', () => {
 				expect(screen.getByText('Start rip')).toBeInTheDocument();
 				expect(screen.getByText('Cancel')).toBeInTheDocument();
 			});
+		});
+
+		it('offers Apply session on a held disc', async () => {
+			renderWidget({ status: 'awaiting_review' });
+			await waitFor(() => expect(screen.getByRole('button', { name: /Apply session/ })).toBeInTheDocument());
 		});
 
 		it('shows Start rip on an awaiting_user_id job (review-card start)', async () => {
@@ -233,7 +238,14 @@ describe('DiscReviewWidget', () => {
 		it('renders v3 track rows (index / title / source)', async () => {
 			mockFetchJob.mockResolvedValue(
 				detail({ title: 'Kolchak', disc_type: 'bluray' }, [
-					createTrack({ id: 'trk_1', index: 0, source_ref: 'Kolchak_t00.mkv', title: 'Demon in Lace', duration_seconds: 3012, episode_number: 16 })
+					createTrack({
+						id: 'trk_1',
+						index: 0,
+						source_ref: 'Kolchak_t00.mkv',
+						title: 'Demon in Lace',
+						duration_seconds: 3012,
+						episode_number: 16
+					})
 				])
 			);
 			renderWidget({ disc_type: 'bluray' });
@@ -287,10 +299,8 @@ describe('DiscReviewWidget', () => {
 		});
 
 		it('shows RIPPED | NEEDS TITLE when post-rip job has a pending session but no title', async () => {
-			mockFetchJob.mockResolvedValue(
-				detail({ status: 'ripped', title: null, metadata_json: { pending_session_id: 'sess_x' } })
-			);
-			renderWidget({ status: 'ripped', title: null, metadata_json: { pending_session_id: 'sess_x' } });
+			mockFetchJob.mockResolvedValue(detail({ status: 'ripped', title: null, pending_session_id: 'sess_x' }));
+			renderWidget({ status: 'ripped', title: null, pending_session_id: 'sess_x' });
 			await waitFor(() => expect(screen.getByText('RIPPED | NEEDS TITLE')).toBeInTheDocument());
 		});
 
@@ -343,10 +353,16 @@ describe('DiscReviewWidget', () => {
 					disc_type: 'bluray',
 					disc_number: 1,
 					disc_total: 3,
+					season: 2,
 					metadata_json: {
-						video_type: 'series',
-						season: '2',
-						scan_result: { titles: [{ index: 0 }, { index: 1 }] }
+						provider_raw: { arm_server: { video_type: 'series' } },
+						scan_result: {
+							disc_type: 'bluray',
+							titles: [
+								{ index: 0, duration_seconds: 0 },
+								{ index: 1, duration_seconds: 0 }
+							]
+						}
 					}
 				})
 			);
@@ -354,13 +370,11 @@ describe('DiscReviewWidget', () => {
 			await waitFor(() => expect(screen.getByText('Series')).toBeInTheDocument());
 			expect(screen.getByText('Disc 1/3')).toBeInTheDocument();
 			expect(screen.getByText('2 titles')).toBeInTheDocument();
-			expect(screen.getByText('S2')).toBeInTheDocument();
+			expect(screen.getByText('S02')).toBeInTheDocument();
 		});
 
 		it('renders no metadata chips for a bare disc', async () => {
-			mockFetchJob.mockResolvedValueOnce(
-				detail({ status: 'awaiting_review', disc_type: 'bluray', metadata_json: {} })
-			);
+			mockFetchJob.mockResolvedValueOnce(detail({ status: 'awaiting_review', disc_type: 'bluray', metadata_json: {} }));
 			renderWidget({ status: 'awaiting_review' });
 			await waitFor(() => expect(screen.getByText('Start rip')).toBeInTheDocument());
 			expect(screen.queryByText(/titles$/)).not.toBeInTheDocument();
@@ -375,9 +389,7 @@ describe('DiscReviewWidget', () => {
 			vi.mocked(fetchSessions).mockResolvedValueOnce([
 				{ id: 'sess_42', name: '4K Remux', media_type: 'movie' } as never
 			]);
-			mockFetchJob.mockResolvedValueOnce(
-				detail({ status: 'awaiting_review', metadata_json: { pending_session_id: 'sess_42' } })
-			);
+			mockFetchJob.mockResolvedValueOnce(detail({ status: 'awaiting_review', pending_session_id: 'sess_42' }));
 			renderWidget({ status: 'awaiting_review' });
 			await waitFor(() => expect(screen.getByText('Session: 4K Remux')).toBeInTheDocument());
 		});
@@ -386,10 +398,34 @@ describe('DiscReviewWidget', () => {
 			const { fetchSessions } = await import('$lib/api/sessions');
 			vi.mocked(fetchSessions).mockResolvedValueOnce([]);
 			mockFetchJob.mockResolvedValueOnce(
-				detail({ status: 'awaiting_review', metadata_json: { pending_session_id: 'sess_0123456789ABCDEF' } })
+				detail({ status: 'awaiting_review', pending_session_id: 'sess_0123456789ABCDEF' })
 			);
 			renderWidget({ status: 'awaiting_review' });
 			await waitFor(() => expect(screen.getByText(/^Session: sess_0123456789\.\.\.$/)).toBeInTheDocument());
+		});
+
+		it('shows a parked session on a held disc', async () => {
+			const { fetchSessions } = await import('$lib/api/sessions');
+			vi.mocked(fetchSessions).mockResolvedValueOnce([
+				{ id: 'ses_a', name: 'Plex 1080p', media_type: 'movie' } as never
+			]);
+			mockFetchJob.mockResolvedValueOnce(detail({ status: 'awaiting_review', parked_session_ids: ['ses_a'] }));
+			renderWidget({ status: 'awaiting_review', parked_session_ids: ['ses_a'] });
+			await waitFor(() =>
+				expect(screen.getByText('Session: Plex 1080p, applies when the rip finishes')).toBeInTheDocument()
+			);
+		});
+
+		it('falls back to the pending session when nothing is parked', async () => {
+			const { fetchSessions } = await import('$lib/api/sessions');
+			vi.mocked(fetchSessions).mockResolvedValueOnce([
+				{ id: 'ses_a', name: 'Plex 1080p', media_type: 'movie' } as never
+			]);
+			mockFetchJob.mockResolvedValueOnce(
+				detail({ status: 'identified', parked_session_ids: [], pending_session_id: 'ses_a' })
+			);
+			renderWidget({ status: 'identified' });
+			await waitFor(() => expect(screen.getByText('Session: Plex 1080p')).toBeInTheDocument());
 		});
 
 		it('shows no session chip when none is pinned', async () => {

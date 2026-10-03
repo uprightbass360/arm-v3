@@ -1,7 +1,3 @@
-<script module lang="ts">
-	export type { GlyphName } from './glyph-names';
-</script>
-
 <script lang="ts">
 	import { GLYPH_PATHS, type GlyphName } from './glyph-names';
 
@@ -13,7 +9,9 @@
 
 	let { name, class: className = '', label }: Props = $props();
 	// Default size only when the caller sets none, so an explicit `h-3 w-3`
-	// never competes with `h-4 w-4` in the cascade.
+	// never competes with `h-4 w-4` in the cascade. Kept as Tailwind sizing
+	// utilities (allowed inline on icons per spec 6.4), not the .glyph tile
+	// block: this is a bare stroke icon, not a colored tile.
 	const sizeClass = $derived(/\b[hw]-/.test(className) ? '' : 'h-4 w-4');
 </script>
 
@@ -25,13 +23,10 @@
 		viewBox="0 0 24 24"
 		role="img"
 		aria-label={label}
-	><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={GLYPH_PATHS[name]} /></svg>
+		><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={GLYPH_PATHS[name]} /></svg
+	>
 {:else}
-	<svg
-		class="shrink-0 {sizeClass} {className}"
-		fill="none"
-		stroke="currentColor"
-		viewBox="0 0 24 24"
-		aria-hidden="true"
-	><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={GLYPH_PATHS[name]} /></svg>
+	<svg class="shrink-0 {sizeClass} {className}" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"
+		><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d={GLYPH_PATHS[name]} /></svg
+	>
 {/if}

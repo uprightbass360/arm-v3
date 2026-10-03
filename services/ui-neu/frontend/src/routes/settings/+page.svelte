@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import { restartSetup } from '$lib/api/setup';
 	import { slide } from 'svelte/transition';
 	import { onMount } from 'svelte';
 	import { reveal } from '$lib/transitions';
@@ -6,27 +8,41 @@
 	import SkeletonCard from '$lib/components/SkeletonCard.svelte';
 	import { fetchSettings, saveArmConfig } from '$lib/api/settings';
 	import type { SettingsData } from '$lib/api/settings';
-	import type { DriveView as Drive, DriveDiagnosticResponse, SessionView, SettingsGroup } from '$lib/types/api.gen';
+	import type {
+		DriveView as Drive,
+		DriveDiagnosticResponse,
+		SessionView,
+		SettingsGroup,
+		TranscodePresetView
+	} from '$lib/types/api.gen';
 	import ConfigSchemaField from '$lib/components/settings/ConfigSchemaField.svelte';
 	import SchemaConfigForm from '$lib/components/settings/SchemaConfigForm.svelte';
 	import { theme, toggleTheme } from '$lib/stores/theme';
-	import { colorScheme, COLOR_SCHEMES, schemeLocksMode, allSchemes, loadThemesFromApi } from '$lib/stores/colorScheme';
+	import { colorScheme, schemeLocksMode, allSchemes, loadThemesFromApi } from '$lib/stores/colorScheme';
 	import { deleteTheme as deleteThemeApi } from '$lib/api/themes';
 	import { createPollingStore } from '$lib/stores/polling';
 	import { fetchDrives, fetchDriveDiagnostic, rescanDrives } from '$lib/api/drives';
+	import { partitionDrives } from '$lib/utils/drives';
+	import { formatDateTime } from '$lib/utils/format';
 	import { fetchSessions } from '$lib/api/sessions';
+	import { fetchTranscodePresets } from '$lib/api/transcodePresets';
 	import DriveCard from '$lib/components/DriveCard.svelte';
+	import DriveMaintenance from '$lib/components/DriveMaintenance.svelte';
+	import DriveLifecycleLists from '$lib/components/DriveLifecycleLists.svelte';
 	import InterfaceSettings from '$lib/components/settings/InterfaceSettings.svelte';
 	import { fetchImageCacheStats, clearImageCache, type ImageCacheStats } from '$lib/api/maintenance';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import SystemHealth from '$lib/components/settings/SystemHealth.svelte';
-	import { transcoderEnabled } from '$lib/stores/config';
+	import { transcoderEnabled, setTranscodeRuntimeEnabled } from '$lib/stores/config';
 	import NotificationsTab from '$lib/components/notifications/NotificationsTab.svelte';
 	import Toggle from '$lib/components/notifications/Toggle.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
 	import DiagnosticsSection from '$lib/components/DiagnosticsSection.svelte';
 	import SessionsArea from '$lib/components/sessions/SessionsArea.svelte';
 	import UsersCard from '$lib/components/settings/UsersCard.svelte';
+	import Glyph from '$lib/components/Glyph.svelte';
+	import SessionRoutesCard from '$lib/components/settings/SessionRoutesCard.svelte';
+	import GpusCard from '$lib/components/settings/GpusCard.svelte';
 
 	let settings = $state<SettingsData | null>(null);
 	let settingsLoading = $state(true);
@@ -35,7 +51,16 @@
 	// --- Tab state ---
 	type Tab = string;
 	// Non-config screen-tabs (their own bespoke UI).
-	const screenTabs = ['sessions', 'transcoding', 'notifications', 'interface', 'themes', 'drives', 'users', 'system'] as const;
+	const screenTabs = [
+		'sessions',
+		'transcoding',
+		'notifications',
+		'interface',
+		'themes',
+		'drives',
+		'users',
+		'system'
+	] as const;
 	// Config-group tabs derived from the backend schema. Metadata + Ripping have
 	// no bespoke screen-tab home → render as their own tabs. (Transcoding/
 	// Notifications single toggles fold into the existing transcoding/notifications
@@ -44,11 +69,11 @@
 	const configGroups = $derived(
 		(settings?.schema?.groups ?? []).filter((g) => (configGroupNames as readonly string[]).includes(g.name))
 	);
-	// Full visible-tab list: config groups first, then screen-tabs (drop 'transcoding' when transcoder disabled).
-	const visibleTabs = $derived([
-		...configGroups.map((g) => g.name),
-		...screenTabs.filter((t) => t !== 'transcoding' || $transcoderEnabled),
-	]);
+	// Full visible-tab list: config groups first, then screen-tabs. The
+	// Transcoding tab always shows (even on a ripper-only, not-capable
+	// deployment) so the locked toggle + hint below is reachable; see the
+	// 'transcoding' tab body for the capable-vs-not split.
+	const visibleTabs = $derived([...configGroups.map((g) => g.name), ...screenTabs]);
 
 	// Schema groups by name, for the template tab bodies.
 	function group(name: string): SettingsGroup | undefined {
@@ -68,7 +93,7 @@
 		themes: 'Themes',
 		drives: 'Drives',
 		users: 'Users',
-		system: 'System',
+		system: 'System'
 	};
 	function tabLabel(id: string): string {
 		return TAB_LABELS[id] ?? id;
@@ -108,23 +133,30 @@
 		pendingField = null;
 		el.scrollIntoView({ block: 'center' });
 		el.querySelector<HTMLElement>('input, select, textarea')?.focus({ preventScroll: true });
-		el.classList.add('ring-2', 'ring-primary', 'ring-offset-2');
-		setTimeout(() => el.classList.remove('ring-2', 'ring-primary', 'ring-offset-2'), 1600);
+		el.classList.add('settings-field-highlight');
+		setTimeout(() => el.classList.remove('settings-field-highlight'), 1600);
 	});
 
 	// --- Drives polling store ---
 	const drives = createPollingStore(fetchDrives, [] as Drive[], 10000);
 	const driveError = drives.error;
+	let parts = $derived(partitionDrives($drives));
 
 	let driveSessions = $state<SessionView[]>([]);
+	// Only consulted on a ripper-only deployment, where DriveCard's session
+	// pickers drop encode sessions (it needs each preset's tool to tell).
+	let driveTranscodePresets = $state<TranscodePresetView[]>([]);
 
 	async function loadDriveSessions() {
 		if (driveSessions.length > 0) return;
-		try {
-			driveSessions = await fetchSessions();
-		} catch {
-			// non-fatal: the Start-rip session picker just stays empty
-		}
+		// Fetched together so the passthrough filter never sees sessions
+		// without their presets. A preset-fetch failure is independent and
+		// non-fatal: preset-backed sessions just stay hidden on a ripper-only
+		// box (never mis-offered as passthrough).
+		const [sessionsResult, presetsResult] = await Promise.allSettled([fetchSessions(), fetchTranscodePresets()]);
+		if (presetsResult.status === 'fulfilled') driveTranscodePresets = presetsResult.value;
+		// non-fatal on rejection: the Start-rip session picker just stays empty
+		if (sessionsResult.status === 'fulfilled') driveSessions = sessionsResult.value;
 	}
 
 	// --- Drive diagnostics ---
@@ -132,7 +164,6 @@
 	let diagResult = $state<DriveDiagnosticResponse | null>(null);
 	let diagError = $state<string | null>(null);
 	let diagOpen = $state(false);
-	let rescanning = $state(false);
 	let diagLastRun = $state<string | null>(null);
 
 	async function runDiagnostic() {
@@ -163,8 +194,11 @@
 
 	async function loadCacheStats() {
 		cacheLoading = true;
-		try { cacheStats = await fetchImageCacheStats(); }
-		catch { cacheStats = null; }
+		try {
+			cacheStats = await fetchImageCacheStats();
+		} catch {
+			cacheStats = null;
+		}
 		cacheLoading = false;
 	}
 
@@ -175,7 +209,10 @@
 			const result = await clearImageCache();
 			const cleared = result.cleared ?? 0;
 			const freedMb = ((result.freed_bytes ?? 0) / 1048576).toFixed(1);
-			cacheFeedback = { type: 'success', message: `Cleared ${cleared} cached image${cleared !== 1 ? 's' : ''} (${freedMb} MB)` };
+			cacheFeedback = {
+				type: 'success',
+				message: `Cleared ${cleared} cached image${cleared !== 1 ? 's' : ''} (${freedMb} MB)`
+			};
 			cacheStats = await fetchImageCacheStats();
 		} catch (e) {
 			cacheFeedback = { type: 'error', message: e instanceof Error ? e.message : 'Failed to clear cache' };
@@ -211,10 +248,23 @@
 		document.querySelector('main')?.scrollTo(0, 0);
 	}
 
+	let restartingSetup = $state(false);
+	async function runSetupAgain() {
+		restartingSetup = true;
+		try {
+			await restartSetup();
+			goto('/setup/system');
+		} finally {
+			restartingSetup = false;
+		}
+	}
+
 	onMount(() => {
 		// Rescan drives to pick up hardware info (model, serial) that
 		// may not have been available at container startup.
-		rescanDrives().catch(() => {}).then(() => drives.start());
+		rescanDrives()
+			.catch(() => {})
+			.then(() => drives.start());
 		loadSettings();
 		// Handle initial hash tab (trigger side effects)
 		if (activeTab === 'themes') loadCacheStats();
@@ -233,7 +283,10 @@
 			document.querySelector('main')?.scrollTo(0, 0);
 		}
 		window.addEventListener('hashchange', onHashChange);
-		return () => { drives.stop(); window.removeEventListener('hashchange', onHashChange); };
+		return () => {
+			drives.stop();
+			window.removeEventListener('hashchange', onHashChange);
+		};
 	});
 
 	async function loadSettings() {
@@ -266,25 +319,29 @@
 		}
 	}
 
-	function clearFeedback(setter: (v: null) => void) {
-		setTimeout(() => setter(null), 4000);
+	// Keep the app-wide runtime toggle in step with a Settings save so an SPA
+	// navigation to /transcoder (banner) or an apply dialog (passthrough-only
+	// filter) reflects the new value without a reload. The saved values are
+	// also folded back into `settings.config`: SchemaConfigForm only sends
+	// fields that differ from its `config` prop, so without this a
+	// disable-then-re-enable in one visit would diff against the stale
+	// original value and never send the re-enable.
+	function onTranscodingSaved(payload: Record<string, unknown>) {
+		if (settings) settings = { ...settings, config: { ...settings.config, ...payload } };
+		if ('transcode_enabled' in payload) {
+			setTranscodeRuntimeEnabled(Boolean(payload.transcode_enabled));
+		}
 	}
-
 </script>
 
 <svelte:head>
 	<title>ARM - Settings</title>
 </svelte:head>
 
-<div class="space-y-6 pb-20">
-	<h1 class="text-2xl font-bold text-gray-900 dark:text-white">Settings</h1>
+<div class="stack stack-lg settings-page">
+	<h1 class="page-title">Settings</h1>
 
-	<LoadState
-		data={settings}
-		loading={settingsLoading}
-		error={settingsError}
-		transitionKey={`settings-${activeTab}`}
-	>
+	<LoadState data={settings} loading={settingsLoading} error={settingsError} transitionKey={`settings-${activeTab}`}>
 		{#snippet loadingSlot()}
 			<div class="space-y-4">
 				<SkeletonCard lines={5} />
@@ -292,374 +349,443 @@
 			</div>
 		{/snippet}
 		{#snippet ready(_)}
-		{@const settings = _}
-		<!-- Tab Bar -->
-		{@const tabClass = (tab: string) => `whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-medium transition-colors ${activeTab === tab ? 'border-primary text-primary-text dark:border-primary-text-dark dark:text-primary-text-dark' : 'border-transparent text-gray-500 hover:border-primary/30 hover:text-gray-700 dark:text-gray-400 dark:hover:border-primary/30 dark:hover:text-gray-300'}`}
-		<!-- overflow-y-hidden prevents the 1px vertical scroll that
-			 -mb-px + border-b-2 would otherwise trigger inside overflow-x-auto.
-			 mb-2 adds breathing room below the tab strip on top of the
-			 outer space-y-6 - tabs feel cramped against headings otherwise. -->
-		<div class="mb-2 overflow-x-auto overflow-y-hidden border-b border-primary/20 dark:border-primary/20">
-			<nav class="-mb-px flex gap-4" aria-label="Settings tabs">
-				{#each visibleTabs as tab}
-					<button type="button" onclick={() => setTab(tab)} class={tabClass(tab)}>{tabLabel(tab)}</button>
-				{/each}
+			{@const settings = _}
+			<!-- Tab Bar -->
+			<!-- settings-page-tabs adds breathing room below the tab strip (mb-2) -
+			 tabs feel cramped against headings otherwise. -->
+			<!-- role="tablist" sits on an inner <div>, not the <nav> itself: a
+			 <nav> is a non-interactive landmark and cannot carry the
+			 interactive tablist role (svelte a11y
+			 a11y_no_noninteractive_element_to_interactive_role). This is the
+			 same shape SessionsArea.svelte uses. The <nav aria-label="Settings
+			 tabs"> wrapper is kept because the parity harness selects the strip
+			 with nav[aria-label="Settings tabs"]; it is an unstyled block box,
+			 so the inner div reproduces the previous nav's own box exactly. -->
+			<nav aria-label="Settings tabs">
+				<div class="tabs settings-page-tabs" role="tablist">
+					{#each visibleTabs as tab (tab)}
+						<button
+							type="button"
+							role="tab"
+							onclick={() => setTab(tab)}
+							class="tabs-tab"
+							aria-selected={activeTab === tab}>{tabLabel(tab)}</button
+						>
+					{/each}
+				</div>
 			</nav>
-		</div>
 
-		<!-- Metadata config tab (schema-driven) -->
-		{#if activeTab === 'Metadata' && metaGroup}
-			<SchemaConfigForm group={metaGroup} config={settings.config} />
-		{/if}
+			<!-- Metadata config tab (schema-driven) -->
+			{#if activeTab === 'Metadata' && metaGroup}
+				<SchemaConfigForm group={metaGroup} config={settings.config} />
+			{/if}
 
-		<!-- Ripping config tab (schema-driven) -->
-		{#if activeTab === 'Ripping' && rippingGroup}
-			<SchemaConfigForm group={rippingGroup} config={settings.config} />
-		{/if}
+			<!-- Ripping config tab (schema-driven) -->
+			{#if activeTab === 'Ripping' && rippingGroup}
+				<SchemaConfigForm group={rippingGroup} config={settings.config} />
+			{/if}
 
-		<!-- Transcoding Tab (single auto_transcode_on_idle toggle, schema-driven) -->
-		{#if activeTab === 'transcoding' && $transcoderEnabled && transcodingGroup}
-			<SchemaConfigForm group={transcodingGroup} config={settings.config} />
-		{/if}
-
-		{#if activeTab === 'sessions'}
-			<SessionsArea />
-		{/if}
-
-		<!-- Notifications Tab -->
-		{#if activeTab === 'notifications'}
-			<div class="space-y-4">
-				<div>
-					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Notifications</h2>
-					<p class="text-sm text-gray-500 dark:text-gray-400">
-						Manage notification channels - Discord, Slack, webhooks, scripts, and more.
-					</p>
-				</div>
-				<label class="flex items-center gap-3 text-sm">
-					<Toggle
-						checked={Boolean(settings.config?.notifications_enabled)}
-						label="Enable notifications"
-						onchange={toggleNotifications}
-					/>
-					<span class="font-medium text-gray-900 dark:text-white">Enable notifications</span>
-					<span class="text-xs text-gray-500 dark:text-gray-400">(changes save automatically)</span>
-				</label>
-				{#if settings.config?.notifications_enabled}
-					<NotificationsTab />
+			<!-- Transcoding Tab: schema-driven (transcode_enabled + auto_transcode_on_idle,
+			 GPU inventory) when this deployment can run transcode containers.
+			 On a ripper-only deployment (not capable), only the disabled
+			 transcode_enabled toggle + a hint shows - GpusCard and the
+			 encode-only fields (auto_transcode_on_idle, max_parallel_transcodes)
+			 stay hidden. -->
+			{#if activeTab === 'transcoding'}
+				{#if $transcoderEnabled && transcodingGroup}
+					<SchemaConfigForm group={transcodingGroup} config={settings.config} onsaved={onTranscodingSaved}>
+						{#snippet beforeSave()}
+							<GpusCard />
+						{/snippet}
+					</SchemaConfigForm>
 				{:else}
-					<p class="rounded-lg border border-primary/15 bg-page px-4 py-6 text-center text-sm text-gray-500 dark:border-primary/20 dark:bg-primary/5 dark:text-gray-400">
-						Notifications are disabled. Enable the toggle above to manage channels.
-					</p>
-				{/if}
-			</div>
-		{/if}
-
-		<!-- Users Tab: account management (admin password + guest access) -->
-		{#if activeTab === 'users'}
-			<div in:reveal class="space-y-6">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Users</h2>
-				<UsersCard />
-			</div>
-		{/if}
-
-		<!-- System Info Tab -->
-		{#if activeTab === 'system'}
-			<div class="space-y-6">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">System</h2>
-
-				<!-- Health check (API keys + path permissions) -->
-				<SystemHealth />
-
-				<!-- Read-only infra configuration (schema-driven) -->
-				{#if systemGroup}
-					<section class="space-y-4">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Configuration (read-only)</h3>
-						<div class="space-y-4 rounded-lg border border-primary/20 bg-surface p-4 dark:border-primary/20 dark:bg-surface-dark">
-							{#each systemGroup.fields as f (f.key)}
-								<ConfigSchemaField field={f} value={(settings.config as Record<string, unknown>)?.[f.key] ?? settings.infra?.[f.key]} />
-							{/each}
-						</div>
-					</section>
-				{/if}
-			</div>
-
-			<!-- Diagnostics (moved here from the standalone Diagnostics tab) -->
-			<section class="mt-6">
-				<DiagnosticsSection />
-			</section>
-		{/if}
-
-		<!-- Appearance Tab -->
-		{#if activeTab === 'interface'}
-			<InterfaceSettings />
-		{/if}
-
-		{#if activeTab === 'themes'}
-			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Themes</h2>
-			<section class="space-y-6">
-				<!-- Feedback toast -->
-				{#if themeFeedback}
-					<div class="rounded-lg border p-3 text-sm {themeFeedback.type === 'success' ? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400' : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'}">
-						{themeFeedback.message}
+					<div class="stack" id="setting-transcode_enabled" data-testid="setting-transcode_enabled">
+						<label class="field field-row settings-page-notif-toggle-row">
+							<!-- Always rendered off: on a ripper-only box the backend column
+							 still defaults to true, but it has no effect without capability. -->
+							<Toggle checked={false} label="Enable transcoding" disabled />
+							<span class="field-label">Enable transcoding</span>
+						</label>
+						<p class="field-help">This deployment is ripper-only; transcoding cannot be enabled here.</p>
 					</div>
 				{/if}
+			{/if}
 
-				<!-- Built-in Themes -->
-				<div class="rounded-lg border border-primary/20 bg-surface p-6 shadow-xs dark:border-primary/20 dark:bg-surface-dark">
-					<h3 class="mb-1 text-base font-semibold text-gray-900 dark:text-white">Color Scheme</h3>
-					<p class="mb-4 text-sm text-gray-500 dark:text-gray-400">Choose an accent color for buttons, links, and highlights throughout the UI.</p>
-					<div class="flex flex-wrap gap-3">
-						{#each $allSchemes.filter(s => s.builtin !== false) as scheme}
-							<button
-								type="button"
-								onclick={() => ($colorScheme = scheme.id)}
-								class="group relative flex flex-col items-center gap-1.5 rounded-lg border-2 px-4 py-3 transition-colors
-									{$colorScheme === scheme.id
-									? 'border-primary bg-primary-light-bg dark:border-primary-text-dark dark:bg-primary-light-bg-dark/20'
-									: 'border-primary/15 hover:border-primary/30 dark:border-primary/15 dark:hover:border-primary/30'}"
-							>
-								<span class="h-8 w-8 rounded-full" style="background-color: {scheme.swatch}"></span>
-								<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{scheme.label}</span>
-								{#if scheme.description}
-									<span class="absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-800 px-2 py-1 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100 dark:bg-gray-700">{scheme.description}</span>
-								{/if}
-							</button>
-						{/each}
-					</div>
+			{#if activeTab === 'sessions'}
+				<div class="space-y-6">
+					<SessionsArea />
+					<SessionRoutesCard />
 				</div>
+			{/if}
 
-				<!-- User Themes -->
-				{#if $allSchemes.filter(s => s.builtin === false).length > 0}
-					<div class="rounded-lg border border-primary/20 bg-surface p-6 shadow-xs dark:border-primary/20 dark:bg-surface-dark">
-						<h3 class="mb-1 text-base font-semibold text-gray-900 dark:text-white">User Themes</h3>
-						<p class="mb-4 text-sm text-gray-500 dark:text-gray-400">Custom themes loaded from your themes directory.</p>
-						<div class="flex flex-wrap gap-3">
-							{#each $allSchemes.filter(s => s.builtin === false) as scheme}
-								<div class="relative">
-									<button
-										type="button"
-										onclick={() => ($colorScheme = scheme.id)}
-										class="flex flex-col items-center gap-1.5 rounded-lg border-2 px-4 py-3 transition-colors
-											{$colorScheme === scheme.id
-											? 'border-primary bg-primary-light-bg dark:border-primary-text-dark dark:bg-primary-light-bg-dark/20'
-											: 'border-primary/15 hover:border-primary/30 dark:border-primary/15 dark:hover:border-primary/30'}"
-									>
-										<span class="h-8 w-8 rounded-full" style="background-color: {scheme.swatch}"></span>
-										<span class="text-xs font-medium text-gray-700 dark:text-gray-300">{scheme.label}</span>
-										{#if scheme.author}
-											<span class="text-[10px] text-gray-400">by {scheme.author}</span>
-										{/if}
-									</button>
-									<div class="absolute -right-1 -top-1 flex gap-0.5">
-										<button
-											type="button"
-											onclick={() => handleThemeDelete(scheme.id, scheme.label)}
-											class="rounded-full bg-red-100 p-0.5 text-red-500 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
-											title="Delete"
-										>
-											<svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-										</button>
-									</div>
-								</div>
-							{/each}
-						</div>
-						{#if themeFeedback}
-							<p class="mt-3 text-sm {themeFeedback.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
-								{themeFeedback.message}
-							</p>
-						{/if}
+			<!-- Notifications Tab -->
+			{#if activeTab === 'notifications'}
+				<div class="stack">
+					<div>
+						<h2 class="settings-page-section-title">Notifications</h2>
+						<p class="settings-page-description">
+							Manage notification channels - Discord, Slack, webhooks, scripts, and more.
+						</p>
 					</div>
-				{/if}
-
-				<!-- Dark Mode -->
-				<div class="rounded-lg border border-primary/20 bg-surface p-6 shadow-xs dark:border-primary/20 dark:bg-surface-dark">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="text-base font-semibold text-gray-900 dark:text-white">Dark Mode</h3>
-							{#if $schemeLocksMode}
-								<p class="text-sm text-gray-500 dark:text-gray-400">Locked by theme</p>
-							{:else}
-								<p class="text-sm text-gray-500 dark:text-gray-400">Toggle between light and dark mode.</p>
-							{/if}
-						</div>
-						{#if !$schemeLocksMode}
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									onclick={toggleTheme}
-									class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out
-										{$theme === 'dark' ? 'bg-primary' : 'bg-primary/30 dark:bg-primary/20'}"
-									role="switch"
-									aria-checked={$theme === 'dark'}
-									aria-label="Dark mode"
-								>
-									<span
-										class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out
-											{$theme === 'dark' ? 'translate-x-5' : 'translate-x-0'}"
-									></span>
-								</button>
-								<span class="text-xs font-medium {$theme === 'dark' ? 'text-primary-text dark:text-primary-text-dark' : 'text-gray-400'}">
-									{$theme === 'dark' ? 'On' : 'Off'}
-								</span>
-							</div>
-						{/if}
-					</div>
-				</div>
-
-				<!-- Image Cache -->
-				<div class="rounded-lg border border-primary/20 bg-surface p-6 shadow-xs dark:border-primary/20 dark:bg-surface-dark">
-					<div class="flex items-center justify-between">
-						<div>
-							<h3 class="text-base font-semibold text-gray-900 dark:text-white">Image Cache</h3>
-							<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-								{#if cacheLoading}Loading...
-								{:else if cacheStats}{cacheStats.count} cached image{cacheStats.count !== 1 ? 's' : ''} ({cacheStats.size_mb} MB)
-								{:else}Unable to load cache stats
-								{/if}
-							</p>
-						</div>
-						<button type="button"
-							onclick={() => (cacheConfirmOpen = true)}
-							disabled={cacheBusy || !cacheStats?.count}
-							class="rounded-lg px-3 py-1.5 text-sm font-medium text-red-600 hover:bg-red-500/10 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-500/15">
-							Clear Cache
-						</button>
-					</div>
-					{#if cacheFeedback}
-						<p class="mt-2 text-sm {cacheFeedback.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}">
-							{cacheFeedback.message}
+					<label class="field field-row settings-page-notif-toggle-row">
+						<Toggle
+							checked={Boolean(settings.config?.notifications_enabled)}
+							label="Enable notifications"
+							onchange={toggleNotifications}
+						/>
+						<span class="field-label">Enable notifications</span>
+						<span class="settings-page-inline-hint">(changes save automatically)</span>
+					</label>
+					{#if settings.config?.notifications_enabled}
+						<NotificationsTab />
+					{:else}
+						<p class="panel-section settings-page-notifications-off">
+							Notifications are disabled. Enable the toggle above to manage channels.
 						</p>
 					{/if}
 				</div>
+			{/if}
 
-				<!-- Feature request prompt -->
-				<div class="flex justify-center pt-2">
-					<span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-4 py-2 text-xs text-gray-500 dark:text-gray-400">
-						<svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5.002 5.002 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
-						Not seeing what you want? Submit your feature requests on GitHub.
-					</span>
+			<!-- Users Tab: account management (admin password + guest access) -->
+			{#if activeTab === 'users'}
+				<div in:reveal class="stack stack-lg">
+					<h2 class="settings-page-section-title">Users</h2>
+					<UsersCard />
 				</div>
-			</section>
-		{/if}
+			{/if}
 
-		{#if activeTab === 'drives'}
-			<h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Drives</h2>
-			<section class="space-y-6">
-				{#if $driveError}
-					<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
-						{$driveError}
-					</div>
-				{:else if $drives.length === 0}
-					<p class="py-8 text-center text-gray-400">No drives detected.</p>
-				{:else}
-					<div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-						{#each $drives as drive (drive.id)}
-							<DriveCard {drive} sessions={driveSessions} onupdate={() => drives.refresh()} globalDefaults={{
-								prescan_cache_mb: Number(settings?.arm_config?.PRESCAN_CACHE_MB) || 1,
-								prescan_timeout: Number(settings?.arm_config?.PRESCAN_TIMEOUT) || 300,
-								prescan_retries: Number(settings?.arm_config?.PRESCAN_RETRIES) || 3,
-								disc_enum_timeout: Number(settings?.arm_config?.DISC_ENUM_TIMEOUT) || 60,
-							}} />
-						{/each}
-					</div>
-				{/if}
+			<!-- System Info Tab -->
+			{#if activeTab === 'system'}
+				<div class="stack stack-lg">
+					<h2 class="settings-page-section-title">System</h2>
 
-				<!-- Maintenance & Diagnostics -->
-				<hr class="my-2 opacity-20" />
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Maintenance</span>
-					<button
-						onclick={async () => { rescanning = true; await rescanDrives(); await drives.refresh(); rescanning = false; }}
-						disabled={rescanning}
-						class="ml-auto rounded-lg border border-primary/20 px-3 py-1.5 text-xs font-medium text-primary-text transition-colors hover:bg-primary/10 disabled:opacity-50 dark:border-primary/20 dark:text-primary-text-dark dark:hover:bg-primary/15"
-						title="Re-detect optical drives and refresh database records"
-					>{rescanning ? 'Scanning...' : 'Rescan'}</button>
-					<button
-						onclick={async () => { rescanning = true; await rescanDrives(true); await drives.refresh(); rescanning = false; }}
-						disabled={rescanning}
-						class="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-50 disabled:opacity-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20"
-						title="Delete all stale drive records and re-detect from hardware"
-					>{rescanning ? 'Scanning...' : 'Force Rescan'}</button>
-				</div>
-				<div data-diag>
-					<button
-						onclick={() => { diagOpen = !diagOpen; }}
-						class="flex w-full items-center gap-2 rounded-lg border border-primary/15 bg-primary/5 px-3.5 py-2.5 text-sm font-medium text-primary-text transition-colors hover:bg-primary/10 dark:border-primary/15 dark:text-primary-text-dark dark:hover:bg-primary/15"
-					>
-						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-						</svg>
-						Udev & Drive Diagnostics
-						<svg class="ml-auto h-4 w-4 transition-transform duration-200 {diagOpen ? 'rotate-180' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-						</svg>
-					</button>
+					<!-- Health check (API keys + path permissions) -->
+					<!-- First-run walkthrough re-entry (setup spec §5.11) -->
+					<section class="panel settings-page-setup-again" data-testid="run-setup-again">
+						<div>
+							<h3 class="settings-page-section-title">Setup walkthrough</h3>
+							<p class="settings-page-setup-again-help">
+								Walk through drives, keys and defaults again. Your current values are kept.
+							</p>
+						</div>
+						<button type="button" class="btn" onclick={runSetupAgain} disabled={restartingSetup}>
+							{restartingSetup ? 'Opening...' : 'Run setup again'}
+						</button>
+					</section>
 
-					{#if diagOpen}
-						<div class="mt-2.5 rounded-lg border border-primary/10 bg-white/[0.02] p-3 dark:border-primary/10" transition:slide={{ duration: 200 }}>
-							<div class="mb-2.5 flex items-center justify-between">
-								<button
-									onclick={runDiagnostic}
-									disabled={diagRunning}
-									class="inline-flex items-center gap-2 rounded-lg bg-primary/15 px-3.5 py-1.5 text-sm font-medium text-primary-text transition-colors hover:bg-primary/25 disabled:opacity-50 dark:text-primary-text-dark dark:hover:bg-primary/30"
-								>
-									<svg class="h-4 w-4 {diagRunning ? 'animate-spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-										<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-									</svg>
-									{diagRunning ? 'Running...' : 'Run Check'}
-								</button>
-								{#if diagLastRun}
-									<span class="text-[10px] text-gray-400 dark:text-gray-500">Last run: {diagLastRun}</span>
-								{/if}
-								{#if diagError}
-									<span class="text-sm text-red-600 dark:text-red-400">{diagError}</span>
-								{/if}
+					<SystemHealth grouped />
+
+					<!-- Read-only infra configuration (schema-driven) -->
+					{#if systemGroup}
+						<section class="stack">
+							<h3 class="settings-page-section-title">Configuration (read-only)</h3>
+							<div class="panel stack">
+								{#each systemGroup.fields as f (f.key)}
+									<ConfigSchemaField
+										field={f}
+										value={(settings.config as Record<string, unknown>)?.[f.key] ?? settings.infra?.[f.key]}
+									/>
+								{/each}
 							</div>
+						</section>
+					{/if}
+				</div>
 
-							{#if diagResult}
-								{@const unhealthy = diagResult.drives.filter(d => !d.healthy || d.notes.length > 0)}
-								<!-- Status bar -->
-								<div class="mb-2 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs
-									{unhealthy.length > 0
-										? 'border-amber-500/15 bg-amber-500/5'
-										: 'border-green-500/15 bg-green-500/5'}">
-									<span class="text-gray-500 dark:text-gray-400">
-										{diagResult.drives.length} drive{diagResult.drives.length !== 1 ? 's' : ''}
-									</span>
-									<span class="font-medium {unhealthy.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'}">
-										{unhealthy.length > 0 ? 'Issues Found' : 'All OK'}
-									</span>
-								</div>
+				<!-- Diagnostics (moved here from the standalone Diagnostics tab) -->
+				<section class="mt-6">
+					<DiagnosticsSection />
+				</section>
+			{/if}
 
-								<!-- Per-drive issues only -->
-								{#each unhealthy as diag}
-									<div class="mb-1.5 rounded-lg border border-amber-500/15 bg-amber-500/5 p-2.5">
-										{#each diag.notes as note}
-											<div class="flex items-start gap-1.5 text-xs">
-												<svg class="mt-0.5 h-3 w-3 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-													<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
-												</svg>
-												<span class="text-amber-700 dark:text-amber-400">
-													<span class="font-medium">{diag.id}</span> - {note}
-												</span>
-											</div>
-										{/each}
-										{#if diag.notes.length === 0 && !diag.healthy}
-											<div class="text-xs text-amber-700 dark:text-amber-400">
-												<span class="font-medium">{diag.id}</span> - unhealthy
-											</div>
-										{/if}
+			<!-- Appearance Tab -->
+			{#if activeTab === 'interface'}
+				<InterfaceSettings />
+			{/if}
+
+			{#if activeTab === 'themes'}
+				<h2 class="settings-page-section-title mb-4">Themes</h2>
+				<section class="stack stack-lg">
+					<!-- Feedback toast -->
+					{#if themeFeedback}
+						<div class="alert {themeFeedback.type === 'success' ? 'alert-success' : 'alert-danger'}">
+							{themeFeedback.message}
+						</div>
+					{/if}
+
+					<!-- Built-in Themes -->
+					<div class="panel settings-page-panel-wide">
+						<h3 class="settings-page-panel-title">Color Scheme</h3>
+						<p class="settings-page-description settings-page-panel-hint">
+							Choose an accent color for buttons, links, and highlights throughout the UI.
+						</p>
+						<div class="flex flex-wrap gap-3">
+							{#each $allSchemes.filter((s) => s.builtin !== false) as scheme (scheme.id)}
+								<button
+									type="button"
+									onclick={() => ($colorScheme = scheme.id)}
+									class="scheme-swatch-btn"
+									data-selected={$colorScheme === scheme.id}
+								>
+									<span class="scheme-swatch" style:--swatch={scheme.swatch}></span>
+									<span class="scheme-swatch-label">{scheme.label}</span>
+									{#if scheme.description}
+										<span class="scheme-swatch-tooltip">{scheme.description}</span>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					</div>
+
+					<!-- User Themes -->
+					{#if $allSchemes.filter((s) => s.builtin === false).length > 0}
+						<div class="panel settings-page-panel-wide">
+							<h3 class="settings-page-panel-title">User Themes</h3>
+							<p class="settings-page-description settings-page-panel-hint">
+								Custom themes loaded from your themes directory.
+							</p>
+							<div class="flex flex-wrap gap-3">
+								{#each $allSchemes.filter((s) => s.builtin === false) as scheme (scheme.id)}
+									<div class="relative">
+										<button
+											type="button"
+											onclick={() => ($colorScheme = scheme.id)}
+											class="scheme-swatch-btn"
+											data-selected={$colorScheme === scheme.id}
+										>
+											<span class="scheme-swatch" style:--swatch={scheme.swatch}></span>
+											<span class="scheme-swatch-label">{scheme.label}</span>
+											{#if scheme.author}
+												<span class="scheme-swatch-author">by {scheme.author}</span>
+											{/if}
+										</button>
+										<div class="absolute -right-1 -top-1 flex gap-0.5">
+											<button
+												type="button"
+												onclick={() => handleThemeDelete(scheme.id, scheme.label)}
+												class="btn btn-icon scheme-swatch-delete"
+												title="Delete"
+											>
+												<Glyph name="x" class="h-3 w-3" />
+											</button>
+										</div>
 									</div>
 								{/each}
-							{:else if !diagRunning}
-								<p class="text-center text-xs text-gray-400 dark:text-gray-500">Click "Run Check" to scan drives and udev configuration.</p>
+							</div>
+							{#if themeFeedback}
+								<p class="mt-3 settings-page-feedback" data-error={themeFeedback.type !== 'success'}>
+									{themeFeedback.message}
+								</p>
 							{/if}
 						</div>
 					{/if}
-				</div>
-			</section>
-		{/if}
 
+					<!-- Dark Mode -->
+					<div class="panel settings-page-panel-wide">
+						<div class="flex items-center justify-between">
+							<div>
+								<h3 class="settings-page-panel-title settings-page-panel-title-flush">Dark Mode</h3>
+								{#if $schemeLocksMode}
+									<p class="settings-page-description">Locked by theme</p>
+								{:else}
+									<p class="settings-page-description">Toggle between light and dark mode.</p>
+								{/if}
+							</div>
+							{#if !$schemeLocksMode}
+								<div class="flex items-center gap-2">
+									<button
+										type="button"
+										onclick={toggleTheme}
+										role="switch"
+										aria-checked={$theme === 'dark'}
+										aria-label="Dark mode"
+										class="toggle toggle-lg"
+									>
+										<span class="toggle-thumb"></span>
+									</button>
+									<span class="settings-page-toggle-label" data-on={$theme === 'dark'}>
+										{$theme === 'dark' ? 'On' : 'Off'}
+									</span>
+								</div>
+							{/if}
+						</div>
+					</div>
+
+					<!-- Image Cache -->
+					<div class="panel settings-page-panel-wide">
+						<div class="flex items-center justify-between">
+							<div>
+								<h3 class="settings-page-panel-title settings-page-panel-title-flush">Image Cache</h3>
+								<p class="settings-page-description mt-1">
+									{#if cacheLoading}Loading...
+									{:else if cacheStats}{cacheStats.count} cached image{cacheStats.count !== 1 ? 's' : ''} ({cacheStats.size_mb}
+										MB)
+									{:else}Unable to load cache stats
+									{/if}
+								</p>
+							</div>
+							<button
+								type="button"
+								onclick={() => (cacheConfirmOpen = true)}
+								disabled={cacheBusy || !cacheStats?.count}
+								class="btn btn-danger btn-sm settings-page-clear-cache-btn"
+							>
+								Clear Cache
+							</button>
+						</div>
+						{#if cacheFeedback}
+							<p class="mt-2 settings-page-feedback" data-error={cacheFeedback.type !== 'success'}>
+								{cacheFeedback.message}
+							</p>
+						{/if}
+					</div>
+
+					<!-- Feature request prompt -->
+					<div class="flex justify-center pt-2">
+						<span class="badge settings-page-feature-request">
+							<Glyph name="info" class="h-3.5 w-3.5" />
+							Not seeing what you want? Submit your feature requests on GitHub.
+						</span>
+					</div>
+				</section>
+			{/if}
+
+			{#if activeTab === 'drives'}
+				<div class="mb-4 flex items-start justify-between gap-3">
+					<h2 class="settings-page-section-title">Drives</h2>
+					<DriveMaintenance onrescanned={() => drives.refresh()} />
+				</div>
+				<section class="stack stack-lg">
+					{#if $driveError}
+						<div class="alert alert-danger">
+							{$driveError}
+						</div>
+					{:else}
+						{#if parts.enrolled.length > 0}
+							<div class="grid-2 settings-page-drive-grid">
+								{#each parts.enrolled as drive (drive.id)}
+									<DriveCard
+										{drive}
+										sessions={driveSessions}
+										transcodePresets={driveTranscodePresets}
+										globalAutoRip={settings?.config?.auto_rip_on_insert !== false}
+										onupdate={() => drives.refresh()}
+										globalDefaults={{
+											prescan_cache_mb: Number(settings?.arm_config?.PRESCAN_CACHE_MB) || 1,
+											prescan_timeout: Number(settings?.arm_config?.PRESCAN_TIMEOUT) || 300,
+											prescan_retries: Number(settings?.arm_config?.PRESCAN_RETRIES) || 3,
+											disc_enum_timeout: Number(settings?.arm_config?.DISC_ENUM_TIMEOUT) || 60
+										}}
+									/>
+								{/each}
+							</div>
+						{/if}
+						<DriveLifecycleLists detected={parts.detected} ignored={parts.ignored} onchanged={() => drives.refresh()} />
+					{/if}
+
+					<!-- Diagnostics -->
+					<hr class="settings-page-diag-divider" />
+					<div data-diag>
+						<button
+							onclick={() => {
+								diagOpen = !diagOpen;
+							}}
+							aria-expanded={diagOpen}
+							class="btn settings-page-diag-toggle"
+						>
+							<Glyph name="shield-check" />
+							Udev & Drive Diagnostics
+							<Glyph name="chevron-down" class="chevron ml-auto" />
+						</button>
+
+						{#if diagOpen}
+							<div class="panel-section settings-page-diag-panel" transition:slide={{ duration: 200 }}>
+								<div class="mb-2.5 flex items-center justify-between">
+									<button
+										onclick={runDiagnostic}
+										disabled={diagRunning}
+										data-busy={diagRunning}
+										class="btn settings-page-diag-run"
+									>
+										<Glyph name="refresh" class="settings-page-diag-run-icon" />
+										{diagRunning ? 'Running...' : 'Run Check'}
+									</button>
+									{#if diagLastRun}
+										<span class="settings-page-diag-last-run">Last run: {diagLastRun}</span>
+									{/if}
+									{#if diagError}
+										<span class="settings-page-diag-error">{diagError}</span>
+									{/if}
+								</div>
+
+								{#if diagResult}
+									{@const system = diagResult.system ?? []}
+									{@const unhealthy = diagResult.drives.filter(
+										(d) => !d.healthy || (d.notes.length > 0 && !(d.notes.length === 1 && d.notes[0] === 'ignored'))
+									)}
+									{#if system.length > 0}
+										<div class="alert alert-warning mb-2 settings-page-diag-system" data-testid="diag-system">
+											{#each system as note, i (i)}
+												<div>{note}</div>
+											{/each}
+										</div>
+									{/if}
+
+									<!-- Status bar -->
+									<div
+										class="alert {unhealthy.length > 0 || system.length > 0
+											? 'alert-warning'
+											: 'alert-success'} mb-2 flex flex-wrap items-center gap-3"
+									>
+										<span class="settings-page-diag-count">
+											{diagResult.drives.length} drive{diagResult.drives.length !== 1 ? 's' : ''}
+										</span>
+										<span class="alert-title">
+											{unhealthy.length > 0 || system.length > 0 ? 'Issues Found' : 'All OK'}
+										</span>
+									</div>
+
+									<!-- Every drive, healthy or not -->
+									{#each diagResult.drives as diag (diag.id)}
+										{@const flagged = unhealthy.includes(diag)}
+										<div data-testid="diag-drive-{diag.id}" class="settings-page-diag-drive" data-flagged={flagged}>
+											<div class="flex flex-wrap items-center gap-x-2 gap-y-1 settings-page-diag-drive-row">
+												<code class="mono settings-page-diag-drive-path">{diag.device_path}</code>
+												<span class="badge badge-sm">{diag.lifecycle}</span>
+												<span data-warn={!diag.present}>{diag.present ? 'connected' : 'not connected'}</span>
+												{#if diag.container}<span>container: {diag.container}</span>{/if}
+												{#if diag.status}<span>ripper: {diag.status}</span>{/if}
+												{#if diag.media_status}<span>media: {diag.media_status.replace('_', ' ')}</span>{/if}
+												{#if diag.media_status_at}<span class="settings-page-diag-heartbeat"
+														>heartbeat {formatDateTime(diag.media_status_at)}</span
+													>{/if}
+												{#if !flagged}<span class="ml-auto settings-page-diag-ok">OK</span>{/if}
+											</div>
+											{#if diag.last_error}
+												<div class="field-error mt-1">{diag.last_error}</div>
+											{/if}
+											{#each diag.notes as note, i (i)}
+												<div class="mt-1 flex items-start gap-1.5 settings-page-diag-note">
+													{#if note === 'ignored'}
+														<span class="settings-page-diag-ignored">ignored</span>
+													{:else}
+														<Glyph name="warning" class="mt-0.5 h-3 w-3 flex-shrink-0 settings-page-diag-warn-icon" />
+														<span class="settings-page-diag-warn-text">{note}</span>
+													{/if}
+												</div>
+											{/each}
+											{#if diag.notes.length === 0 && !diag.healthy}
+												<div class="settings-page-diag-warn-text mt-1">unhealthy</div>
+											{/if}
+										</div>
+									{/each}
+								{:else if !diagRunning}
+									<p class="settings-page-diag-empty">Click "Run Check" to scan drives and udev configuration.</p>
+								{/if}
+							</div>
+						{/if}
+					</div>
+				</section>
+			{/if}
 		{/snippet}
 	</LoadState>
 </div>
@@ -675,3 +801,330 @@
 />
 
 <ToastHost />
+
+<style>
+	/* pb-20: extra bottom padding so the last tab's content clears the mobile
+	   bottom bar / drawer trigger. */
+	.settings-page {
+		padding-bottom: 5rem;
+	}
+	.settings-page-section-title {
+		font-size: 1.125rem;
+		line-height: 1.75rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	/* the section-card h3s in Themes were text-base font-semibold (1rem/
+	   1.5rem), distinct from .panel-title's uppercase eyebrow look. */
+	.settings-page-panel-title {
+		margin-bottom: 0.25rem;
+		font-size: 1rem;
+		line-height: 1.5rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	/* Dark Mode's and Image Cache's h3 had no mb-1 in the original (only
+	   Color Scheme's and User Themes' did). */
+	.settings-page-panel-title-flush {
+		margin-bottom: 0;
+	}
+	/* the original Clear Cache button had no border at all
+	   (text-red-600 hover:bg-red-500/10), not btn-danger's outlined look. */
+	.settings-page-clear-cache-btn {
+		border-color: transparent;
+	}
+	.settings-page-clear-cache-btn:hover {
+		background: var(--color-danger-soft);
+	}
+	/* most "muted description under a heading" paragraphs on this page were
+	   text-sm (0.875rem/1.25rem), not panel-hint's 0.75rem - panel-hint is
+	   sized for a note under a form control, a visibly smaller role. */
+	.settings-page-description {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.settings-page-panel-hint {
+		margin-bottom: 1rem;
+		margin-top: 0;
+	}
+	.settings-page-notifications-off {
+		text-align: center;
+		padding: 1.5rem 1rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.settings-page-toggle-label {
+		font-size: 0.75rem;
+		font-weight: 500;
+		color: var(--color-text-faint);
+	}
+	.settings-page-toggle-label[data-on='true'] {
+		color: var(--color-primary-text);
+	}
+	.settings-page-feedback {
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+	.settings-page-feedback[data-error='true'] {
+		color: var(--color-danger);
+	}
+	/* text-xs text-gray-500 - a plain inline span in the toggle row, not
+	   panel-hint's block-level note (whose own margin-top would misalign
+	   it against its row siblings). */
+	.settings-page-inline-hint {
+		font-size: 0.75rem;
+		line-height: 1rem;
+		color: var(--color-text-muted);
+	}
+	/* the original toggle row was gap-3 (0.75rem), not field-row's 0.5rem. */
+	.settings-page-notif-toggle-row {
+		gap: 0.75rem;
+	}
+
+	/* mb-2 keeps the tab strip from feeling cramped against the page title
+	   above the outer .stack gap. */
+	.settings-page-tabs {
+		margin-bottom: 0.5rem;
+	}
+	/* the Themes tab's four cards were p-6 (1.5rem) in the original, not
+	   .panel's own p-4 (1rem) default. */
+	.settings-page-panel-wide {
+		padding: 1.5rem;
+	}
+
+	/* Color scheme swatch buttons (Themes tab): a bordered pill holding a
+	   round color sample, its label, and (built-in schemes) a hover tooltip
+	   or (user themes) a delete button. No block covers this shape. */
+	.scheme-swatch-btn {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.375rem;
+		border: 2px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 0.75rem 1rem;
+		background: none;
+		cursor: pointer;
+		transition:
+			border-color var(--motion-fast) var(--ease),
+			background-color var(--motion-fast) var(--ease);
+	}
+	.scheme-swatch-btn:hover {
+		border-color: var(--color-border-strong);
+	}
+	.scheme-swatch-btn[data-selected='true'] {
+		border-color: var(--color-primary);
+		background: var(--color-primary-tint-3);
+	}
+	.scheme-swatch {
+		display: block;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 9999px;
+		background: var(--swatch);
+	}
+	.scheme-swatch-label {
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 500;
+		color: var(--color-text-secondary);
+	}
+	.scheme-swatch-author {
+		font-size: 0.625rem;
+		color: var(--color-text-faint);
+	}
+	.scheme-swatch-tooltip {
+		position: absolute;
+		top: -2rem;
+		left: 50%;
+		transform: translateX(-50%);
+		white-space: nowrap;
+		border-radius: var(--radius-sm);
+		background: var(--color-surface-raised);
+		padding: 0.25rem 0.5rem;
+		font-size: 0.625rem;
+		color: var(--color-text);
+		opacity: 0;
+		pointer-events: none;
+		transition: opacity var(--motion-fast) var(--ease);
+		box-shadow: var(--shadow-1);
+	}
+	.scheme-swatch-btn:hover .scheme-swatch-tooltip {
+		opacity: 1;
+	}
+	.scheme-swatch-delete {
+		position: absolute;
+	}
+
+	/* Drive cards grid: 2 columns at md, matching the original's md:2/xl:3
+	   step (grid-2's own responsive breaks at sm, so xl needs its own rule). */
+	.settings-page-drive-grid {
+		grid-template-columns: 1fr;
+	}
+	@media (min-width: 768px) {
+		.settings-page-drive-grid {
+			grid-template-columns: repeat(2, 1fr);
+		}
+	}
+	@media (min-width: 1280px) {
+		.settings-page-drive-grid {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+
+	.settings-page-feature-request {
+		gap: 0.375rem;
+		background: var(--color-primary-tint-2);
+		padding: 0.5rem 1rem;
+	}
+
+	/* Udev & Drive Diagnostics disclosure: a full-width outlined toggle
+	   button over a collapsible detail panel, none of it matching .panel's
+	   metrics (this reuses .panel-section's tint but at its own padding). */
+	/* the original `<hr class="my-2">` sat in a `space-y-6` (margin) stack:
+	   Tailwind v4's zero-specificity space-y rule lost to my-2, so the hr's
+	   own 0.5rem margin-top collapsed into the panel's 1.5rem margin-bottom
+	   (24px above) and its 0.5rem margin-bottom stood alone (8px below,
+	   the diag div being the last child and so getting no space-y margin).
+	   .stack-lg's flex gap never collapses, so cancel 1rem below the hr to
+	   reproduce the original 24px/8px split. */
+	.settings-page-diag-divider {
+		margin: 0 0 -1rem;
+		border: 0;
+		border-top: 1px solid var(--color-text);
+		opacity: 0.2;
+	}
+	/* the original border was border-primary/15 (--color-border), lighter
+	   than .btn's default border-primary-strong. */
+	/* px-3.5 py-2.5 (0.875rem/0.625rem), not .btn's own 1rem/0.5rem - 4px
+	   taller than .btn's default, and the toggle sets the height of
+	   everything below it on the Drives tab. */
+	.settings-page-diag-toggle {
+		width: 100%;
+		justify-content: flex-start;
+		gap: 0.5rem;
+		padding: 0.625rem 0.875rem;
+		border-color: var(--color-border);
+		background: var(--color-primary-tint-1);
+	}
+	/* the original chevron flipped a full 180deg (open = pointing up);
+	   .btn's shared .chevron rule only rotates 90deg, tuned for a
+	   right-pointing chevron that turns to point down. */
+	/* :global: .chevron is rendered by the child Glyph component, outside this component's own scoped template */
+	.settings-page-diag-toggle[aria-expanded='true'] :global(.chevron) {
+		transform: rotate(180deg);
+	}
+	.settings-page-diag-panel {
+		margin-top: 0.625rem;
+		padding: 0.75rem;
+	}
+	/* the original button was a tinted fill (bg-primary/15, no border), not
+	   .btn's default outlined look. */
+	.settings-page-diag-run {
+		padding: 0.375rem 0.875rem;
+		border-color: transparent;
+		background: var(--color-primary-tint-3);
+		color: var(--color-primary-text);
+	}
+	.settings-page-diag-run:hover {
+		background: color-mix(in srgb, var(--color-primary) 25%, transparent);
+	}
+	/* :global: class forwarded onto Glyph's internal <svg>, outside this component's own template */
+	button[data-busy='true'] :global(.settings-page-diag-run-icon) {
+		animation: settings-page-spin 1s linear infinite;
+	}
+	@keyframes settings-page-spin {
+		to {
+			transform: rotate(360deg);
+		}
+	}
+	.settings-page-diag-last-run {
+		font-size: 0.625rem;
+		color: var(--color-text-faint);
+	}
+	/* the original diagError span was text-sm (0.875rem/1.25rem), not
+	   field-error's 0.75rem. */
+	.settings-page-diag-error {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-danger);
+	}
+	.settings-page-diag-system {
+		font-size: 0.75rem;
+		padding: 0.625rem;
+	}
+	.settings-page-diag-count {
+		font-size: 0.75rem;
+		color: var(--color-text-muted);
+	}
+	.settings-page-diag-drive {
+		margin-bottom: 0.375rem;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		padding: 0.625rem;
+	}
+	.settings-page-diag-drive[data-flagged='true'] {
+		border-color: color-mix(in srgb, var(--color-warning) 30%, transparent);
+		background: var(--color-warning-soft);
+	}
+	.settings-page-diag-drive-row {
+		font-size: 0.75rem;
+		color: var(--color-text-secondary);
+	}
+	.settings-page-diag-drive-path {
+		font-weight: 500;
+		color: var(--color-text);
+	}
+	.settings-page-diag-drive-row [data-warn='true'] {
+		color: var(--color-on-warning-soft);
+	}
+	.settings-page-diag-heartbeat {
+		color: var(--color-text-faint);
+	}
+	.settings-page-diag-ok {
+		font-weight: 500;
+		color: var(--color-success);
+	}
+	.settings-page-diag-note {
+		font-size: 0.75rem;
+	}
+	.settings-page-diag-ignored {
+		color: var(--color-text-faint);
+	}
+	/* :global: forwarded onto Glyph's internal <svg>, as above. */
+	:global(.settings-page-diag-warn-icon) {
+		color: var(--color-warning);
+	}
+	.settings-page-diag-warn-text {
+		color: var(--color-on-warning-soft);
+	}
+	.settings-page-diag-empty {
+		text-align: center;
+		font-size: 0.75rem;
+		color: var(--color-text-faint);
+	}
+
+	/* :global below: applied/removed via classList in the $effect above (deep
+	   link #<tab>/<field>), not a template-driven state attribute this
+	   component's own selectors could reach. */
+	:global(.settings-field-highlight) /* see comment above */ {
+		box-shadow:
+			0 0 0 2px var(--color-page),
+			0 0 0 4px var(--color-primary);
+	}
+	.settings-page-setup-again {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 1.25rem;
+	}
+	.settings-page-setup-again-help {
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+</style>

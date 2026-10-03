@@ -12,7 +12,7 @@ The two are mutually exclusive: `require_jwt` rejects values that match
 the service token, and `require_service_token` rejects values that look
 like a JWT (3 dot-separated segments). This enforces the
 "UI endpoints reject service token, ripper endpoints reject UI JWT" rule
-from [05-cross-cutting.md § Authorization rules](../../../docs/arch/05-cross-cutting.md#authorization-rules).
+from [05-cross-cutting.md § Authorization rules](../../../docs/developers/architecture/05-cross-cutting.md#authorization-rules).
 """
 
 import jwt
@@ -65,6 +65,11 @@ _MUST_CHANGE_WHITELIST: tuple[str, ...] = (
     "/api/auth/logout",
 )
 
+# Read-only GETs the first-run walkthrough's step 1 renders before the password
+# is changed (setup spec 2026-10-01 §6.2). Exact path + GET only, so the setup
+# write routes (PUT /api/setup/steps/..., POST /api/setup/...) stay locked.
+_MUST_CHANGE_GET_EXACT: frozenset[str] = frozenset({"/api/setup", "/api/system/resources", "/api/system/version"})
+
 
 async def require_jwt(
     request: Request,
@@ -109,12 +114,18 @@ async def require_jwt(
     if user.disabled:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="account disabled")
 
-    if user.password_must_change and not _path_in_whitelist(request.url.path):
+    if user.password_must_change and not _must_change_allowed(request):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="password change required",
         )
     return user
+
+
+def _must_change_allowed(request: Request) -> bool:
+    if request.method == "GET" and request.url.path in _MUST_CHANGE_GET_EXACT:
+        return True
+    return _path_in_whitelist(request.url.path)
 
 
 def _path_in_whitelist(path: str) -> bool:

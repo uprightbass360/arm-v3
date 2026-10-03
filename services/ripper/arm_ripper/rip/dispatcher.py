@@ -1,8 +1,11 @@
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import Protocol, TypedDict
 
 from arm_common import DiscType
+from arm_common.enums import TrackKind
 from arm_common.schemas import TrackView
 
 from arm_ripper.rip.abcde_rip import rip_cd
@@ -13,7 +16,19 @@ logger = logging.getLogger("arm_ripper.rip.dispatcher")
 
 OnTrackStart = Callable[[TrackView], Awaitable[None]]
 OnTrackDone = Callable[[TrackView, RipResult], Awaitable[None]]
-OnTrackProgress = Callable[[TrackView, float], Awaitable[None]]
+
+
+class TransferStats(TypedDict):
+    """Byte-level detail for a copy whose size is known (the full-disc dump)."""
+
+    bytes_done: int
+    bytes_total: int | None
+    rate_bps: float | None
+
+
+class OnTrackProgress(Protocol):
+    def __call__(self, track: TrackView, fraction: float, stats: TransferStats | None = None, /) -> Awaitable[None]: ...
+
 
 # v3 default. 120s drops menu loops and vendor bumpers without cutting
 # the 2–5 minute extras users typically care about. Sessions can
@@ -46,6 +61,11 @@ async def rip_all(
       then emit DONE/FAILED per track from the bulk result.
     - DATA: a single dd dump assigned to the first (only) track.
     """
+    if tracks and all(t.kind == TrackKind.DATA_DUMP for t in tracks):
+        # A full-disc dump is a dump whatever the scan called the disc: an
+        # operator can pick the full-disc dump session for a bluray/dvd ISO,
+        # and makemkvcon must not be asked to rip it.
+        disc_type = DiscType.DATA
     if disc_type in (DiscType.DVD, DiscType.BLURAY):
         await _rip_optical(
             device_path=device_path,
@@ -93,7 +113,20 @@ async def rip_all(
             return
         first = tracks[0]
         await on_track_start(first)
-        result = await rip_data(device_path=device_path, output_dir=output_dir)
+        started = time.monotonic()
+
+        async def _on_data_progress(done: int, total: int | None) -> None:
+            if on_track_progress is None:
+                return
+            elapsed = time.monotonic() - started
+            stats: TransferStats = {
+                "bytes_done": done,
+                "bytes_total": total,
+                "rate_bps": done / elapsed if elapsed > 0 else None,
+            }
+            await on_track_progress(first, min(done / total, 1.0) if total else 0.0, stats)
+
+        result = await rip_data(device_path=device_path, output_dir=output_dir, on_progress=_on_data_progress)
         await on_track_done(first, result)
         return
 
@@ -205,7 +238,7 @@ async def _rip_optical(
         We attribute disc-level progress to the first eligible track —
         the WS payload requires a track_id, but the UI's rips store
         keys live progress by `job_id` and only ever displays a single
-        bar per disc (see [services/ui/src/components/JobCard.vue]),
+        bar per disc (see services/ui-neu/frontend/src/lib/stores/rips.svelte.ts),
         so the choice of track_id is purely a wire-format detail. The
         bar fills smoothly 0→100 % across the whole rip via the PRGV
         `total/max` channel. Per-title attribution still happens

@@ -1,11 +1,23 @@
 import { apiFetch } from './client';
+import type { Channel, ChannelCreate, ChannelUpdate, Catalog, DispatchRow } from '$lib/types/notifications';
 import type {
-	Channel, ChannelCreate, ChannelUpdate, Catalog,
-	DispatchRow
-} from '$lib/types/notifications';
-import type { EventTypeInfo as _EventTypeInfo, NotificationTestResult } from '$lib/types/api.gen';
+	EventTypeInfo as _EventTypeInfo,
+	NotificationTestResult,
+	BashPreviewRequest,
+	BashPreviewResult,
+	BashScriptInfo,
+	BashScriptSummary,
+	ScriptInput
+} from '$lib/types/api.gen';
 
-export type { NotificationTestResult };
+export type {
+	NotificationTestResult,
+	BashPreviewRequest,
+	BashPreviewResult,
+	BashScriptInfo,
+	BashScriptSummary,
+	ScriptInput
+};
 
 export type EventTypeInfo = _EventTypeInfo;
 
@@ -74,11 +86,27 @@ export function composeUrl(
 	});
 }
 
-export function testConfig(body:
-	| { type: string; config: Record<string, unknown>; event_type?: string }
-	| { channel_id: number; fields: Record<string, unknown>; event_type?: string }
+export function testConfig(
+	body:
+		| { type: string; config: Record<string, unknown>; event_type?: string }
+		| { channel_id: number; fields: Record<string, unknown>; event_type?: string }
 ): Promise<NotificationTestResult> {
 	return apiFetch<NotificationTestResult>('/api/notifications/test', {
+		method: 'POST',
+		body: JSON.stringify(body)
+	});
+}
+
+export function fetchScripts(): Promise<BashScriptSummary[]> {
+	return apiFetch<BashScriptSummary[]>('/api/notifications/scripts');
+}
+
+export function fetchScript(name: string): Promise<BashScriptInfo> {
+	return apiFetch<BashScriptInfo>(`/api/notifications/scripts/${encodeURIComponent(name)}`);
+}
+
+export function previewBash(body: BashPreviewRequest): Promise<BashPreviewResult> {
+	return apiFetch<BashPreviewResult>('/api/notifications/scripts/preview', {
 		method: 'POST',
 		body: JSON.stringify(body)
 	});

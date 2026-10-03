@@ -31,19 +31,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		label: 'Default',
 		swatch: '#3b82f6',
 		tokens: {
-			'--color-primary': 'rgb(37, 99, 235)',          // blue-600
-			'--color-primary-hover': 'rgb(29, 78, 216)',    // blue-700
-			'--color-primary-dark': 'rgb(30, 64, 175)',     // blue-800
+			'--color-primary': 'rgb(37, 99, 235)', // blue-600
+			'--color-primary-hover': 'rgb(29, 78, 216)', // blue-700
+			'--color-primary-dark': 'rgb(30, 64, 175)', // blue-800
 			'--color-primary-light-bg': 'rgb(219, 234, 254)', // blue-100
 			'--color-primary-light-bg-dark': 'rgb(30, 58, 138)', // blue-900
-			'--color-primary-text': 'rgb(29, 78, 216)',     // blue-700
+			'--color-primary-text': 'rgb(29, 78, 216)', // blue-700
 			'--color-primary-text-dark': 'rgb(96, 165, 250)', // blue-400
-			'--color-primary-border': 'rgb(59, 130, 246)',  // blue-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(232, 240, 255)',           // blue-tinted light
-			'--color-page-dark': 'rgb(13, 16, 28)',         // dark navy
-			'--color-surface': 'rgb(241, 247, 255)',        // blue-tinted surface
-			'--color-surface-dark': 'rgb(22, 28, 45)',      // blue-tinted dark
+			'--color-primary-border': 'rgb(59, 130, 246)', // blue-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(232, 240, 255)', // blue-tinted light
+			'--color-page-dark': 'rgb(13, 16, 28)', // dark navy
+			'--color-surface': 'rgb(241, 247, 255)', // blue-tinted surface
+			'--color-surface-dark': 'rgb(22, 28, 45)', // blue-tinted dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -52,19 +52,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		label: 'Red Alert',
 		swatch: '#ef4444',
 		tokens: {
-			'--color-primary': 'rgb(220, 38, 38)',          // red-600
-			'--color-primary-hover': 'rgb(185, 28, 28)',    // red-700
-			'--color-primary-dark': 'rgb(153, 27, 27)',     // red-800
+			'--color-primary': 'rgb(220, 38, 38)', // red-600
+			'--color-primary-hover': 'rgb(185, 28, 28)', // red-700
+			'--color-primary-dark': 'rgb(153, 27, 27)', // red-800
 			'--color-primary-light-bg': 'rgb(254, 226, 226)', // red-100
 			'--color-primary-light-bg-dark': 'rgb(127, 29, 29)', // red-900
-			'--color-primary-text': 'rgb(185, 28, 28)',     // red-700
+			'--color-primary-text': 'rgb(185, 28, 28)', // red-700
 			'--color-primary-text-dark': 'rgb(248, 113, 113)', // red-400
-			'--color-primary-border': 'rgb(239, 68, 68)',   // red-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(255, 235, 235)',           // red-tinted light
-			'--color-page-dark': 'rgb(38, 0, 0)',           // dark red
-			'--color-surface': 'rgb(255, 243, 243)',        // red-tinted surface
-			'--color-surface-dark': 'rgb(68, 1, 0)',         // red alert dark
+			'--color-primary-border': 'rgb(239, 68, 68)', // red-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(255, 235, 235)', // red-tinted light
+			'--color-page-dark': 'rgb(38, 0, 0)', // dark red
+			'--color-surface': 'rgb(255, 243, 243)', // red-tinted surface
+			'--color-surface-dark': 'rgb(68, 1, 0)', // red alert dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -91,7 +91,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(15, 15, 15)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="stealth-ops"] .section-frame {\n\tborder: 1px solid #222 !important;\n}\n[data-scheme="stealth-ops"] .section-frame-bar-top {\n\tbackground: #111 !important;\n\tcolor: #666 !important;\n\tborder-bottom: 1px solid #222;\n\ttext-transform: uppercase;\n\tletter-spacing: 0.2em;\n}\n[data-scheme="stealth-ops"] aside nav a[data-active="true"] {\n\tcolor: #ef4444 !important;\n\tbackground: transparent !important;\n\tborder-right: 2px solid #ef4444;\n}\n[data-scheme="stealth-ops"] [data-progress-fill] {\n\tbackground: #ef4444 !important;\n\tbox-shadow: 0 0 15px rgba(239, 68, 68, 0.4);\n}'
+		css: '[data-scheme="stealth-ops"] .section-frame {\n\tborder: 1px solid #222 !important;\n}\n[data-scheme="stealth-ops"] .section-frame-bar-top {\n\tbackground: #111 !important;\n\tcolor: #666 !important;\n\tborder-bottom: 1px solid #222;\n\ttext-transform: uppercase;\n\tletter-spacing: 0.2em;\n}\n[data-scheme="stealth-ops"] aside .nav-item[data-active="true"] {\n\tcolor: #ef4444 !important;\n\tbackground: transparent !important;\n\tborder-right: 2px solid #ef4444;\n}\n[data-scheme="stealth-ops"] [data-progress-fill] {\n\tbackground: #ef4444 !important;\n\tbox-shadow: 0 0 15px rgba(239, 68, 68, 0.4);\n}'
 	},
 	{
 		id: 'library-archive',
@@ -141,7 +141,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(22, 14, 32)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="synth-retro"] {\n\tfont-family: \'Inter\', sans-serif;\n}\n[data-scheme="synth-retro"] body {\n\tbackground-image: linear-gradient(to bottom, rgb(18, 12, 28) 0%, rgb(12, 8, 20) 100%);\n}\n[data-scheme="synth-retro"] aside nav a[data-active="true"] {\n\ttext-shadow: 0 0 10px rgb(255, 0, 127);\n\tborder-right: 3px solid rgb(255, 0, 127);\n}\n[data-scheme="synth-retro"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, rgb(150, 0, 80), rgb(255, 0, 127)) !important;\n\tbox-shadow: 0 0 12px rgba(255, 0, 127, 0.6);\n}'
+		css: '[data-scheme="synth-retro"] {\n\tfont-family: \'Inter\', sans-serif;\n}\n[data-scheme="synth-retro"] body {\n\tbackground-image: linear-gradient(to bottom, rgb(18, 12, 28) 0%, rgb(12, 8, 20) 100%);\n}\n[data-scheme="synth-retro"] aside .nav-item[data-active="true"] {\n\ttext-shadow: 0 0 10px rgb(255, 0, 127);\n\tborder-right: 3px solid rgb(255, 0, 127);\n}\n[data-scheme="synth-retro"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, rgb(150, 0, 80), rgb(255, 0, 127)) !important;\n\tbox-shadow: 0 0 12px rgba(255, 0, 127, 0.6);\n}'
 	},
 	{
 		id: 'synth-retro-v2',
@@ -166,7 +166,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(14, 10, 18)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="synth-retro-v2"] .section-frame {\n\tborder: 1px solid rgba(255, 0, 127, 0.2) !important;\n\tbackground: rgba(255, 0, 127, 0.02) !important;\n\tborder-radius: 4px;\n}\n[data-scheme="synth-retro-v2"] .section-frame-bar-top {\n\tbackground: linear-gradient(90deg, rgba(255, 0, 127, 0.4), transparent) !important;\n\tborder-bottom: 1px solid rgba(255, 0, 127, 0.3);\n\theight: 28px !important;\n}\n[data-scheme="synth-retro-v2"] aside {\n\tbackground: linear-gradient(180deg, rgb(14, 10, 18) 0%, rgb(8, 4, 10) 100%) !important;\n\tborder-right: 1px solid rgba(255, 0, 127, 0.1) !important;\n}\n[data-scheme="synth-retro-v2"] [data-progress-track] {\n\tbackground: rgba(255, 0, 127, 0.05) !important;\n\tborder: 1px solid rgba(255, 0, 127, 0.1);\n\theight: 6px !important;\n}\n[data-scheme="synth-retro-v2"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #9333ea, #ff007f) !important;\n\tbox-shadow: 0 0 10px rgba(255, 0, 127, 0.5);\n}\n[data-scheme="synth-retro-v2"] aside nav a[data-active="true"] {\n\tcolor: #ff007f !important;\n\tbackground: rgba(255, 0, 127, 0.05) !important;\n\tborder-left: 3px solid #ff007f;\n\ttext-shadow: 0 0 8px rgba(255, 0, 127, 0.3);\n}'
+		css: '[data-scheme="synth-retro-v2"] .section-frame {\n\tborder: 1px solid rgba(255, 0, 127, 0.2) !important;\n\tbackground: rgba(255, 0, 127, 0.02) !important;\n\tborder-radius: 4px;\n}\n[data-scheme="synth-retro-v2"] .section-frame-bar-top {\n\tbackground: linear-gradient(90deg, rgba(255, 0, 127, 0.4), transparent) !important;\n\tborder-bottom: 1px solid rgba(255, 0, 127, 0.3);\n\theight: 28px !important;\n}\n[data-scheme="synth-retro-v2"] aside {\n\tbackground: linear-gradient(180deg, rgb(14, 10, 18) 0%, rgb(8, 4, 10) 100%) !important;\n\tborder-right: 1px solid rgba(255, 0, 127, 0.1) !important;\n}\n[data-scheme="synth-retro-v2"] [data-progress-track] {\n\tbackground: rgba(255, 0, 127, 0.05) !important;\n\tborder: 1px solid rgba(255, 0, 127, 0.1);\n\theight: 6px !important;\n}\n[data-scheme="synth-retro-v2"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #9333ea, #ff007f) !important;\n\tbox-shadow: 0 0 10px rgba(255, 0, 127, 0.5);\n}\n[data-scheme="synth-retro-v2"] aside .nav-item[data-active="true"] {\n\tcolor: #ff007f !important;\n\tbackground: rgba(255, 0, 127, 0.05) !important;\n\tborder-left: 3px solid #ff007f;\n\ttext-shadow: 0 0 8px rgba(255, 0, 127, 0.3);\n}'
 	},
 	{
 		id: 'research-outpost',
@@ -199,19 +199,29 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#fb923c',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(255, 153, 0)',            // lcars orange
-			'--color-primary-hover': 'rgb(255, 204, 51)',     // lcars yellow
-			'--color-primary-dark': 'rgb(40, 30, 0)',         // dark orange
+			// Primary is the LCARS command blue: it fills every primary
+			// surface (buttons, chips, the review widget's status bar). The
+			// orange the theme is known for is the FRAME accent, which the
+			// sheet sets on .section-frame explicitly rather than by
+			// borrowing primary.
+			'--color-primary': 'rgb(153, 153, 255)', // lcars blue
+			'--color-primary-hover': 'rgb(187, 187, 255)', // lighter blue
+			'--color-primary-dark': 'rgb(40, 30, 0)', // dark orange
 			'--color-primary-light-bg': 'rgb(153, 153, 255)', // lcars blue
 			'--color-primary-light-bg-dark': 'rgb(30, 30, 60)', // dark blue
-			'--color-primary-text': 'rgb(255, 204, 51)',      // yellow
-			'--color-primary-text-dark': 'rgb(255, 153, 0)',  // orange
-			'--color-primary-border': 'rgb(255, 153, 0)',     // orange
-			'--color-on-primary': 'rgb(0, 0, 0)',             // black
-			'--color-page': 'rgb(0, 0, 0)',                   // pure black
+			'--color-primary-text': 'rgb(153, 153, 255)', // lcars blue
+			'--color-primary-text-dark': 'rgb(153, 153, 255)',
+			'--color-primary-border': 'rgb(153, 153, 255)',
+			'--color-on-primary': 'rgb(0, 0, 0)', // black
+			'--color-page': 'rgb(0, 0, 0)', // pure black
 			'--color-page-dark': 'rgb(0, 0, 0)',
-			'--color-surface': 'rgb(0, 0, 0)',                // pure black
-			'--color-surface-dark': 'rgb(0, 0, 0)',
+			// Lifted plate, not pure black: a panel painted with the page
+			// colour is invisible against it. This is the flattened value of
+			// the periwinkle wash the sheet used to paint on every panel
+			// (rgba(153, 153, 255, 0.15) over black). The theme sheet paints
+			// the shell (header, sidebar) black explicitly.
+			'--color-surface': 'rgb(23, 23, 38)',
+			'--color-surface-dark': 'rgb(23, 23, 38)',
 			'--radius': '20px'
 		}
 	},
@@ -246,19 +256,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#ca8a04',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(212, 175, 55)',          // gold
-			'--color-primary-hover': 'rgb(188, 155, 40)',    // darker gold
-			'--color-primary-dark': 'rgb(138, 109, 59)',     // muted gold
-			'--color-primary-light-bg': 'rgb(30, 25, 10)',   // dark gold tint
+			'--color-primary': 'rgb(212, 175, 55)', // gold
+			'--color-primary-hover': 'rgb(188, 155, 40)', // darker gold
+			'--color-primary-dark': 'rgb(138, 109, 59)', // muted gold
+			'--color-primary-light-bg': 'rgb(30, 25, 10)', // dark gold tint
 			'--color-primary-light-bg-dark': 'rgb(30, 25, 10)', // dark gold tint
-			'--color-primary-text': 'rgb(212, 175, 55)',     // gold
+			'--color-primary-text': 'rgb(212, 175, 55)', // gold
 			'--color-primary-text-dark': 'rgb(212, 175, 55)', // gold
-			'--color-primary-border': 'rgb(138, 109, 59)',   // muted gold
-			'--color-on-primary': 'rgb(13, 13, 13)',         // cinema black
-			'--color-page': 'rgb(26, 26, 26)',               // dark gray
-			'--color-page-dark': 'rgb(26, 26, 26)',          // dark gray
-			'--color-surface': 'rgb(13, 13, 13)',            // cinema black
-			'--color-surface-dark': 'rgb(13, 13, 13)',        // cinema black
+			'--color-primary-border': 'rgb(138, 109, 59)', // muted gold
+			'--color-on-primary': 'rgb(13, 13, 13)', // cinema black
+			'--color-page': 'rgb(26, 26, 26)', // dark gray
+			'--color-page-dark': 'rgb(26, 26, 26)', // dark gray
+			'--color-surface': 'rgb(13, 13, 13)', // cinema black
+			'--color-surface-dark': 'rgb(13, 13, 13)', // cinema black
 			'--radius': '0.5rem'
 		}
 	},
@@ -285,7 +295,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(15, 23, 42)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="royal-archive"] .section-frame {\n\tborder: 1px solid rgba(251, 191, 36, 0.1) !important;\n}\n[data-scheme="royal-archive"] .section-frame-bar-top {\n\tbackground: #1e293b !important;\n\tcolor: #fbbf24 !important;\n\tborder-bottom: 2px solid #fbbf24;\n}\n[data-scheme="royal-archive"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #b45309, #fbbf24) !important;\n}\n[data-scheme="royal-archive"] aside nav a[data-active="true"] {\n\tcolor: #fbbf24 !important;\n\tfont-weight: 900;\n}'
+		css: '[data-scheme="royal-archive"] .section-frame {\n\tborder: 1px solid rgba(251, 191, 36, 0.1) !important;\n}\n[data-scheme="royal-archive"] .section-frame-bar-top {\n\tbackground: #1e293b !important;\n\tcolor: #fbbf24 !important;\n\tborder-bottom: 2px solid #fbbf24;\n}\n[data-scheme="royal-archive"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #b45309, #fbbf24) !important;\n}\n[data-scheme="royal-archive"] aside .nav-item[data-active="true"] {\n\tcolor: #fbbf24 !important;\n\tfont-weight: 900;\n}'
 	},
 	{
 		id: 'royale',
@@ -293,19 +303,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#facc15',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(0, 123, 255)',            // fortnite blue
-			'--color-primary-hover': 'rgb(248, 251, 17)',     // fortnite yellow
-			'--color-primary-dark': 'rgb(17, 42, 94)',        // deep blue border
-			'--color-primary-light-bg': 'rgb(11, 26, 61)',    // item bg
+			'--color-primary': 'rgb(0, 123, 255)', // fortnite blue
+			'--color-primary-hover': 'rgb(248, 251, 17)', // fortnite yellow
+			'--color-primary-dark': 'rgb(17, 42, 94)', // deep blue border
+			'--color-primary-light-bg': 'rgb(11, 26, 61)', // item bg
 			'--color-primary-light-bg-dark': 'rgb(11, 26, 61)', // item bg
-			'--color-primary-text': 'rgb(248, 251, 17)',      // yellow
+			'--color-primary-text': 'rgb(248, 251, 17)', // yellow
 			'--color-primary-text-dark': 'rgb(248, 251, 17)', // yellow
-			'--color-primary-border': 'rgb(17, 42, 94)',      // deep blue
-			'--color-on-primary': 'rgb(255, 255, 255)',       // white
-			'--color-page': 'rgb(5, 5, 5)',                   // near-black
-			'--color-page-dark': 'rgb(5, 5, 5)',              // near-black
-			'--color-surface': 'rgb(2, 11, 36)',              // dark blue
-			'--color-surface-dark': 'rgb(2, 11, 36)',          // dark blue
+			'--color-primary-border': 'rgb(17, 42, 94)', // deep blue
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(5, 5, 5)', // near-black
+			'--color-page-dark': 'rgb(5, 5, 5)', // near-black
+			'--color-surface': 'rgb(2, 11, 36)', // dark blue
+			'--color-surface-dark': 'rgb(2, 11, 36)', // dark blue
 			'--radius': '0.5rem'
 		}
 	},
@@ -315,18 +325,18 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#22c55e',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(30, 130, 30)',            // darker MC green (readable headers)
-			'--color-primary-hover': 'rgb(128, 128, 255)',    // MC hover blue
-			'--color-primary-dark': 'rgb(34, 34, 34)',        // dark stone
-			'--color-primary-light-bg': 'rgb(74, 74, 74)',    // pressed button
+			'--color-primary': 'rgb(30, 130, 30)', // darker MC green (readable headers)
+			'--color-primary-hover': 'rgb(128, 128, 255)', // MC hover blue
+			'--color-primary-dark': 'rgb(34, 34, 34)', // dark stone
+			'--color-primary-light-bg': 'rgb(74, 74, 74)', // pressed button
 			'--color-primary-light-bg-dark': 'rgb(74, 74, 74)',
-			'--color-primary-text': 'rgb(56, 255, 56)',       // MC green
+			'--color-primary-text': 'rgb(56, 255, 56)', // MC green
 			'--color-primary-text-dark': 'rgb(56, 255, 56)',
-			'--color-primary-border': 'rgb(0, 0, 0)',         // black
-			'--color-on-primary': 'rgb(255, 255, 255)',       // white
-			'--color-page': 'rgb(30, 30, 30)',                // dark bg
+			'--color-primary-border': 'rgb(0, 0, 0)', // black
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(30, 30, 30)', // dark bg
 			'--color-page-dark': 'rgb(30, 30, 30)',
-			'--color-surface': 'rgb(49, 49, 49)',             // stone
+			'--color-surface': 'rgb(49, 49, 49)', // stone
 			'--color-surface-dark': 'rgb(49, 49, 49)',
 			'--radius': '0px'
 		}
@@ -337,19 +347,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#4ade80',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(57, 255, 20)',          // terminal green
-			'--color-primary-hover': 'rgb(45, 200, 16)',    // dimmer green
-			'--color-primary-dark': 'rgb(10, 26, 5)',       // dark green
-			'--color-primary-light-bg': 'rgb(10, 26, 5)',   // dark green (light bg unused)
+			'--color-primary': 'rgb(57, 255, 20)', // terminal green
+			'--color-primary-hover': 'rgb(45, 200, 16)', // dimmer green
+			'--color-primary-dark': 'rgb(10, 26, 5)', // dark green
+			'--color-primary-light-bg': 'rgb(10, 26, 5)', // dark green (light bg unused)
 			'--color-primary-light-bg-dark': 'rgb(10, 26, 5)', // dark green
-			'--color-primary-text': 'rgb(57, 255, 20)',     // terminal green
+			'--color-primary-text': 'rgb(57, 255, 20)', // terminal green
 			'--color-primary-text-dark': 'rgb(57, 255, 20)', // terminal green
-			'--color-primary-border': 'rgb(57, 255, 20)',   // terminal green
-			'--color-on-primary': 'rgb(5, 5, 5)',           // near-black
-			'--color-page': 'rgb(5, 5, 5)',                 // CRT black
-			'--color-page-dark': 'rgb(5, 5, 5)',            // CRT black
-			'--color-surface': 'rgb(8, 8, 8)',              // barely-off-black
-			'--color-surface-dark': 'rgb(8, 8, 8)',          // barely-off-black
+			'--color-primary-border': 'rgb(57, 255, 20)', // terminal green
+			'--color-on-primary': 'rgb(5, 5, 5)', // near-black
+			'--color-page': 'rgb(5, 5, 5)', // CRT black
+			'--color-page-dark': 'rgb(5, 5, 5)', // CRT black
+			'--color-surface': 'rgb(8, 8, 8)', // barely-off-black
+			'--color-surface-dark': 'rgb(8, 8, 8)', // barely-off-black
 			'--radius': '0px'
 		}
 	},
@@ -358,19 +368,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		label: 'Forest',
 		swatch: '#10b981',
 		tokens: {
-			'--color-primary': 'rgb(5, 150, 105)',          // emerald-600
-			'--color-primary-hover': 'rgb(4, 120, 87)',     // emerald-700
-			'--color-primary-dark': 'rgb(6, 95, 70)',       // emerald-800
+			'--color-primary': 'rgb(5, 150, 105)', // emerald-600
+			'--color-primary-hover': 'rgb(4, 120, 87)', // emerald-700
+			'--color-primary-dark': 'rgb(6, 95, 70)', // emerald-800
 			'--color-primary-light-bg': 'rgb(209, 250, 229)', // emerald-100
 			'--color-primary-light-bg-dark': 'rgb(6, 78, 59)', // emerald-900
-			'--color-primary-text': 'rgb(4, 120, 87)',      // emerald-700
+			'--color-primary-text': 'rgb(4, 120, 87)', // emerald-700
 			'--color-primary-text-dark': 'rgb(110, 231, 183)', // emerald-400
-			'--color-primary-border': 'rgb(16, 185, 129)',  // emerald-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(228, 248, 238)',           // emerald-tinted light
-			'--color-page-dark': 'rgb(12, 19, 15)',         // dark forest
-			'--color-surface': 'rgb(237, 252, 244)',        // emerald-tinted surface
-			'--color-surface-dark': 'rgb(21, 54, 37)',       // emerald-tinted dark
+			'--color-primary-border': 'rgb(16, 185, 129)', // emerald-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(228, 248, 238)', // emerald-tinted light
+			'--color-page-dark': 'rgb(12, 19, 15)', // dark forest
+			'--color-surface': 'rgb(237, 252, 244)', // emerald-tinted surface
+			'--color-surface-dark': 'rgb(21, 54, 37)', // emerald-tinted dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -379,19 +389,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		label: 'Ocean',
 		swatch: '#14b8a6',
 		tokens: {
-			'--color-primary': 'rgb(13, 148, 136)',         // teal-600
-			'--color-primary-hover': 'rgb(15, 118, 110)',   // teal-700
-			'--color-primary-dark': 'rgb(17, 94, 89)',      // teal-800
+			'--color-primary': 'rgb(13, 148, 136)', // teal-600
+			'--color-primary-hover': 'rgb(15, 118, 110)', // teal-700
+			'--color-primary-dark': 'rgb(17, 94, 89)', // teal-800
 			'--color-primary-light-bg': 'rgb(204, 251, 241)', // teal-100
 			'--color-primary-light-bg-dark': 'rgb(19, 78, 74)', // teal-900
-			'--color-primary-text': 'rgb(15, 118, 110)',    // teal-700
+			'--color-primary-text': 'rgb(15, 118, 110)', // teal-700
 			'--color-primary-text-dark': 'rgb(94, 234, 212)', // teal-400
-			'--color-primary-border': 'rgb(20, 184, 166)',  // teal-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(228, 248, 245)',           // teal-tinted light
-			'--color-page-dark': 'rgb(12, 19, 20)',         // dark teal
-			'--color-surface': 'rgb(238, 252, 249)',        // teal-tinted surface
-			'--color-surface-dark': 'rgb(9, 69, 79)',        // teal-tinted dark
+			'--color-primary-border': 'rgb(20, 184, 166)', // teal-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(228, 248, 245)', // teal-tinted light
+			'--color-page-dark': 'rgb(12, 19, 20)', // dark teal
+			'--color-surface': 'rgb(238, 252, 249)', // teal-tinted surface
+			'--color-surface-dark': 'rgb(9, 69, 79)', // teal-tinted dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -401,18 +411,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#2dd4bf',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(0, 120, 100)',            // darker teal (readable headers)
-			'--color-primary-hover': 'rgb(80, 200, 175)',     // dimmer teal
-			'--color-primary-dark': 'rgb(10, 25, 47)',        // navy
-			'--color-primary-light-bg': 'rgb(10, 25, 47)',    // navy
+			'--color-primary': 'rgb(0, 120, 100)', // darker teal (readable headers)
+			'--color-primary-hover': 'rgb(80, 200, 175)', // dimmer teal
+			'--color-primary-dark': 'rgb(10, 25, 47)', // navy
+			'--color-primary-light-bg': 'rgb(10, 25, 47)', // navy
 			'--color-primary-light-bg-dark': 'rgb(10, 25, 47)',
-			'--color-primary-text': 'rgb(100, 255, 218)',     // teal
+			'--color-primary-text': 'rgb(100, 255, 218)', // teal
 			'--color-primary-text-dark': 'rgb(100, 255, 218)',
-			'--color-primary-border': 'rgb(100, 255, 218)',   // teal
-			'--color-on-primary': 'rgb(255, 255, 255)',       // white
-			'--color-page': 'rgb(2, 6, 23)',                  // deep navy
+			'--color-primary-border': 'rgb(100, 255, 218)', // teal
+			// text on a primary fill: the scheme's signal teal, not white
+			'--color-on-primary': 'rgb(0, 223, 169)',
+			'--color-page': 'rgb(2, 6, 23)', // deep navy
 			'--color-page-dark': 'rgb(2, 6, 23)',
-			'--color-surface': 'rgb(10, 25, 47)',             // navy
+			'--color-surface': 'rgb(10, 25, 47)', // navy
 			'--color-surface-dark': 'rgb(10, 25, 47)',
 			'--radius': '0px'
 		}
@@ -440,7 +451,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(10, 15, 25)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="deep-sea-abyss"] .section-frame {\n\tborder: 1px solid rgba(14, 165, 233, 0.1) !important;\n\tbox-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);\n}\n[data-scheme="deep-sea-abyss"] .section-frame-bar-top {\n\tbackground: rgba(14, 165, 233, 0.2) !important;\n\tcolor: rgb(125, 211, 252) !important;\n\tborder-bottom: 1px solid rgba(14, 165, 233, 0.15);\n}\n[data-scheme="deep-sea-abyss"] .section-frame-bar-bottom {\n\tbackground: rgba(14, 165, 233, 0.1) !important;\n}\n[data-scheme="deep-sea-abyss"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #0ea5e9, #2dd4bf) !important;\n}\n[data-scheme="deep-sea-abyss"] aside nav a:hover {\n\tbackground: linear-gradient(90deg, rgba(14, 165, 233, 0.1), transparent) !important;\n}'
+		css: '[data-scheme="deep-sea-abyss"] .section-frame {\n\tborder: 1px solid rgba(14, 165, 233, 0.1) !important;\n\tbox-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);\n}\n[data-scheme="deep-sea-abyss"] .section-frame-bar-top {\n\tbackground: rgba(14, 165, 233, 0.2) !important;\n\tcolor: rgb(125, 211, 252) !important;\n\tborder-bottom: 1px solid rgba(14, 165, 233, 0.15);\n}\n[data-scheme="deep-sea-abyss"] .section-frame-bar-bottom {\n\tbackground: rgba(14, 165, 233, 0.1) !important;\n}\n[data-scheme="deep-sea-abyss"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #0ea5e9, #2dd4bf) !important;\n}\n[data-scheme="deep-sea-abyss"] aside .nav-item:hover {\n\tbackground: linear-gradient(90deg, rgba(14, 165, 233, 0.1), transparent) !important;\n}'
 	},
 	{
 		id: 'nordic-frost',
@@ -464,7 +475,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(59, 66, 82)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="nordic-frost"] .section-frame {\n\tborder: 1px solid rgba(136, 192, 208, 0.2) !important;\n}\n[data-scheme="nordic-frost"] .section-frame-bar-top {\n\tbackground: rgba(76, 86, 106, 0.8) !important;\n\tcolor: rgb(236, 239, 244) !important;\n}\n[data-scheme="nordic-frost"] .section-frame-bar-bottom {\n\tbackground: rgba(136, 192, 208, 0.15) !important;\n}\n[data-scheme="nordic-frost"] aside nav a[data-active="true"] {\n\tbackground: rgba(136, 192, 208, 0.15) !important;\n\tcolor: rgb(94, 129, 172) !important;\n}\n[data-scheme="nordic-frost"] [data-progress-track] {\n\tbackground: rgba(76, 86, 106, 0.3) !important;\n}'
+		css: '[data-scheme="nordic-frost"] .section-frame {\n\tborder: 1px solid rgba(136, 192, 208, 0.2) !important;\n}\n[data-scheme="nordic-frost"] .section-frame-bar-top {\n\tbackground: rgba(76, 86, 106, 0.8) !important;\n\tcolor: rgb(236, 239, 244) !important;\n}\n[data-scheme="nordic-frost"] .section-frame-bar-bottom {\n\tbackground: rgba(136, 192, 208, 0.15) !important;\n}\n[data-scheme="nordic-frost"] aside .nav-item[data-active="true"] {\n\tbackground: rgba(136, 192, 208, 0.15) !important;\n\tcolor: rgb(94, 129, 172) !important;\n}\n[data-scheme="nordic-frost"] [data-progress-track] {\n\tbackground: rgba(76, 86, 106, 0.3) !important;\n}'
 	},
 	{
 		id: 'solarized-dark',
@@ -497,18 +508,18 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#2563eb',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(255, 235, 0)',            // vibrant yellow
-			'--color-primary-hover': 'rgb(215, 200, 0)',      // slightly darker yellow
-			'--color-primary-dark': 'rgb(180, 160, 0)',       // deep gold for borders
-			'--color-primary-light-bg': 'rgb(0, 51, 153)',    // rich blue
+			'--color-primary': 'rgb(255, 235, 0)', // vibrant yellow
+			'--color-primary-hover': 'rgb(215, 200, 0)', // slightly darker yellow
+			'--color-primary-dark': 'rgb(180, 160, 0)', // deep gold for borders
+			'--color-primary-light-bg': 'rgb(0, 51, 153)', // rich blue
 			'--color-primary-light-bg-dark': 'rgb(0, 31, 103)', // deep blue
-			'--color-primary-text': 'rgb(255, 235, 0)',       // yellow
-			'--color-primary-text-dark': 'rgb(255, 235, 0)',  // yellow
-			'--color-primary-border': 'rgb(255, 235, 0)',     // yellow
-			'--color-on-primary': 'rgb(0, 0, 0)',             // black on yellow
-			'--color-page': 'rgb(0, 41, 123)',                // darker blue page
+			'--color-primary-text': 'rgb(255, 235, 0)', // yellow
+			'--color-primary-text-dark': 'rgb(255, 235, 0)', // yellow
+			'--color-primary-border': 'rgb(255, 235, 0)', // yellow
+			'--color-on-primary': 'rgb(0, 0, 0)', // black on yellow
+			'--color-page': 'rgb(0, 41, 123)', // darker blue page
 			'--color-page-dark': 'rgb(0, 41, 123)',
-			'--color-surface': 'rgb(0, 51, 153)',             // standard blue surface
+			'--color-surface': 'rgb(0, 51, 153)', // standard blue surface
 			'--color-surface-dark': 'rgb(0, 51, 153)',
 			'--radius': '0px'
 		}
@@ -536,7 +547,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(0, 0, 180)',
 			'--radius': '0px'
 		},
-		css: '[data-scheme="vcr-osd"] {\n\tfont-family: \'Courier New\', monospace !important;\n\ttext-transform: uppercase;\n}\n[data-scheme="vcr-osd"] .section-frame-bar-top {\n\tbackground: white !important;\n\tcolor: #0000bb !important;\n\tfont-weight: 900 !important;\n}\n[data-scheme="vcr-osd"] [data-progress-fill] {\n\tbackground: #00ff00 !important;\n\tbox-shadow: 0 0 10px #00ff00;\n}\n[data-scheme="vcr-osd"] aside nav a[data-active="true"] {\n\tbackground: white !important;\n\tcolor: #0000bb !important;\n}'
+		css: '[data-scheme="vcr-osd"] {\n\tfont-family: \'Courier New\', monospace !important;\n\ttext-transform: uppercase;\n}\n[data-scheme="vcr-osd"] .section-frame-bar-top {\n\tbackground: white !important;\n\tcolor: #0000bb !important;\n\tfont-weight: 900 !important;\n}\n[data-scheme="vcr-osd"] [data-progress-fill] {\n\tbackground: #00ff00 !important;\n\tbox-shadow: 0 0 10px #00ff00;\n}\n[data-scheme="vcr-osd"] aside .nav-item[data-active="true"] {\n\tbackground: white !important;\n\tcolor: #0000bb !important;\n}'
 	},
 	{
 		id: 'glass',
@@ -544,19 +555,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#818cf8',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(129, 140, 248)',        // indigo-400
-			'--color-primary-hover': 'rgb(99, 102, 241)',   // indigo-500
-			'--color-primary-dark': 'rgb(67, 56, 202)',     // indigo-700
+			'--color-primary': 'rgb(129, 140, 248)', // indigo-400
+			'--color-primary-hover': 'rgb(99, 102, 241)', // indigo-500
+			'--color-primary-dark': 'rgb(67, 56, 202)', // indigo-700
 			'--color-primary-light-bg': 'rgb(49, 46, 129)', // indigo-900
 			'--color-primary-light-bg-dark': 'rgb(49, 46, 129)', // indigo-900
-			'--color-primary-text': 'rgb(165, 180, 252)',   // indigo-300
+			'--color-primary-text': 'rgb(165, 180, 252)', // indigo-300
 			'--color-primary-text-dark': 'rgb(165, 180, 252)', // indigo-300
 			'--color-primary-border': 'rgb(129, 140, 248)', // indigo-400
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(15, 23, 42)',              // slate-900
-			'--color-page-dark': 'rgb(15, 23, 42)',         // slate-900
-			'--color-surface': 'rgb(30, 27, 75)',           // indigo-950
-			'--color-surface-dark': 'rgb(30, 27, 75)',       // indigo-950
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(15, 23, 42)', // slate-900
+			'--color-page-dark': 'rgb(15, 23, 42)', // slate-900
+			'--color-surface': 'rgb(30, 27, 75)', // indigo-950
+			'--color-surface-dark': 'rgb(30, 27, 75)', // indigo-950
 			'--radius': '0.5rem'
 		}
 	},
@@ -583,26 +594,26 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(22, 22, 30)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="tokyo-night"] .section-frame {\n\tborder: 1px solid rgba(122, 162, 247, 0.1) !important;\n}\n[data-scheme="tokyo-night"] .section-frame-bar-top {\n\tbackground: rgba(122, 162, 247, 0.15) !important;\n\tcolor: rgb(122, 162, 247) !important;\n}\n[data-scheme="tokyo-night"] .section-frame-bar-bottom {\n\tbackground: rgba(122, 162, 247, 0.08) !important;\n}\n[data-scheme="tokyo-night"] aside nav a[data-active="true"] {\n\tcolor: #7aa2f7 !important;\n\tbackground: rgba(122, 162, 247, 0.1) !important;\n}\n[data-scheme="tokyo-night"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #7aa2f7, #bb9af7) !important;\n}'
+		css: '[data-scheme="tokyo-night"] .section-frame {\n\tborder: 1px solid rgba(122, 162, 247, 0.1) !important;\n}\n[data-scheme="tokyo-night"] .section-frame-bar-top {\n\tbackground: rgba(122, 162, 247, 0.15) !important;\n\tcolor: rgb(122, 162, 247) !important;\n}\n[data-scheme="tokyo-night"] .section-frame-bar-bottom {\n\tbackground: rgba(122, 162, 247, 0.08) !important;\n}\n[data-scheme="tokyo-night"] aside .nav-item[data-active="true"] {\n\tcolor: #7aa2f7 !important;\n\tbackground: rgba(122, 162, 247, 0.1) !important;\n}\n[data-scheme="tokyo-night"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #7aa2f7, #bb9af7) !important;\n}'
 	},
 	{
 		id: 'violet',
 		label: 'Grape',
 		swatch: '#a855f7',
 		tokens: {
-			'--color-primary': 'rgb(147, 51, 234)',         // purple-600
-			'--color-primary-hover': 'rgb(126, 34, 206)',   // purple-700
-			'--color-primary-dark': 'rgb(107, 33, 168)',    // purple-800
+			'--color-primary': 'rgb(147, 51, 234)', // purple-600
+			'--color-primary-hover': 'rgb(126, 34, 206)', // purple-700
+			'--color-primary-dark': 'rgb(107, 33, 168)', // purple-800
 			'--color-primary-light-bg': 'rgb(237, 226, 255)', // purple-100
 			'--color-primary-light-bg-dark': 'rgb(76, 29, 149)', // purple-900
-			'--color-primary-text': 'rgb(126, 34, 206)',    // purple-700
+			'--color-primary-text': 'rgb(126, 34, 206)', // purple-700
 			'--color-primary-text-dark': 'rgb(192, 132, 252)', // purple-400
-			'--color-primary-border': 'rgb(168, 85, 247)',  // purple-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(243, 235, 255)',           // purple-tinted light
-			'--color-page-dark': 'rgb(16, 13, 26)',         // dark violet
-			'--color-surface': 'rgb(247, 243, 255)',        // purple-tinted surface
-			'--color-surface-dark': 'rgb(48, 22, 92)',       // grape dark
+			'--color-primary-border': 'rgb(168, 85, 247)', // purple-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(243, 235, 255)', // purple-tinted light
+			'--color-page-dark': 'rgb(16, 13, 26)', // dark violet
+			'--color-surface': 'rgb(247, 243, 255)', // purple-tinted surface
+			'--color-surface-dark': 'rgb(48, 22, 92)', // grape dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -628,7 +639,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(31, 41, 55)',
 			'--radius': '0px'
 		},
-		css: '[data-scheme="retro-console"] .section-frame {\n\tborder: 2px solid #4b5563 !important;\n\tbox-shadow: 2px 2px 0px #000;\n}\n[data-scheme="retro-console"] .section-frame-bar-top {\n\tbackground: rgb(124, 58, 237) !important;\n\tcolor: white !important;\n\ttext-transform: uppercase;\n\tclip-path: polygon(0 0, 98% 0, 100% 100%, 0% 100%);\n\tletter-spacing: 0.15em;\n\tfont-weight: 800;\n}\n[data-scheme="retro-console"] aside nav a[data-active="true"] {\n\tbox-shadow: inset 4px 0 0 rgb(124, 58, 237);\n\ttext-shadow: 0 0 8px rgba(124, 58, 237, 0.5);\n}\n[data-scheme="retro-console"] [data-progress-track] {\n\tbackground: #000 !important;\n\tborder: 1px solid #4b5563;\n}'
+		css: '[data-scheme="retro-console"] .section-frame {\n\tborder: 2px solid #4b5563 !important;\n\tbox-shadow: 2px 2px 0px #000;\n}\n[data-scheme="retro-console"] .section-frame-bar-top {\n\tbackground: rgb(124, 58, 237) !important;\n\tcolor: white !important;\n\ttext-transform: uppercase;\n\tclip-path: polygon(0 0, 98% 0, 100% 100%, 0% 100%);\n\tletter-spacing: 0.15em;\n\tfont-weight: 800;\n}\n[data-scheme="retro-console"] aside .nav-item[data-active="true"] {\n\tbox-shadow: inset 4px 0 0 rgb(124, 58, 237);\n\ttext-shadow: 0 0 8px rgba(124, 58, 237, 0.5);\n}\n[data-scheme="retro-console"] [data-progress-track] {\n\tbackground: #000 !important;\n\tborder: 1px solid #4b5563;\n}'
 	},
 	{
 		id: 'hollywood-video-v2',
@@ -636,19 +647,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#4c1d95',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(217, 11, 28)',             // #D90B1C Red
-			'--color-primary-hover': 'rgb(170, 8, 22)',        // darker red
-			'--color-primary-dark': 'rgb(110, 5, 14)',         // deep red
-			'--color-primary-light-bg': 'rgb(35, 22, 64)',     // #231640 Purple
+			'--color-primary': 'rgb(217, 11, 28)', // #D90B1C Red
+			'--color-primary-hover': 'rgb(170, 8, 22)', // darker red
+			'--color-primary-dark': 'rgb(110, 5, 14)', // deep red
+			'--color-primary-light-bg': 'rgb(35, 22, 64)', // #231640 Purple
 			'--color-primary-light-bg-dark': 'rgb(22, 14, 38)', // #160E26 Deep Purple
-			'--color-primary-text': 'rgb(242, 183, 5)',        // #F2B705 Gold
-			'--color-primary-text-dark': 'rgb(242, 183, 5)',   // #F2B705 Gold
-			'--color-primary-border': 'rgb(35, 22, 64)',       // #231640 Purple
-			'--color-on-primary': 'rgb(255, 255, 255)',        // White on Red
-			'--color-page': 'rgb(22, 14, 38)',                 // #160E26 Deep Purple
-			'--color-page-dark': 'rgb(22, 14, 38)',            // #160E26 Deep Purple
-			'--color-surface': 'rgb(35, 22, 64)',              // #231640 Purple
-			'--color-surface-dark': 'rgb(35, 22, 64)',          // #231640 Purple
+			'--color-primary-text': 'rgb(242, 183, 5)', // #F2B705 Gold
+			'--color-primary-text-dark': 'rgb(242, 183, 5)', // #F2B705 Gold
+			'--color-primary-border': 'rgb(35, 22, 64)', // #231640 Purple
+			'--color-on-primary': 'rgb(255, 255, 255)', // White on Red
+			'--color-page': 'rgb(22, 14, 38)', // #160E26 Deep Purple
+			'--color-page-dark': 'rgb(22, 14, 38)', // #160E26 Deep Purple
+			'--color-surface': 'rgb(35, 22, 64)', // #231640 Purple
+			'--color-surface-dark': 'rgb(35, 22, 64)', // #231640 Purple
 			'--radius': '0.5rem'
 		}
 	},
@@ -658,7 +669,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#bd93f9',
 		mode: 'dark',
 		author: 'Gemini',
-		description: 'The world\'s most popular dark theme with vibrant purple accents',
+		description: "The world's most popular dark theme with vibrant purple accents",
 		tokens: {
 			'--color-primary': 'rgb(189, 147, 249)',
 			'--color-primary-hover': 'rgb(255, 121, 198)',
@@ -675,7 +686,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface-dark': 'rgb(40, 42, 54)',
 			'--radius': '0.5rem'
 		},
-		css: '[data-scheme="dracula-pro"] .section-frame {\n\tborder: 1px solid rgba(189, 147, 249, 0.15) !important;\n\tborder-radius: var(--radius) !important;\n\toverflow: hidden;\n}\n[data-scheme="dracula-pro"] .section-frame-bar-top {\n\tbackground: #44475a !important;\n\tcolor: #f8f8f2 !important;\n}\n[data-scheme="dracula-pro"] .section-frame-bar-bottom {\n\tbackground: #44475a !important;\n}\n[data-scheme="dracula-pro"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #bd93f9, #ff79c6) !important;\n}\n[data-scheme="dracula-pro"] aside nav a[data-active="true"] {\n\tborder-left: 2px solid #ff79c6;\n\tbackground: rgba(189, 147, 249, 0.1) !important;\n}'
+		css: '[data-scheme="dracula-pro"] .section-frame {\n\tborder: 1px solid rgba(189, 147, 249, 0.15) !important;\n\tborder-radius: var(--radius) !important;\n\toverflow: hidden;\n}\n[data-scheme="dracula-pro"] .section-frame-bar-top {\n\tbackground: #44475a !important;\n\tcolor: #f8f8f2 !important;\n}\n[data-scheme="dracula-pro"] .section-frame-bar-bottom {\n\tbackground: #44475a !important;\n}\n[data-scheme="dracula-pro"] [data-progress-fill] {\n\tbackground: linear-gradient(90deg, #bd93f9, #ff79c6) !important;\n}\n[data-scheme="dracula-pro"] aside .nav-item[data-active="true"] {\n\tborder-left: 2px solid #ff79c6;\n\tbackground: rgba(189, 147, 249, 0.1) !important;\n}'
 	},
 	{
 		id: 'gaming',
@@ -683,19 +694,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#d946ef',
 		mode: 'dark',
 		tokens: {
-			'--color-primary': 'rgb(0, 135, 164)',            // darker neon blue (headers)
-			'--color-primary-hover': 'rgb(188, 19, 254)',     // neon purple
-			'--color-primary-dark': 'rgb(27, 27, 47)',        // border dark
-			'--color-primary-light-bg': 'rgb(0, 210, 255)',   // blue (unused in dark)
+			'--color-primary': 'rgb(0, 135, 164)', // darker neon blue (headers)
+			'--color-primary-hover': 'rgb(188, 19, 254)', // neon purple
+			'--color-primary-dark': 'rgb(27, 27, 47)', // border dark
+			'--color-primary-light-bg': 'rgb(0, 210, 255)', // blue (unused in dark)
 			'--color-primary-light-bg-dark': 'rgb(0, 30, 50)', // dark blue tint
-			'--color-primary-text': 'rgb(0, 210, 255)',       // neon blue
-			'--color-primary-text-dark': 'rgb(0, 210, 255)',  // neon blue
-			'--color-primary-border': 'rgb(0, 210, 255)',     // neon blue
-			'--color-on-primary': 'rgb(255, 255, 255)',       // white
-			'--color-page': 'rgb(5, 5, 10)',                  // bg dark
-			'--color-page-dark': 'rgb(5, 5, 10)',             // bg dark
-			'--color-surface': 'rgb(12, 12, 18)',             // surface
-			'--color-surface-dark': 'rgb(12, 12, 18)',         // surface
+			'--color-primary-text': 'rgb(0, 210, 255)', // neon blue
+			'--color-primary-text-dark': 'rgb(0, 210, 255)', // neon blue
+			'--color-primary-border': 'rgb(0, 210, 255)', // neon blue
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(5, 5, 10)', // bg dark
+			'--color-page-dark': 'rgb(5, 5, 10)', // bg dark
+			'--color-surface': 'rgb(12, 12, 18)', // surface
+			'--color-surface-dark': 'rgb(12, 12, 18)', // surface
 			'--radius': '0px'
 		}
 	},
@@ -704,19 +715,19 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		label: 'Rose',
 		swatch: '#ec4899',
 		tokens: {
-			'--color-primary': 'rgb(219, 39, 119)',         // pink-600
-			'--color-primary-hover': 'rgb(190, 24, 93)',    // pink-700
-			'--color-primary-dark': 'rgb(157, 23, 77)',     // pink-800
+			'--color-primary': 'rgb(219, 39, 119)', // pink-600
+			'--color-primary-hover': 'rgb(190, 24, 93)', // pink-700
+			'--color-primary-dark': 'rgb(157, 23, 77)', // pink-800
 			'--color-primary-light-bg': 'rgb(252, 231, 243)', // pink-100
 			'--color-primary-light-bg-dark': 'rgb(131, 24, 67)', // pink-900
-			'--color-primary-text': 'rgb(190, 24, 93)',     // pink-700
+			'--color-primary-text': 'rgb(190, 24, 93)', // pink-700
 			'--color-primary-text-dark': 'rgb(244, 114, 182)', // pink-400
-			'--color-primary-border': 'rgb(236, 72, 153)',  // pink-500
-			'--color-on-primary': 'rgb(255, 255, 255)',     // white
-			'--color-page': 'rgb(252, 232, 243)',           // pink-tinted light
-			'--color-page-dark': 'rgb(47, 0, 23)',          // dark rose
-			'--color-surface': 'rgb(253, 242, 249)',        // pink-tinted surface
-			'--color-surface-dark': 'rgb(132, 28, 81)',      // rose dark
+			'--color-primary-border': 'rgb(236, 72, 153)', // pink-500
+			'--color-on-primary': 'rgb(255, 255, 255)', // white
+			'--color-page': 'rgb(252, 232, 243)', // pink-tinted light
+			'--color-page-dark': 'rgb(47, 0, 23)', // dark rose
+			'--color-surface': 'rgb(253, 242, 249)', // pink-tinted surface
+			'--color-surface-dark': 'rgb(132, 28, 81)', // rose dark
 			'--radius': '0.5rem'
 		}
 	},
@@ -726,7 +737,8 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 		swatch: '#00ff00',
 		mode: 'dark',
 		author: 'Gemini',
-		description: 'Classic Winamp chassis: steel panels, equalizer titlebars, hardware buttons, LED meters, Silkscreen bitmap type',
+		description:
+			'Classic Winamp chassis: steel panels, equalizer titlebars, hardware buttons, LED meters, Silkscreen bitmap type',
 		tokens: {
 			'--color-primary': 'rgb(0, 255, 0)',
 			'--color-primary-hover': 'rgb(51, 255, 51)',
@@ -742,7 +754,7 @@ export const COLOR_SCHEMES: ColorScheme[] = [
 			'--color-surface': 'rgb(34, 36, 56)',
 			'--color-surface-dark': 'rgb(34, 36, 56)',
 			'--radius': '0px',
-			'--font-family': "'Silkscreen', 'Trebuchet MS', Tahoma, sans-serif",
+			'--font-family': "'Trebuchet MS', Tahoma, sans-serif",
 			'--logo-filter': 'brightness(0) invert(58.5%) sepia(100%) saturate(400%) hue-rotate(9deg) brightness(93%)' // solid #D4AA04
 		}
 	}
@@ -772,17 +784,97 @@ function getInitialScheme(): string {
 	return localStorage.getItem('colorScheme') ?? DEFAULT_SCHEME.id;
 }
 
+/**
+ * `--color-primary` keeps the same value in light and dark mode (spec 5.1:
+ * "Light default ... Dark default: same"), and tokens.css's own `.dark {}`
+ * block never redefines it. `--color-primary-dark` in a scheme's `tokens` is
+ * a distinct legacy alias role (a fixed darker shade some unmigrated
+ * components read directly via `dark:text-primary-dark`), not "what primary
+ * becomes in dark mode" - so it must not be treated as `--color-primary`'s
+ * effective-mode twin the way `--color-page-dark`/`--color-surface-dark`/
+ * `--color-primary-text-dark`/`--color-primary-light-bg-dark` are.
+ */
+const MODE_INVARIANT_ROLES = new Set(['--color-primary']);
+
+/**
+ * Write the scheme's inline custom-property tokens for the effective mode.
+ *
+ * Inline `style` on <html> beats every selector in the cascade, including
+ * `.dark { --color-page: ...; }` in tokens.css. Each scheme's `tokens` map
+ * carries light values under a base name (`--color-surface`) and, for roles
+ * that vary by mode, a dark value under the `-dark`-suffixed twin
+ * (`--color-surface-dark`). Without this, the inline style always won the
+ * base (light) value regardless of dark mode. So for any base role that has
+ * a `-dark` twin in this scheme (and is not mode-invariant, see above), write
+ * whichever value matches the `effectiveDark` mode; every other token
+ * (including the `-dark`-suffixed names themselves, and roles the scheme
+ * does not pair, e.g. tones and `--color-border`) is written unchanged, so
+ * `.dark {}` keeps handling those and unmigrated `dark:bg-surface-dark`-style
+ * utilities keep working.
+ */
+/**
+ * Inline token properties written by the last applyTokens call. Cleared
+ * before the next write so a scheme SWITCH does not leak tokens the new
+ * scheme never defines: without this, winamp-97's `--font-family:
+ * 'Silkscreen', ...` survived on <html> into any scheme chosen after it
+ * (craft, default, ...) and pixelated the whole app until a reload.
+ */
+let appliedTokenProps: string[] = [];
+
+function applyTokens(root: HTMLElement, scheme: ColorScheme, effectiveDark: boolean) {
+	for (const prop of appliedTokenProps) {
+		root.style.removeProperty(prop);
+	}
+	const written: string[] = [];
+	for (const [prop, value] of Object.entries(scheme.tokens)) {
+		if (prop.endsWith('-dark')) {
+			// Legacy paired name: keep writing it unchanged for components
+			// that still use `dark:bg-surface-dark` etc.
+			root.style.setProperty(prop, value);
+			written.push(prop);
+			continue;
+		}
+		const darkTwin = MODE_INVARIANT_ROLES.has(prop) ? undefined : scheme.tokens[`${prop}-dark`];
+		const effectiveValue = effectiveDark && darkTwin !== undefined ? darkTwin : value;
+		root.style.setProperty(prop, effectiveValue);
+		written.push(prop);
+	}
+	appliedTokenProps = written;
+}
+
+/**
+ * True when <html> is (or is about to be) in dark mode for this scheme.
+ * A scheme that locks the mode always wins. Otherwise the user's saved
+ * `theme` preference is the authority: the `theme` store (see theme.ts)
+ * writes `localStorage.theme` synchronously on every toggle, so it always
+ * reflects the user's actual intent for unlocked schemes. Falls back to the
+ * OS setting only when nothing has been saved yet.
+ *
+ * The live `<html class="dark">` state is deliberately NOT consulted here.
+ * It can be leftover from a previously active mode-locked scheme (e.g.
+ * `lcars`, which forces `dark` regardless of the saved preference) - reading
+ * it back would treat "the last scheme forced dark" as "the user wants
+ * dark", permanently overriding a saved `light` preference the moment the
+ * user leaves a locked scheme.
+ */
+function resolveEffectiveDark(root: HTMLElement, scheme: ColorScheme): boolean {
+	if (scheme.mode === 'dark') return true;
+	if (scheme.mode === 'light') return false;
+	const saved = localStorage.getItem('theme');
+	if (saved === 'dark') return true;
+	if (saved === 'light') return false;
+	return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
 function applyScheme(id: string) {
 	if (!browser) return;
 	const schemes = get(allSchemes);
 	const scheme = schemes.find((s) => s.id === id) ?? DEFAULT_SCHEME;
 	const root = document.documentElement;
-	for (const [prop, value] of Object.entries(scheme.tokens)) {
-		root.style.setProperty(prop, value);
-	}
+	const effectiveDark = resolveEffectiveDark(root, scheme);
+	applyTokens(root, scheme, effectiveDark);
 
 	root.dataset.scheme = scheme.id;
-
 
 	// Inject theme CSS into a managed <style> element
 	injectThemeCss(scheme);
@@ -792,11 +884,25 @@ function applyScheme(id: string) {
 	} else if (scheme.mode === 'light') {
 		root.classList.remove('dark');
 	} else {
-		// Restore the user's saved theme preference
-		const saved = localStorage.getItem('theme');
-		const prefersDark = saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches);
-		root.classList.toggle('dark', prefersDark);
+		root.classList.toggle('dark', effectiveDark);
 	}
+}
+
+/**
+ * Re-apply the active scheme's inline tokens for the current `.dark` class
+ * state on <html>. Called whenever something outside this module toggles
+ * dark mode (the `theme` store), so the inline tokens follow the mode
+ * instead of staying stuck on whichever mode was active at the last
+ * `applyScheme` call.
+ */
+export function reapplySchemeForCurrentMode() {
+	if (!browser) return;
+	const id = get(colorScheme);
+	const schemes = get(allSchemes);
+	const scheme = schemes.find((s) => s.id === id) ?? DEFAULT_SCHEME;
+	if (scheme.mode != null) return; // locked schemes ignore the theme store
+	const root = document.documentElement;
+	applyTokens(root, scheme, root.classList.contains('dark'));
 }
 
 function injectThemeCss(scheme: ColorScheme) {
@@ -906,9 +1012,7 @@ export async function loadThemeCss(id: string): Promise<void> {
 		try {
 			// Built-in themes: fetch the bundled static CSS (same-origin, no API).
 			// User-uploaded themes: fetch from the backend theme API.
-			const css = BUILTIN_IDS.has(id)
-				? await fetchBuiltinCss(id)
-				: (await fetchTheme(id)).css;
+			const css = BUILTIN_IDS.has(id) ? await fetchBuiltinCss(id) : (await fetchTheme(id)).css;
 			if (css) {
 				cssCache.set(id, css);
 				try {
@@ -917,9 +1021,7 @@ export async function loadThemeCss(id: string): Promise<void> {
 					// localStorage unavailable or quota exceeded - non-fatal
 				}
 				// Update the scheme in the store
-				allSchemes.update((schemes) =>
-					schemes.map((s) => (s.id === id ? { ...s, css } : s))
-				);
+				allSchemes.update((schemes) => schemes.map((s) => (s.id === id ? { ...s, css } : s)));
 			}
 			applyScheme(id);
 		} catch {

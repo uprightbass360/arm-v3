@@ -21,9 +21,12 @@ from arm_backend.transcode_apply import (  # noqa: E402
     _track_kinds_for_media,
     compute_outputs,
     find_collisions,
+    is_passthrough_preset,
     stat_exists,
+    transcode_enabled_now,
 )
 from arm_common import (  # noqa: E402
+    Config,
     ContainerFormat,
     DiscType,
     Job,
@@ -152,6 +155,39 @@ async def test_find_collisions_existing_task(tmp_path: Path) -> None:
     cols = await find_collisions(db, ["a.flac"], tmp_path)  # type: ignore[arg-type]
     assert cols[0].reason == "existing_task"
     assert cols[0].existing_task_id == "txt_live"
+    # No session_applications row seeded for sap_1 — defensive: leaves None
+    # rather than raising.
+    assert cols[0].existing_job_id is None
+
+
+async def test_find_collisions_existing_task_populates_job_id(tmp_path: Path) -> None:
+    """`existing_job_id` is resolved via task -> session_application -> job_id,
+    batched (one extra query, not one per collision)."""
+    from arm_common import SessionApplication, SessionApplicationStatus
+
+    db = FakeSession()
+    db.rows["transcode_tasks"] = [
+        TranscodeTask(
+            id="txt_live",
+            session_application_id="sap_owner",
+            source_track_id="trk_1",
+            status=TranscodeTaskStatus.IN_PROGRESS,
+            output_path="a.flac",
+            progress_pct=0,
+            attempts=0,
+        )
+    ]
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_owner",
+            session_id="ses_owner",
+            job_id="job_owner",
+            status=SessionApplicationStatus.RUNNING,
+            overwrite=False,
+        )
+    ]
+    cols = await find_collisions(db, ["a.flac"], tmp_path)  # type: ignore[arg-type]
+    assert cols[0].existing_job_id == "job_owner"
 
 
 async def test_find_collisions_on_disk(tmp_path: Path) -> None:
@@ -159,11 +195,13 @@ async def test_find_collisions_on_disk(tmp_path: Path) -> None:
     cols = await find_collisions(FakeSession(), ["b.flac"], tmp_path)  # type: ignore[arg-type]
     assert cols[0].reason == "on_disk"
     assert cols[0].on_filesystem is True
+    assert cols[0].existing_job_id is None
 
 
 async def test_find_collisions_duplicate_in_request(tmp_path: Path) -> None:
     cols = await find_collisions(FakeSession(), ["dup.flac", "dup.flac"], tmp_path)  # type: ignore[arg-type]
     assert [c.reason for c in cols] == ["duplicate_in_request"]
+    assert cols[0].existing_job_id is None
 
 
 async def test_find_collisions_existing_task_then_duplicate(tmp_path: Path) -> None:
@@ -197,3 +235,108 @@ def test_stat_exists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(Path, "exists", _boom)
     assert stat_exists(tmp_path, "whatever") is False
+
+
+def test_is_passthrough_preset() -> None:
+    assert is_passthrough_preset(None) is True
+    assert (
+        is_passthrough_preset(
+            TranscodePreset(
+                id="tpr_pass",
+                name="Passthrough",
+                media_type=MediaType.MOVIE,
+                tool=TranscodeTool.NONE,
+                container=ContainerFormat.MKV,
+            )
+        )
+        is True
+    )
+    assert (
+        is_passthrough_preset(
+            TranscodePreset(
+                id="tpr_x",
+                name="Plex 1080p H.265",
+                media_type=MediaType.MOVIE,
+                tool=TranscodeTool.HANDBRAKE,
+                container=ContainerFormat.MKV,
+            )
+        )
+        is False
+    )
+
+
+async def test_transcode_enabled_now_not_capable_short_circuits_before_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A not-transcode-capable deployment refuses encode work regardless of
+    the DB toggle — and never needs to query it."""
+    from arm_backend import config as bcfg
+
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_CAPABLE", False)
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_DOCKER_HOST", "")
+    db = FakeSession()
+    db.rows["config"] = [Config(id=1, transcode_enabled=True)]
+    assert await transcode_enabled_now(db) is False  # type: ignore[arg-type]
+
+
+async def test_transcode_enabled_now_capable_via_remote_docker_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ARM_TRANSCODE_CAPABLE=false but a remote docker host is configured:
+    still capable, so the DB toggle decides."""
+    from arm_backend import config as bcfg
+
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_CAPABLE", False)
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_DOCKER_HOST", "ssh://sam@transcoder-server")
+    db = FakeSession()
+    db.rows["config"] = [Config(id=1, transcode_enabled=True)]
+    assert await transcode_enabled_now(db) is True  # type: ignore[arg-type]
+
+
+async def test_transcode_enabled_now_reads_db_toggle(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arm_backend import config as bcfg
+
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_CAPABLE", True)
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_DOCKER_HOST", "")
+
+    db = FakeSession()
+    db.rows["config"] = [Config(id=1, transcode_enabled=False)]
+    assert await transcode_enabled_now(db) is False  # type: ignore[arg-type]
+
+    db.rows["config"][0].transcode_enabled = True
+    assert await transcode_enabled_now(db) is True  # type: ignore[arg-type]
+
+
+async def test_transcode_enabled_now_null_column_and_missing_row_mean_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from arm_backend import config as bcfg
+
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_CAPABLE", True)
+    monkeypatch.setattr(bcfg.settings, "ARM_TRANSCODE_DOCKER_HOST", "")
+
+    db = FakeSession()
+    db.rows["config"] = [Config(id=1, transcode_enabled=None)]
+    assert await transcode_enabled_now(db) is True  # type: ignore[arg-type]
+
+    db.rows["config"] = []
+    assert await transcode_enabled_now(db) is True  # type: ignore[arg-type]
+
+
+async def test_find_collisions_skips_live_rows_without_output_path(tmp_path: Path) -> None:
+    """A live task with a blank output_path can never be an existing-task
+    collision (the column is only filled once a path is resolved)."""
+    db = FakeSession()
+    db.rows["transcode_tasks"] = [
+        TranscodeTask(
+            id="txt_blank",
+            session_application_id="sap_1",
+            source_track_id="trk_1",
+            status=TranscodeTaskStatus.IN_PROGRESS,
+            output_path="",
+            progress_pct=0,
+            attempts=0,
+        )
+    ]
+    cols = await find_collisions(db, ["", "a.flac"], tmp_path)  # type: ignore[arg-type]
+    assert not any(c.reason == "existing_task" for c in cols)

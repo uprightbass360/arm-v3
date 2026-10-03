@@ -1,5 +1,5 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { renderComponent, screen, cleanup } from '$lib/test-utils';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { renderComponent, screen, cleanup, fireEvent } from '$lib/test-utils';
 import ConfigSchemaField from '../ConfigSchemaField.svelte';
 import type { ConfigFieldMeta } from '$lib/types/api.gen';
 
@@ -50,7 +50,10 @@ describe('ConfigSchemaField', () => {
 
 	it('renders an editable:false field as read-only (no input)', () => {
 		renderComponent(ConfigSchemaField, {
-			props: { field: f({ key: 'RAW_ROOT', type: 'string', tier: 'infra', editable: false, label: 'Raw root' }), value: '/raw' }
+			props: {
+				field: f({ key: 'RAW_ROOT', type: 'string', tier: 'infra', editable: false, label: 'Raw root' }),
+				value: '/raw'
+			}
 		});
 		expect(screen.getByText('/raw')).toBeInTheDocument();
 		expect(screen.queryByRole('textbox', { name: /raw root/i })).not.toBeInTheDocument();
@@ -62,5 +65,136 @@ describe('ConfigSchemaField', () => {
 		});
 		expect(screen.getByText('My Field')).toBeInTheDocument();
 		expect(screen.getByText('Some guidance')).toBeInTheDocument();
+	});
+
+	it('gives the help text a stable id keyed to the field, for a ranked list to describe itself by', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({ key: 'episode_sources', label: 'Episode sources', help: 'Tried top to bottom.' }),
+				value: 'x'
+			}
+		});
+		expect(screen.getByText('Tried top to bottom.')).toHaveAttribute('id', 'setting-help-episode_sources');
+	});
+
+	it('wires the ranked list to the help text via aria-describedby', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({
+					key: 'episode_sources',
+					type: 'ranked',
+					label: 'Episode sources',
+					help: 'Tried top to bottom.',
+					enum_values: ['tmdb', 'tvmaze'],
+					enum_labels: { tmdb: 'TMDb', tvmaze: 'TVmaze' }
+				}),
+				value: ['tmdb']
+			}
+		});
+		expect(screen.getByRole('list', { name: 'Episode sources' })).toHaveAttribute(
+			'aria-describedby',
+			'setting-help-episode_sources'
+		);
+	});
+
+	it('renders an int field as a compact number input that emits numbers', async () => {
+		renderComponent(ConfigSchemaField, {
+			props: { field: f({ type: 'int', label: 'Match tolerance (seconds)' }), value: 300 }
+		});
+		const input = screen.getByRole('spinbutton', { name: 'Match tolerance (seconds)' });
+		expect(input).toHaveClass('field-control', 'config-schema-field-number');
+		expect(input).toHaveAttribute('step', '1');
+		await fireEvent.input(input, { target: { value: '120' } });
+		expect(input).toHaveValue(120);
+	});
+
+	it('shows enum labels while keeping raw values', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({ type: 'enum', enum_values: ['tmdb', 'omdb'], enum_labels: { tmdb: 'TMDb', omdb: 'OMDb' } }),
+				value: 'tmdb'
+			}
+		});
+		const option = screen.getByRole('option', { name: 'TMDb' }) as HTMLOptionElement;
+		expect(option.value).toBe('tmdb');
+	});
+
+	it('renders a ranked field as a labelled list', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({
+					key: 'episode_sources',
+					type: 'ranked',
+					label: 'Episode sources',
+					enum_values: ['tmdb', 'tvmaze', 'tvdb'],
+					enum_labels: { tmdb: 'TMDb', tvmaze: 'TVmaze', tvdb: 'TVDB' }
+				}),
+				value: ['tmdb']
+			}
+		});
+		expect(screen.getByRole('list', { name: 'Episode sources' })).toBeInTheDocument();
+	});
+
+	it('renders a ranked, non-editable field as plain text with no list', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({
+					key: 'episode_sources',
+					type: 'ranked',
+					label: 'Episode sources',
+					editable: false,
+					enum_values: ['tmdb', 'tvmaze', 'tvdb'],
+					enum_labels: { tmdb: 'TMDb', tvmaze: 'TVmaze', tvdb: 'TVDB' }
+				}),
+				value: ['tvmaze', 'tmdb']
+			}
+		});
+		expect(screen.getByText('TVmaze, TMDb')).toBeInTheDocument();
+		expect(screen.queryByRole('list')).not.toBeInTheDocument();
+	});
+});
+
+describe('ConfigSchemaField key rows (setup spec §7.3)', () => {
+	it('links to the signup page and shows a saved secret as Saved', () => {
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({
+					key: 'tmdb_api_key',
+					type: 'string',
+					tier: 'secret',
+					label: 'TMDb key',
+					signup_url: 'https://example.test/k'
+				}),
+				value: '<hidden>'
+			}
+		});
+		const link = screen.getByRole('link', { name: /get a free key/i });
+		expect(link).toHaveAttribute('href', 'https://example.test/k');
+		expect(link).toHaveAttribute('target', '_blank');
+		expect(screen.getByText('Saved')).toBeInTheDocument();
+	});
+
+	it('toggles a secret between hidden and visible', async () => {
+		renderComponent(ConfigSchemaField, {
+			props: { field: f({ key: 'tmdb_api_key', type: 'string', tier: 'secret', label: 'TMDb key' }), value: 'abc' }
+		});
+		const input = screen.getByLabelText('TMDb key') as HTMLInputElement;
+		expect(input.type).toBe('password');
+		await fireEvent.click(screen.getByRole('button', { name: /show hidden value/i }));
+		expect(input.type).toBe('text');
+	});
+
+	it('Remove clears the value and reports it', async () => {
+		const onclear = vi.fn();
+		renderComponent(ConfigSchemaField, {
+			props: {
+				field: f({ key: 'tmdb_api_key', type: 'string', tier: 'secret', label: 'TMDb key' }),
+				value: '<hidden>',
+				onclear
+			}
+		});
+		await fireEvent.click(screen.getByRole('button', { name: /remove/i }));
+		expect(onclear).toHaveBeenCalled();
+		expect(screen.getByText('Will be removed')).toBeInTheDocument();
 	});
 });

@@ -1,17 +1,30 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/stores';
-	import { fetchRoots, fetchDirectory, renameFile, moveFile, deleteFile, createDirectory, fixPermissions } from '$lib/api/files';
+	import {
+		fetchRoots,
+		fetchDirectory,
+		renameFile,
+		moveFile,
+		deleteFile,
+		createDirectory,
+		fixPermissions
+	} from '$lib/api/files';
 	import type { FileRoot, DirectoryListing } from '$lib/api/files';
-	import { formatBytes, formatDateTime } from '$lib/utils/format';
-	import { fetchOrphanFolders, deleteFolder as deleteOrphanFolder, bulkDeleteFolders, cleanupTranscoder } from '$lib/api/maintenance';
+	import { formatBytes } from '$lib/utils/format';
+	import {
+		fetchOrphanFolders,
+		deleteFolder as deleteOrphanFolder,
+		bulkDeleteFolders,
+		cleanupTranscoder
+	} from '$lib/api/maintenance';
 	import type { OrphanFoldersResponse } from '$lib/api/maintenance';
-	import FileIcon from '$lib/components/FileIcon.svelte';
 	import BreadcrumbNav from '$lib/components/BreadcrumbNav.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import FileRow from '$lib/components/FileRow.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import { isAdmin } from '$lib/stores/auth';
+	import { features } from '$lib/features';
 	import SortIndicator from '$lib/components/SortIndicator.svelte';
 	import Glyph from '$lib/components/Glyph.svelte';
 
@@ -57,7 +70,6 @@
 
 	// Transcoder cleanup
 	let transcoderCleanupOpen = $state(false);
-	let transcoderBusy = $state(false);
 
 	let isReadonly = $derived(listing?.readonly === true);
 
@@ -96,19 +108,14 @@
 		const movingNames = sameDir
 			? new Set([...selectedKeys].map((k) => k.split('::')[1].split('/').pop()))
 			: new Set<string | undefined>();
-		return pickerListing.entries.filter(
-			(e) => e.type === 'directory' && !movingNames.has(e.name)
-		);
+		return pickerListing.entries.filter((e) => e.type === 'directory' && !movingNames.has(e.name));
 	});
 
 	// Can we go up from picker?
-	let pickerCanGoUp = $derived(
-		picker.subpath !== '' || picker.root !== current.root
-	);
+	let pickerCanGoUp = $derived(picker.subpath !== '' || picker.root !== current.root);
 
 	let allSelected = $derived(
-		sortedEntries.length > 0 &&
-		sortedEntries.every(e => selectedKeys.has(selectionKey(e.name)))
+		sortedEntries.length > 0 && sortedEntries.every((e) => selectedKeys.has(selectionKey(e.name)))
 	);
 
 	function toggleSort(key: 'name' | 'size' | 'modified') {
@@ -131,6 +138,7 @@
 
 	function toggleSelect(entryName: string) {
 		const key = selectionKey(entryName);
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- copy-on-write; reassigning the $state variable triggers updates
 		const next = new Set(selectedKeys);
 		if (next.has(key)) next.delete(key);
 		else next.add(key);
@@ -142,7 +150,7 @@
 		if (allSelected) {
 			selectedKeys = new Set();
 		} else {
-			selectedKeys = new Set(sortedEntries.map(e => selectionKey(e.name)));
+			selectedKeys = new Set(sortedEntries.map((e) => selectionKey(e.name)));
 		}
 	}
 
@@ -189,7 +197,10 @@
 	async function handleFixPermissions(entryName: string, displayName: string) {
 		try {
 			const result = await fixPermissions(current.root, itemSubpath(entryName));
-			feedback = { type: 'success', message: `Fixed permissions on ${displayName} (${result.fixed} item${result.fixed !== 1 ? 's' : ''})` };
+			feedback = {
+				type: 'success',
+				message: `Fixed permissions on ${displayName} (${result.fixed} item${result.fixed !== 1 ? 's' : ''})`
+			};
 			clearFeedback();
 			await navigate(current.root, current.subpath);
 		} catch (e) {
@@ -255,7 +266,7 @@
 	}
 
 	function pickerDisplayPath(): string {
-		const rootObj = roots.find(r => r.key === picker.root);
+		const rootObj = roots.find((r) => r.key === picker.root);
 		const rootLabel = rootObj?.label ?? picker.root;
 		if (!picker.subpath) return rootLabel;
 		return `${rootLabel}/${picker.subpath}`;
@@ -290,7 +301,10 @@
 		let failed = 0;
 		// Sort by subpath length descending so children are deleted before parents
 		const items = [...selectedKeys]
-			.map(k => { const [r, sp] = k.split('::'); return { root: r, subpath: sp }; })
+			.map((k) => {
+				const [r, sp] = k.split('::');
+				return { root: r, subpath: sp };
+			})
 			.sort((a, b) => b.subpath.length - a.subpath.length);
 		const deletedSubpaths: string[] = [];
 		for (const item of items) {
@@ -356,11 +370,14 @@
 		try {
 			orphanFoldersData = await fetchOrphanFolders();
 			orphanFoldersSelected = new Set();
-		} catch { orphanFoldersData = null; }
+		} catch {
+			orphanFoldersData = null;
+		}
 		orphanFoldersLoading = false;
 	}
 
 	function toggleOrphanFolderSelect(path: string) {
+		// eslint-disable-next-line svelte/prefer-svelte-reactivity -- copy-on-write; reassigning the $state variable triggers updates
 		const next = new Set(orphanFoldersSelected);
 		if (next.has(path)) next.delete(path);
 		else next.add(path);
@@ -399,7 +416,6 @@
 
 	// --- Transcoder cleanup ---
 	async function handleCleanupTranscoder() {
-		transcoderBusy = true;
 		try {
 			const result = await cleanupTranscoder();
 			feedback = {
@@ -411,7 +427,6 @@
 			feedback = { type: 'error', message: e instanceof Error ? e.message : 'Cleanup failed' };
 			clearFeedback();
 		}
-		transcoderBusy = false;
 		transcoderCleanupOpen = false;
 	}
 
@@ -453,59 +468,62 @@
 	<title>ARM - Files</title>
 </svelte:head>
 
-<div class="space-y-4">
-	<h1 class="text-2xl font-bold text-gray-900 dark:text-white">Files</h1>
+<div class="stack">
+	<h1 class="page-title">Files</h1>
 
 	<!-- Warning banner -->
-	<div class="rounded-lg border border-primary/30 bg-primary-light-bg px-4 py-3 text-sm text-primary-dark dark:border-primary/30 dark:bg-primary-light-bg-dark/20 dark:text-primary-text-dark">
-		<span class="font-semibold">Warning:</span> Modify files at your own risk. This will not update database records and will cause issues for any in-progress rips or transcodes.
+	<div class="alert files-page-warning-banner">
+		<span class="alert-title">Warning:</span> Modify files at your own risk. This will not update database records and will
+		cause issues for any in-progress rips or transcodes.
 	</div>
 
 	<!-- Feedback toast -->
 	{#if feedback}
-		<div
-			class="rounded-lg border px-4 py-2 text-sm {feedback.type === 'success'
-				? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-				: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'}"
-		>
+		<div class="alert files-page-feedback {feedback.type === 'success' ? 'alert-success' : 'alert-danger'}">
 			{feedback.message}
 		</div>
 	{/if}
 
 	<!-- Error -->
 	{#if error}
-		<div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+		<div class="alert alert-danger alert-lg">
 			{error}
 		</div>
 	{/if}
 
 	<!-- Root tabs -->
 	{#if roots.length > 0}
-		<div class="border-b border-primary/20 dark:border-primary/20">
-			<nav class="-mb-px flex gap-4" aria-label="File root tabs">
-				{#each roots as root}
-					<button
-						type="button"
-						onclick={() => navigate(root.key, '')}
-							class="whitespace-nowrap border-b-2 px-1 py-2.5 text-sm font-medium transition-colors
-							{root.key === current.root
-								? 'border-primary text-primary-text dark:border-primary-text-dark dark:text-primary-text-dark'
-								: 'border-transparent text-gray-500 hover:border-primary/30 hover:text-gray-700 dark:text-gray-400 dark:hover:border-primary/30 dark:hover:text-gray-300'}"
-					>
-						{root.label}
-					</button>
-				{/each}
-			</nav>
+		<div class="tabs" aria-label="File root tabs">
+			{#each roots as root (root.key)}
+				<button
+					type="button"
+					onclick={() => navigate(root.key, '')}
+					data-selected={root.key === current.root}
+					class="tabs-tab"
+				>
+					{root.label}
+				</button>
+			{/each}
 		</div>
 	{/if}
 
 	<!-- Read-only mount banner -->
 	{#if isReadonly}
-		<div class="flex items-center gap-2 rounded-lg border border-amber-300/50 bg-amber-50/50 px-4 py-2.5 dark:border-amber-700/50 dark:bg-amber-900/20">
-			<svg class="h-4 w-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2">
-				<path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+		<div class="alert alert-warning cluster files-page-readonly-banner">
+			<svg
+				class="h-4 w-4 shrink-0 files-page-readonly-icon"
+				fill="none"
+				stroke="currentColor"
+				viewBox="0 0 24 24"
+				stroke-width="2"
+			>
+				<path
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+				/>
 			</svg>
-			<p class="text-sm text-amber-700 dark:text-amber-400">This directory is on a read-only mount. File operations are disabled.</p>
+			<p>This directory is on a read-only mount. File operations are disabled.</p>
 		</div>
 	{/if}
 
@@ -513,17 +531,22 @@
 	{#if current.root && roots.length > 0}
 		<div class="flex items-center justify-between gap-3">
 			<BreadcrumbNav root={current.root} subpath={current.subpath} {roots} onnavigate={navigate} />
-			<div class="flex shrink-0 items-center gap-1">
+			<div class="cluster shrink-0 files-page-toolbar">
 				<!-- Bulk move (visible when items selected) -->
 				{#if selectedKeys.size > 0 && $isAdmin}
 					<button
 						type="button"
 						onclick={openMoveDialog}
 						disabled={isReadonly}
-						class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-on-primary hover:bg-primary/90 disabled:opacity-50 disabled:pointer-events-none"
+						class="btn btn-primary files-page-bulk-btn"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"
+							/>
 						</svg>
 						Move {selectedKeys.size}
 					</button>
@@ -531,24 +554,34 @@
 						type="button"
 						onclick={() => (bulkDeleteOpen = true)}
 						disabled={isReadonly}
-						class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:pointer-events-none"
+						class="btn files-page-bulk-btn files-page-bulk-btn-danger"
 					>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+							/>
 						</svg>
 						Delete {selectedKeys.size}
 					</button>
 				{/if}
-				{#if $isAdmin}
+				{#if $isAdmin && features.maintenance}
 					<!-- Orphan folders -->
 					<button
 						type="button"
 						onclick={openOrphanFoldersModal}
-						class="rounded-lg p-2 text-gray-500 hover:bg-primary/10 dark:text-gray-400 dark:hover:bg-primary/15"
+						class="btn btn-icon files-page-toolbar-btn"
 						title="Orphan folders"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+							/>
 							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11v4m-2-2h4" />
 						</svg>
 					</button>
@@ -556,11 +589,16 @@
 					<button
 						type="button"
 						onclick={() => (transcoderCleanupOpen = true)}
-						class="rounded-lg p-2 text-gray-500 hover:bg-primary/10 dark:text-gray-400 dark:hover:bg-primary/15"
+						class="btn btn-icon files-page-toolbar-btn"
 						title="Clean up transcoder jobs"
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"
+							/>
 						</svg>
 					</button>
 				{/if}
@@ -570,11 +608,16 @@
 						type="button"
 						onclick={startNewFolder}
 						disabled={isReadonly}
-						class="rounded-lg p-2 text-gray-500 hover:bg-primary/10 dark:text-gray-400 dark:hover:bg-primary/15 disabled:opacity-30 disabled:pointer-events-none"
+						class="btn btn-icon files-page-toolbar-btn"
 						title={isReadonly ? 'Read-only mount' : 'New folder'}
 					>
 						<svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="2"
+								d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+							/>
 						</svg>
 					</button>
 				{/if}
@@ -583,11 +626,16 @@
 					type="button"
 					onclick={() => navigate(current.root, current.subpath)}
 					disabled={loading}
-					class="rounded-lg p-2 text-gray-500 hover:bg-primary/10 dark:text-gray-400 dark:hover:bg-primary/15 disabled:opacity-50"
+					class="btn btn-icon files-page-toolbar-btn"
 					title="Refresh"
 				>
-					<svg class="h-5 w-5" class:animate-spin={loading} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+					<svg class="h-5 w-5 {loading ? 'spin' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="2"
+							d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+						/>
 					</svg>
 				</button>
 			</div>
@@ -603,20 +651,20 @@
 		transitionKey={`files-${current.root}-${current.subpath}`}
 	>
 		{#snippet loadingSlot()}
-			<div class="overflow-hidden rounded-lg border border-primary/20 bg-surface dark:border-primary/20 dark:bg-surface-dark">
-				<table class="w-full">
+			<div class="files-page-listing">
+				<table class="table">
 					<thead>
-						<tr class="border-b border-gray-200 text-left text-xs font-medium uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
-							<th class="w-10 px-3 py-2"></th>
-							<th class="px-3 py-2">Name</th>
-							<th class="hidden px-3 py-2 lg:table-cell">Permissions</th>
-							<th class="px-3 py-2 text-right">Size</th>
-							<th class="hidden px-3 py-2 md:table-cell">Modified</th>
-							<th class="px-3 py-2 text-right">Actions</th>
+						<tr>
+							<th class="table-header w-10"></th>
+							<th class="table-header">Name</th>
+							<th class="table-header files-page-cell-lg">Permissions</th>
+							<th class="table-header table-right">Size</th>
+							<th class="table-header files-page-cell-md">Modified</th>
+							<th class="table-header table-right">Actions</th>
 						</tr>
 					</thead>
 					<tbody>
-						{#each Array(8) as _}
+						{#each Array(8) as _, i (i)}
 							<FileRow />
 						{/each}
 					</tbody>
@@ -624,12 +672,12 @@
 			</div>
 		{/snippet}
 		{#snippet ready(lst)}
-			<div class="overflow-hidden rounded-lg border border-primary/20 bg-surface dark:border-primary/20 dark:bg-surface-dark">
+			<div class="files-page-listing">
 				{#if lst.parent_subpath != null}
 					<button
 						type="button"
 						onclick={() => navigate(current.root, lst.parent_subpath!)}
-						class="flex w-full items-center gap-2 border-b border-gray-100 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700/50 dark:text-gray-400 dark:hover:bg-gray-800/50"
+						class="flex w-full items-center gap-2 files-page-nav-row"
 					>
 						<span class="w-10"></span>
 						<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -641,66 +689,72 @@
 
 				<!-- Inline new folder row -->
 				{#if creatingFolder}
-					<div class="flex items-center gap-2 border-b border-gray-100 bg-primary/5 px-3 py-2 dark:border-gray-700/50 dark:bg-primary/10">
+					<div class="flex items-center gap-2 files-page-nav-row files-page-new-folder-row">
 						<span class="w-10"></span>
-						<svg class="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-							<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+						<svg class="h-5 w-5 shrink-0 files-page-folder-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+							<path
+								stroke-linecap="round"
+								stroke-linejoin="round"
+								stroke-width="1.5"
+								d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"
+							/>
 						</svg>
 						<input
 							type="text"
 							bind:value={newFolderName}
 							onkeydown={handleNewFolderKeydown}
 							placeholder="Folder name"
-							class="flex-1 rounded border border-gray-300 bg-white px-2 py-1 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+							class="field-control flex-1 files-page-new-folder-input"
 						/>
-						<button type="button" onclick={confirmNewFolder} class="rounded p-1 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20" title="Create">
+						<button
+							type="button"
+							onclick={confirmNewFolder}
+							class="btn btn-icon files-page-new-folder-confirm"
+							title="Create"
+						>
 							<Glyph name="check" />
 						</button>
-						<button type="button" onclick={cancelNewFolder} class="rounded p-1 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700" title="Cancel">
+						<button type="button" onclick={cancelNewFolder} class="btn btn-icon" title="Cancel">
 							<Glyph name="x" />
 						</button>
 					</div>
 				{/if}
 
 				{#if listing?.unavailable}
-					<div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-						This root is not mounted on the server.
-					</div>
+					<div class="files-page-empty">This root is not mounted on the server.</div>
 				{:else if sortedEntries.length === 0 && !creatingFolder}
-					<div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-						This directory is empty
-					</div>
+					<div class="files-page-empty">This directory is empty</div>
 				{:else if sortedEntries.length > 0}
-					<table class="w-full">
+					<table class="table">
 						<thead>
-							<tr class="border-b border-gray-200 text-left text-xs font-medium uppercase text-gray-500 dark:border-gray-700 dark:text-gray-400">
-								<th class="w-10 px-3 py-2">
+							<tr>
+								<th class="table-header w-10">
 									{#if $isAdmin}
 										<input
 											type="checkbox"
 											checked={allSelected}
 											onchange={toggleSelectAll}
-											class="h-4 w-4 rounded border-gray-300 text-primary accent-primary dark:border-gray-600"
+											class="files-page-select-all"
 										/>
 									{/if}
 								</th>
-								<th class="px-3 py-2">
-									<button type="button" onclick={() => toggleSort('name')} class="hover:text-gray-700 dark:hover:text-gray-300">
+								<th class="table-header">
+									<button type="button" onclick={() => toggleSort('name')} class="files-page-sort-btn">
 										Name {@render sortIcon('name')}
 									</button>
 								</th>
-								<th class="hidden px-3 py-2 lg:table-cell">Permissions</th>
-								<th class="px-3 py-2 text-right">
-									<button type="button" onclick={() => toggleSort('size')} class="hover:text-gray-700 dark:hover:text-gray-300">
+								<th class="table-header files-page-cell-lg">Permissions</th>
+								<th class="table-header table-right">
+									<button type="button" onclick={() => toggleSort('size')} class="files-page-sort-btn">
 										Size {@render sortIcon('size')}
 									</button>
 								</th>
-								<th class="hidden px-3 py-2 md:table-cell">
-									<button type="button" onclick={() => toggleSort('modified')} class="hover:text-gray-700 dark:hover:text-gray-300">
+								<th class="table-header files-page-cell-md">
+									<button type="button" onclick={() => toggleSort('modified')} class="files-page-sort-btn">
 										Modified {@render sortIcon('modified')}
 									</button>
 								</th>
-								<th class="px-3 py-2 text-right">Actions</th>
+								<th class="table-header table-right">Actions</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -724,8 +778,8 @@
 			</div>
 		{/snippet}
 		{#snippet empty()}
-			<div class="rounded-lg border border-primary/20 bg-surface p-8 text-center dark:border-primary/20 dark:bg-surface-dark">
-				<p class="text-gray-500 dark:text-gray-400">No media directories configured</p>
+			<div class="panel files-page-empty-panel">
+				<p class="files-page-empty-panel-text">No media directories configured</p>
 			</div>
 		{/snippet}
 	</LoadState>
@@ -746,7 +800,9 @@
 <ConfirmDialog
 	open={bulkDeleteOpen}
 	title="Delete {selectedKeys.size} item{selectedKeys.size !== 1 ? 's' : ''}"
-	message="This will permanently delete {selectedKeys.size} selected item{selectedKeys.size !== 1 ? 's' : ''}, including all contents of any folders. This cannot be undone."
+	message="This will permanently delete {selectedKeys.size} selected item{selectedKeys.size !== 1
+		? 's'
+		: ''}, including all contents of any folders. This cannot be undone."
 	confirmLabel="Delete All"
 	variant="danger"
 	onconfirm={confirmBulkDelete}
@@ -754,38 +810,42 @@
 />
 
 <!-- Transcoder cleanup confirmation -->
-<ConfirmDialog
-	open={transcoderCleanupOpen}
-	title="Clean Up Transcoder"
-	message="Delete all completed and failed transcoder jobs from the transcoder database?"
-	confirmLabel="Clean Up"
-	variant="danger"
-	onconfirm={handleCleanupTranscoder}
-	oncancel={() => (transcoderCleanupOpen = false)}
-/>
+{#if features.maintenance}
+	<ConfirmDialog
+		open={transcoderCleanupOpen}
+		title="Clean Up Transcoder"
+		message="Delete all completed and failed transcoder jobs from the transcoder database?"
+		confirmLabel="Clean Up"
+		variant="danger"
+		onconfirm={handleCleanupTranscoder}
+		oncancel={() => (transcoderCleanupOpen = false)}
+	/>
+{/if}
 
 <!-- Orphan folders modal -->
-{#if orphanFoldersOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center">
+{#if features.maintenance && orphanFoldersOpen}
+	<div class="modal">
 		<button
 			type="button"
-			class="absolute inset-0 bg-black/50"
+			class="modal-backdrop files-page-modal-backdrop"
 			aria-label="Close dialog"
 			onclick={() => (orphanFoldersOpen = false)}
 		></button>
-		<div class="relative z-10 flex w-full max-w-lg flex-col rounded-lg bg-surface shadow-xl dark:bg-surface-dark" style="max-height: 80vh;">
+		<div class="modal-panel files-page-orphan-panel">
 			<!-- Header -->
-			<div class="shrink-0 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-				<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Orphan Folders</h3>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Folders not associated with any job</p>
+			<div class="shrink-0 files-page-modal-header">
+				<h3 class="modal-title">Orphan Folders</h3>
+				<p class="files-page-modal-subtitle">Folders not associated with any job</p>
 			</div>
 
 			<!-- Feedback -->
 			{#if orphanFoldersFeedback}
-				<div class="shrink-0 border-b border-gray-100 px-6 py-2 dark:border-gray-700/50">
-					<div class="rounded-lg border px-3 py-1.5 text-sm {orphanFoldersFeedback.type === 'success'
-						? 'border-green-200 bg-green-50 text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-400'
-						: 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'}">
+				<div class="shrink-0 files-page-modal-feedback-row">
+					<div
+						class="alert files-page-orphan-feedback {orphanFoldersFeedback.type === 'success'
+							? 'alert-success'
+							: 'alert-danger'}"
+					>
 						{orphanFoldersFeedback.message}
 					</div>
 				</div>
@@ -795,61 +855,69 @@
 			<div class="min-h-0 flex-1 overflow-y-auto">
 				{#if orphanFoldersLoading}
 					<div class="flex items-center justify-center p-8">
-						<svg class="mr-2 h-5 w-5 animate-spin text-gray-400" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+						<svg class="mr-2 h-5 w-5 spin files-page-spinner" viewBox="0 0 24 24">
+							<circle class="spinner-track" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
+							<path class="spinner-fill" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 						</svg>
-						<span class="text-sm text-gray-500 dark:text-gray-400">Loading...</span>
+						<span class="files-page-loading-text">Loading...</span>
 					</div>
 				{:else if orphanFoldersData && orphanFoldersData.folders.length > 0}
 					{#each orphanFoldersData.folders as folder (folder.path)}
-						<div class="flex items-center gap-3 border-b border-gray-100 px-6 py-2.5 dark:border-gray-700/50">
+						<div class="list-row files-page-orphan-row">
 							<input
 								type="checkbox"
 								checked={orphanFoldersSelected.has(folder.path)}
 								onchange={() => toggleOrphanFolderSelect(folder.path)}
 								disabled={orphanFoldersBusy}
-								class="h-4 w-4 rounded border-gray-300 text-primary accent-primary dark:border-gray-600"
+								class="files-page-select-all"
 							/>
-							<svg class="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+							<svg
+								class="h-5 w-5 shrink-0 files-page-folder-icon"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1.5"
+									d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+								/>
 							</svg>
 							<div class="min-w-0 flex-1">
-								<div class="truncate text-sm font-medium text-gray-900 dark:text-white">{folder.name}</div>
-								<div class="text-xs text-gray-500 dark:text-gray-400">{formatBytes(folder.size_bytes)}</div>
+								<div class="truncate files-page-orphan-name">{folder.name}</div>
+								<div class="files-page-orphan-size">{formatBytes(folder.size_bytes)}</div>
 							</div>
-							<span class="rounded-full px-2 py-0.5 text-xs font-medium
-								{folder.category === 'raw'
-									? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-									: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}">
+							<span class="badge files-page-category-badge" data-category={folder.category}>
 								{folder.category}
 							</span>
 							<button
 								type="button"
 								onclick={() => handleDeleteOrphanFolder(folder.path)}
 								disabled={orphanFoldersBusy}
-								class="rounded p-1 text-red-500 hover:bg-red-50 disabled:opacity-50 dark:hover:bg-red-900/20"
+								class="btn btn-icon files-page-orphan-delete"
 								title="Delete folder"
 							>
 								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+									/>
 								</svg>
 							</button>
 						</div>
 					{/each}
 				{:else if orphanFoldersData}
-					<div class="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-						No orphan folders found
-					</div>
+					<div class="files-page-empty">No orphan folders found</div>
 				{:else}
-					<div class="p-8 text-center text-sm text-red-500 dark:text-red-400">
-						Failed to load orphan folders
-					</div>
+					<div class="files-page-empty files-page-empty-error">Failed to load orphan folders</div>
 				{/if}
 			</div>
 
 			<!-- Footer -->
-			<div class="shrink-0 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+			<div class="shrink-0 files-page-modal-footer">
 				<div class="flex items-center justify-between">
 					<div>
 						{#if orphanFoldersSelected.size > 0}
@@ -857,22 +925,21 @@
 								type="button"
 								onclick={handleBulkDeleteOrphanFolders}
 								disabled={orphanFoldersBusy}
-								class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-50"
+								class="btn files-page-bulk-btn files-page-bulk-btn-danger"
 							>
 								<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+									<path
+										stroke-linecap="round"
+										stroke-linejoin="round"
+										stroke-width="2"
+										d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+									/>
 								</svg>
 								Delete {orphanFoldersSelected.size} selected
 							</button>
 						{/if}
 					</div>
-					<button
-						type="button"
-						onclick={() => (orphanFoldersOpen = false)}
-						class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-					>
-						Close
-					</button>
+					<button type="button" onclick={() => (orphanFoldersOpen = false)} class="btn"> Close </button>
 				</div>
 			</div>
 		</div>
@@ -881,33 +948,36 @@
 
 <!-- Bulk move dialog — browsable directory picker -->
 {#if moveDialogOpen}
-	<div class="fixed inset-0 z-50 flex items-center justify-center">
+	<div class="modal">
 		<button
 			type="button"
-			class="absolute inset-0 bg-black/50"
+			class="modal-backdrop files-page-modal-backdrop"
 			aria-label="Close dialog"
 			onclick={closeMoveDialog}
 		></button>
-		<div class="relative z-10 flex w-full max-w-lg flex-col rounded-lg bg-surface shadow-xl dark:bg-surface-dark" style="max-height: 80vh;">
+		<div class="modal-panel files-page-orphan-panel">
 			<!-- Header -->
-			<div class="shrink-0 border-b border-gray-200 px-6 py-4 dark:border-gray-700">
-				<h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+			<div class="shrink-0 files-page-modal-header">
+				<h3 class="modal-title">
 					Move {selectedKeys.size} item{selectedKeys.size !== 1 ? 's' : ''}
 				</h3>
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Browse to the destination folder
-				</p>
+				<p class="files-page-modal-subtitle">Browse to the destination folder</p>
 			</div>
 
 			<!-- Current picker location -->
-			<div class="shrink-0 border-b border-gray-100 bg-gray-50 px-6 py-2 dark:border-gray-700/50 dark:bg-gray-800/50">
-				<div class="flex items-center gap-2 text-sm">
-					<svg class="h-4 w-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-						<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+			<div class="shrink-0 files-page-picker-location">
+				<div class="flex items-center gap-2 files-page-picker-location-text">
+					<svg class="h-4 w-4 shrink-0 files-page-folder-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path
+							stroke-linecap="round"
+							stroke-linejoin="round"
+							stroke-width="1.5"
+							d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+						/>
 					</svg>
-					<span class="font-medium text-gray-900 dark:text-white">{pickerDisplayPath()}</span>
+					<span class="files-page-picker-path">{pickerDisplayPath()}</span>
 					{#if picker.root === current.root && picker.subpath === current.subpath}
-						<span class="rounded bg-gray-200 px-1.5 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-400">current</span>
+						<span class="badge files-page-current-badge">current</span>
 					{/if}
 				</div>
 			</div>
@@ -916,19 +986,15 @@
 			<div class="min-h-0 flex-1 overflow-y-auto">
 				{#if pickerLoading}
 					<div class="flex items-center justify-center p-8">
-						<svg class="mr-2 h-5 w-5 animate-spin text-gray-400" viewBox="0 0 24 24">
-							<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
-							<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+						<svg class="mr-2 h-5 w-5 spin files-page-spinner" viewBox="0 0 24 24">
+							<circle class="spinner-track" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none" />
+							<path class="spinner-fill" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
 						</svg>
 					</div>
 				{:else}
 					<!-- Go up -->
 					{#if pickerCanGoUp}
-						<button
-							type="button"
-							onclick={pickerGoUp}
-							class="flex w-full items-center gap-3 border-b border-gray-100 px-6 py-2.5 text-sm text-gray-600 hover:bg-gray-50 dark:border-gray-700/50 dark:text-gray-400 dark:hover:bg-gray-800/50"
-						>
+						<button type="button" onclick={pickerGoUp} class="flex w-full items-center gap-3 files-page-picker-row">
 							<svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 17l-5-5m0 0l5-5m-5 5h12" />
 							</svg>
@@ -937,43 +1003,48 @@
 					{/if}
 
 					{#if pickerFolders.length === 0 && !pickerCanGoUp}
-						<div class="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
-							No subfolders
-						</div>
+						<div class="files-page-picker-empty">No subfolders</div>
 					{/if}
 
 					{#each pickerFolders as folder (folder.name)}
 						<button
 							type="button"
-							onclick={() => pickerNavigate(picker.root, picker.subpath ? `${picker.subpath}/${folder.name}` : folder.name)}
-							class="flex w-full items-center gap-3 border-b border-gray-100 px-6 py-2.5 text-sm text-gray-900 hover:bg-primary/5 dark:border-gray-700/50 dark:text-white dark:hover:bg-primary/10"
+							onclick={() =>
+								pickerNavigate(picker.root, picker.subpath ? `${picker.subpath}/${folder.name}` : folder.name)}
+							class="flex w-full items-center gap-3 files-page-picker-row files-page-picker-row-folder"
 						>
-							<svg class="h-5 w-5 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+							<svg
+								class="h-5 w-5 shrink-0 files-page-folder-icon"
+								fill="none"
+								stroke="currentColor"
+								viewBox="0 0 24 24"
+							>
+								<path
+									stroke-linecap="round"
+									stroke-linejoin="round"
+									stroke-width="1.5"
+									d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"
+								/>
 							</svg>
 							{folder.name}
-							<Glyph name="chevron-right" class="ml-auto h-4 w-4 text-gray-400" />
+							<Glyph name="chevron-right" class="ml-auto h-4 w-4 files-page-chevron" />
 						</button>
 					{/each}
 				{/if}
 			</div>
 
 			<!-- Footer -->
-			<div class="shrink-0 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+			<div class="shrink-0 files-page-modal-footer">
 				<div class="flex justify-end gap-3">
-					<button
-						type="button"
-						onclick={closeMoveDialog}
-						class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-					>
-						Cancel
-					</button>
+					<button type="button" onclick={closeMoveDialog} class="btn"> Cancel </button>
 					<button
 						type="button"
 						onclick={confirmBulkMove}
 						disabled={picker.root === current.root && picker.subpath === current.subpath}
-						class="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary/90 disabled:opacity-50"
-						title={picker.root === current.root && picker.subpath === current.subpath ? 'Navigate to a different folder first' : ''}
+						class="btn btn-primary"
+						title={picker.root === current.root && picker.subpath === current.subpath
+							? 'Navigate to a different folder first'
+							: ''}
 					>
 						Move here
 					</button>
@@ -982,3 +1053,274 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	/* the original was bg-primary-light-bg/text-primary-dark (blue-100 /
+	   blue-800, dark: 20% blue-900 / blue-400). Those legacy alias tokens are
+	   gone (Task 13), so the banner sits on the nearest live roles: tint-2 is
+	   a hair lighter than blue-100 and primary-text (blue-700 light /
+	   blue-400 dark) a step lighter than blue-800; both mode-flip on their
+	   own, which also retires the global dark-mode override. Named collapse. */
+	/* original was px-4 py-3 (1rem/0.75rem), not .alert's own 0.5rem/0.75rem default */
+	.files-page-warning-banner {
+		padding: 0.75rem 1rem;
+		background: var(--color-primary-tint-2);
+		color: var(--color-primary-text);
+	}
+	/* original was px-4 py-2.5 (1rem/0.625rem), not .alert's own 0.5rem/0.75rem default */
+	.files-page-readonly-banner {
+		padding: 0.625rem 1rem;
+	}
+	/* original was px-4 py-2 (1rem/0.5rem) */
+	.files-page-feedback {
+		padding: 0.5rem 1rem;
+	}
+	/* original was px-3 py-1.5 (0.75rem/0.375rem) */
+	.files-page-orphan-feedback {
+		padding: 0.375rem 0.75rem;
+	}
+	.files-page-readonly-icon {
+		color: var(--color-warning);
+	}
+	.files-page-toolbar {
+		gap: 0.25rem;
+	}
+	/* original was rounded-lg p-2 (0.5rem all around), not .btn-icon's own
+	   0.375rem default - a real ~4px-per-side layout regression */
+	.files-page-toolbar-btn {
+		padding: 0.5rem;
+	}
+	/* replaces the banned inline `hidden lg:table-cell`/`hidden
+	   md:table-cell` (table/table-row/table-cell are Tailwind
+	   display-utility names, banned outright by the lint per Task 11 fix
+	   round 3 - only the table block's own classes may set that display
+	   value) */
+	.files-page-cell-lg {
+		display: none;
+	}
+	@media (min-width: 1024px) {
+		.files-page-cell-lg {
+			display: table-cell;
+		}
+	}
+	.files-page-cell-md {
+		display: none;
+	}
+	@media (min-width: 768px) {
+		.files-page-cell-md {
+			display: table-cell;
+		}
+	}
+	/* original bulk-action buttons were px-3 py-1.5 text-xs (0.75rem/1rem),
+	   smaller than .btn's own default 1rem/0.5rem/text-sm - restated to
+	   match; the icon+label gap (gap-1.5) is close enough to .btn's own
+	   0.375rem default that no override is needed there */
+	.files-page-bulk-btn {
+		padding: 0.375rem 0.75rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+	}
+	.files-page-bulk-btn-danger {
+		border: 0;
+		background: var(--color-danger);
+		color: var(--color-on-primary);
+	}
+	/* darkens on hover like the original's bg-red-600 -> hover:bg-red-700;
+	   no darker danger token exists, so filter substitutes for a literal
+	   colour (the lint bans raw colour keywords, even inside color-mix) */
+	.files-page-bulk-btn-danger:hover {
+		filter: brightness(0.9);
+	}
+	.files-page-listing {
+		overflow: hidden;
+		border: 1px solid var(--color-border);
+		border-radius: var(--radius-lg);
+		background: var(--color-surface);
+	}
+	.files-page-nav-row {
+		border-bottom: 1px solid var(--color-border);
+		padding: 0.5rem 0.75rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-secondary);
+	}
+	.files-page-nav-row:hover {
+		background: var(--color-primary-tint-1);
+	}
+	.files-page-new-folder-row {
+		background: var(--color-primary-tint-1);
+	}
+	.files-page-new-folder-input {
+		width: auto;
+		min-height: auto;
+		padding: 0.25rem 0.5rem;
+	}
+	.files-page-folder-icon {
+		color: var(--color-warning);
+	}
+	.files-page-new-folder-confirm {
+		color: var(--color-success);
+	}
+	.files-page-new-folder-confirm:hover {
+		background: var(--color-success-soft);
+		color: var(--color-success);
+	}
+	.files-page-empty {
+		padding: 2rem;
+		text-align: center;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.files-page-empty-panel {
+		padding: 2rem;
+		text-align: center;
+	}
+	.files-page-empty-panel-text {
+		color: var(--color-text-muted);
+	}
+	.files-page-select-all {
+		height: 1rem;
+		width: 1rem;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--color-border-strong);
+		accent-color: var(--color-primary);
+	}
+	.files-page-sort-btn {
+		color: inherit;
+	}
+	.files-page-sort-btn:hover {
+		color: var(--color-text-secondary);
+	}
+	.files-page-modal-backdrop {
+		position: absolute;
+		inset: 0;
+	}
+	.files-page-orphan-panel {
+		display: flex;
+		width: 100%;
+		max-width: 32rem;
+		max-height: 80vh;
+		flex-direction: column;
+		padding: 0;
+	}
+	.files-page-modal-header {
+		border-bottom: 1px solid var(--color-border);
+		padding: 1rem 1.5rem;
+	}
+	.files-page-modal-subtitle {
+		margin-top: 0.25rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.files-page-modal-feedback-row {
+		border-bottom: 1px solid var(--color-border);
+		padding: 0.5rem 1.5rem;
+	}
+	.files-page-spinner {
+		color: var(--color-text-faint);
+	}
+	.files-page-loading-text {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	/* the original row was a plain flex row (no hover/pointer affordance -
+	   only its checkbox/delete button are interactive); list-row's own
+	   cursor:pointer/hover-tint are for a clickable row and don't apply here */
+	.files-page-orphan-row {
+		grid-template-columns: auto auto 1fr auto auto;
+		gap: 0.75rem;
+		padding: 0.625rem 1.5rem;
+		cursor: default;
+	}
+	.files-page-orphan-row:hover {
+		background: transparent;
+	}
+	.files-page-orphan-name {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		font-weight: 500;
+		color: var(--color-text);
+	}
+	.files-page-orphan-size {
+		font-size: 0.75rem;
+		line-height: 1rem;
+		color: var(--color-text-muted);
+	}
+	/* the original category pill used two literal hues with no shared
+	   badge look (rounded-full px-2 py-0.5 text-xs font-medium); nearest
+	   tones are warning (raw) and success (completed) */
+	.files-page-category-badge {
+		border-radius: 9999px;
+	}
+	.files-page-category-badge[data-category='raw'] {
+		background: var(--color-warning-soft);
+		color: var(--color-on-warning-soft);
+	}
+	.files-page-category-badge[data-category='completed'] {
+		background: var(--color-success-soft);
+		color: var(--color-on-success-soft);
+	}
+	.files-page-orphan-delete {
+		color: var(--color-danger);
+	}
+	.files-page-orphan-delete:hover {
+		background: var(--color-danger-soft);
+		color: var(--color-danger);
+	}
+	.files-page-modal-footer {
+		border-top: 1px solid var(--color-border);
+		padding: 1rem 1.5rem;
+	}
+	.files-page-picker-location {
+		border-bottom: 1px solid var(--color-border);
+		background: var(--color-page);
+		padding: 0.5rem 1.5rem;
+	}
+	.files-page-picker-location-text {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+	}
+	.files-page-picker-path {
+		font-weight: 500;
+		color: var(--color-text);
+	}
+	/* original was a plain lowercase gray-200/gray-600 tag, not .badge's
+	   primary-tinted pill nor .badge-sm's uppercase transform - no neutral
+	   token exists (spec 5.1), so this keeps .badge's shape (pill, weight,
+	   size) but restates the case and a text-sm-scale padding */
+	.files-page-current-badge {
+		border-radius: var(--radius-sm);
+		padding: 0.125rem 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		text-transform: none;
+		letter-spacing: normal;
+	}
+	.files-page-picker-row {
+		border-bottom: 1px solid var(--color-border);
+		padding: 0.625rem 1.5rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-secondary);
+	}
+	.files-page-picker-row:hover {
+		background: var(--color-primary-tint-1);
+	}
+	.files-page-picker-row-folder {
+		color: var(--color-text);
+	}
+	.files-page-picker-empty {
+		padding: 1.5rem;
+		text-align: center;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	/* :global: forwarded through Glyph's class prop */
+	:global(.files-page-chevron) {
+		color: var(--color-text-faint);
+	}
+</style>
