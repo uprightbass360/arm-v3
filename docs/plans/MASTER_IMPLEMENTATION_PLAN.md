@@ -478,6 +478,8 @@ Key realizations from this graph:
 
 ---
 
+- **Defect register for the open PR stack:** [DEFECT_REGISTER.md](DEFECT_REGISTER.md) — per-PR defects (D-xxx) found reviewing #61..#103 against `integration/all-prs-3`, with tip checks and move-down verdicts.
+
 ## Open risks to this plan
 
 - **OQ-1 (queue mechanism) stays deferred.** The plan assumes DB-as-queue throughout. If a bottleneck appears during Phase 7 testing, the state machine is designed to swap in Redis/RQ/NATS without reshaping services — but a pivot would still insert a Phase 7.5.
