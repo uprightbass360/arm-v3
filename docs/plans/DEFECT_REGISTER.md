@@ -2750,3 +2750,27 @@ b7afa298 | fix(devtools): seed-test-data writes per-job logs as the service user
 cea3e01e | fix(metadata): bound the TMDb external_ids lookup by the provider timeout
 ```
 
+## Verification on hifi-server (2026-10-03)
+
+Deployed `integration/all-prs-4` @ b8e15ff4 on hifi-server (quark) with `setup-dev.sh up` (DB backed up). No optical drive is enrolled there; disc paths used the ISO library (`/nfs/files/Video/Import/ingress`). Every row carries a `verified/*` label on arm-v3 with the evidence; the runtime results are summarised here. Rows not listed were either static (S4, docs/dead code: the deployed tree is content-identical to the sweep's tip, so the tip check stands), fixed-later (absent from the deployed union by construction), or hardware-gated (labelled `verified/needs-disc`).
+
+| Row | Issue | Verdict | Evidence |
+|---|---|---|---|
+| D-096 | #98 | confirmed | `PATCH /api/config {"thediscdb_refresh_days": null}` -> 500; backend log `asyncpg NotNullViolationError ... thediscdb_refresh_days`; column unchanged (7). |
+| D-044 | #46 | confirmed | `chmod 000` file in `/home/upb/arm/scripts` (mounted `/scripts`) -> `GET /api/notifications/scripts` 500; 200 again after removing it. |
+| D-038 | #40 | confirmed (S2) | bash channel with secret input `SMTP_PASS=s3cretXYZ`; `PATCH /api/notifications/channels/{id}` with `config.script="does-not-exist.sh"` and `inputs.SMTP_PASS="<hidden>"` -> 200, `secret_keys=[]`, and both the PATCH response and a following GET return `inputs.SMTP_PASS: s3cretXYZ` in clear. |
+| D-039 | #41 | confirmed | `POST /api/notifications/scripts/preview {run:true}` with the same secret: response `inputs` masked (`<hidden>`) but `result.stdout="pass=s3cretXYZ"`, `result.stderr="err=s3cretXYZ"`, and `result.error` repeats the stderr line. |
+| D-040 | #42 | confirmed | preview `run:true` of `sleep 8` with `timeout_seconds=1` -> `script timed out after 1s`; a `/proc` scan inside `armv3-backend` immediately after shows `sleep 8` (pid 1296) still alive. |
+| D-041 | #43 | confirmed, worse than filed | hook `sleep 8 &; exit 0` with `timeout_seconds=1` -> **HTTP 500**, backend traceback `bash_runner.py:80 run_script -> raise ProcessLookupError()` (bash already exited; the kill targets a gone pid). The register predicted a timeout *result*; on the deployed tip it is an unhandled 500. |
+| D-042 | #44 | confirmed | declared input `TO="{job_title:>300000}"` -> preview `run:true` HTTP 500, backend log `OSError: [Errno 7] Argument list too long`. |
+| D-003 | #5 | confirmed (S1, live proof) | `fingerprint_records([("../"*N + "tmp/claude-1000/d003/victim.txt", 3), ...])` against the real `arm_ripper.scan.matrix256_fp` truncated the sentinel file outside the temp root from 28 to 3 bytes; the module has no containment check (`relative_to`/`is_relative_to` absent). |
+| D-001 | #3 | confirmed (static, deployed tree) | `install.sh` `emit_ripper_block()` body contains no `ARM_DRIVE_ID` while `services/ripper/arm_ripper/config.py` declares `ARM_DRIVE_ID: str` (required). Not runnable on hifi (deployed through setup-dev, not install.sh); the mismatch is unambiguous. |
+| D-072 | #74 | confirmed (static, deployed tree) | `install.sh` has 0 references to `ARM_TRANSCODE_IMAGE_(QSV|VAAPI|NVENC)`; `docker-compose.yml.example` has 5. |
+| D-034 | #36 | backend half confirmed | `PUT /api/session-routes {media_type: movie, disc_type: null, session_id: ses_builtin_iso_dump}` -> 200 (route accepted across media types). UI half (select shows nothing) needs the browser. Route removed again afterwards. |
+| D-100 | #102 | fixed at tip (confirmed via ISO) | `arm-ripper:latest` on hifi has `/usr/bin/7zz`; the Half Baked ISO rip (job_01M409E58N073P5WZSVDT5HRM8) scanned through it: ripper log `matrix256 view=udf-7z files=81`, then `scan complete`, job created as bluray and ripping. Fix lives in #105. |
+| D-091 | #93 | fixed at tip (confirmed via ISO) | same rip: the UDF-only image yielded a BDMT name (`bdmt device=/source/oh-halfbaked1998.iso name=...`) via the 7-Zip reader instead of soft-failing to None; `pydvdid compute failed` is logged as expected for a BD. Fix lives in #105 (89a5cf53 + 2837d671). |
+| D-101 | #103 | confirmed | hardlink `Half: Baked.iso` -> `POST /api/iso/rips` 500 `could not start the ISO ripper: APIError ... invalid volume specification: '/nfs/.../Half: Baked.iso:/source/Half: Baked.iso:ro'`; the virtual drive row was retired cleanly. (First attempt with MirrorMask was refused 422 up front because that ISO is an incomplete download, 13.8 of 32.0 GB: incidental library finding.) |
+| D-060 | #62 | confirmed (static) | seeder returns before the back-fill on a fresh install; hifi's DB is not fresh. |
+| D-117 | #119 | resolved, closed | linear restack of 2026-10-03; all-prs-4 equals top-of-stack + #103. |
+
+Incidental findings: the MirrorMask ISO in the library is an incomplete download (13.8 of 32.0 GB) and is refused up front with a 422, which also means D-101 needed a complete image to reach the spawn. The Half Baked ISO rip (job_01M409E58N073P5WZSVDT5HRM8) exercised the 7-Zip UDF reader end to end.
