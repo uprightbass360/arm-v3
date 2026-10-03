@@ -2,7 +2,7 @@
 
 Date: 2026-10-03. Tip checked against: `origin/integration/all-prs-3` @ `71129cd9bf4c646547d0e6f7879b52aa1d3b8c58` (uprightbass360/arm-v3). Scope: the 26 stacked PRs #61..#102 plus off-stack #82 and #103 on shitwolfymakes/automatic-ripping-machine, reviewed bottom-up with each PR diffed against its own base (three-dot). Every row went through a tip check; rows fixed only by a tip commit that belongs to no open PR are recorded as **open** (see D-row on tip-only commits).
 
-Totals: 118 rows — severity S1 3, S2 6, S3 40, S4 69; status open 93, fixed-later 18, untested-needs-hardware 7. Status `untested-needs-hardware` marks a defect that is established from the code but whose live symptom needs a drive, GPU or Docker drill to confirm.
+Totals: 118 rows — severity S1 3, S2 6, S3 40, S4 69; status open 93, fixed-later 9, hoisted 9, untested-needs-hardware 7. Status `untested-needs-hardware` marks a defect that is established from the code but whose live symptom needs a drive, GPU or Docker drill to confirm.
 
 Conventions: ids `D-xxx` mirror the Automation Gap Register's `G-xx`. `Fixed in` names the lowest stack PR whose branch contains the fixing commit (computed with `git merge-base --is-ancestor` in stack order), or `tip-only <sha>` when the fix exists only on the integration branch. `Origin PR` is the PR whose diff introduces the defect; `stack` marks a stack-level row.
 
@@ -53,7 +53,7 @@ Hygiene checks requested up front (no defect rows):
 | ID | Issue | Sev | Status | Area | Origin PR | Fixed in | Title |
 |---|---|---|---|---|---|---|---|
 | D-001 | [#3](https://github.com/uprightbass360/arm-v3/issues/3) | S1 | open | devtools | #61 | — | install.sh (the canonical installer) still generates rippers without `ARM_DRIVE_ID`, which #61 made a required setting — every installer-deployed ripper crash-loops at Settings() and nothing can rip. |
-| D-002 | [#4](https://github.com/uprightbass360/arm-v3/issues/4) | S1 | fixed-later | backend | #64 | #65 | `/api/ripper/register` returns a body without `updated_at`; the ripper's `Drive.model_validate` raises and the container crash-loops — no enrolled drive can ever register. |
+| D-002 | [#4](https://github.com/uprightbass360/arm-v3/issues/4) | S1 | hoisted | backend | #64 | #64 | `/api/ripper/register` returns a body without `updated_at`; the ripper's `Drive.model_validate` raises and the container crash-loops — no enrolled drive can ever register. |
 | D-003 | [#5](https://github.com/uprightbass360/arm-v3/issues/5) | S1 | open | ripper | #82 | — | Skeleton materializer trusts disc-supplied path components: a `..`/`/`-bearing filename escapes the temp root and truncates arbitrary files writable by the ripper. |
 | D-004 | [#6](https://github.com/uprightbass360/arm-v3/issues/6) | S3 | open | ripper | #61 | — | Port-identity drive renumbered away from `ARM_DRIVE_DEV` flaps absent/present every two polls, re-running boot probe, device-path PATCH and `InsertDetector.reset()` each cycle. |
 | D-005 | [#7](https://github.com/uprightbass360/arm-v3/issues/7) | S4 | open | ripper | #61 | — | "node outside ARM_OPTICAL_*_MAX" warning fires on every 2 s poll, contradicting the PR's log-once-per-transition design. |
@@ -64,9 +64,9 @@ Hygiene checks requested up front (no defect rows):
 | D-010 | [#12](https://github.com/uprightbass360/arm-v3/issues/12) | S4 | open | backend | #62 | — | `POST /api/drives/rescan` "online/stale" badge counts every detected and ignored drive as stale. |
 | D-011 | [#13](https://github.com/uprightbass360/arm-v3/issues/13) | S4 | open | backend | #62 | — | Stale "0029" references after the migration was renumbered to 0030. |
 | D-012 | [#14](https://github.com/uprightbass360/arm-v3/issues/14) | S4 | open | backend | #62 | — | The e2e harness boots the real `DriveScanner` against the host's `/sys`, making the real-DB tier environment-dependent. |
-| D-013 | [#15](https://github.com/uprightbass360/arm-v3/issues/15) | S2 | fixed-later | backend | #64 | #65 | Enroll creates the container, then 500s on `DriveView.model_validate` (expired `updated_at`); row stays `enrolled` while the UI reports failure. |
-| D-014 | [#16](https://github.com/uprightbass360/arm-v3/issues/16) | S2 | fixed-later | devtools | #64 | #65 | Nothing builds `ARM_RIPPER_IMAGE` (`arm-ripper:latest`): on a compose-built install every enroll is 502 "ImageNotFound". |
-| D-015 | [#17](https://github.com/uprightbass360/arm-v3/issues/17) | S2 | fixed-later | devtools | #64 | #65 | setup-dev.sh / iso-smoke.sh still launch rippers without `ARM_DRIVE_ID` (and with the removed `ARM_DRIVE_SERIAL`); every generated `arm-ripper-srN` crash-loops at Settings() and conflicts with the manager's containers. |
+| D-013 | [#15](https://github.com/uprightbass360/arm-v3/issues/15) | S2 | hoisted | backend | #64 | #64 | Enroll creates the container, then 500s on `DriveView.model_validate` (expired `updated_at`); row stays `enrolled` while the UI reports failure. |
+| D-014 | [#16](https://github.com/uprightbass360/arm-v3/issues/16) | S2 | hoisted | devtools | #64 | #64 | Nothing builds `ARM_RIPPER_IMAGE` (`arm-ripper:latest`): on a compose-built install every enroll is 502 "ImageNotFound". |
+| D-015 | [#17](https://github.com/uprightbass360/arm-v3/issues/17) | S2 | hoisted | devtools | #64 | #64 | setup-dev.sh / iso-smoke.sh still launch rippers without `ARM_DRIVE_ID` (and with the removed `ARM_DRIVE_SERIAL`); every generated `arm-ripper-srN` crash-loops at Settings() and conflicts with the manager's containers. |
 | D-016 | [#18](https://github.com/uprightbass360/arm-v3/issues/18) | S3 | untested-needs-hardware | backend | #64 | — | Unenroll only refuses while `RIPPING`; a job mid-scan/identify is orphaned when the manager SIGTERMs and removes its ripper. |
 | D-017 | [#19](https://github.com/uprightbass360/arm-v3/issues/19) | S3 | untested-needs-hardware | backend | #64 | — | Container name/hostname is the udev short serial; two drives sharing a serial (common on USB bridges) collide and the second enroll fails with a confusing 502. |
 | D-018 | [#20](https://github.com/uprightbass360/arm-v3/issues/20) | S4 | open | docs | #64 | — | Protocol doc still documents the hostname-keyed register body. |
@@ -102,11 +102,11 @@ Hygiene checks requested up front (no defect rows):
 | D-048 | [#50](https://github.com/uprightbass360/arm-v3/issues/50) | S4 | open | docs | #74 | — | `.claude/memory/MEMORY.md` index drops the em-dash entry and omits three new memory files. |
 | D-049 | [#51](https://github.com/uprightbass360/arm-v3/issues/51) | S4 | open | ui-neu | #74 | — | Markup rewrite leaves ARIA state/label attributes on role-less elements (files-page root tabs, channel-type label). |
 | D-050 | [#52](https://github.com/uprightbass360/arm-v3/issues/52) | S3 | open | ui-neu | #81 | — | `wsClient.start()` during the reconnect back-off clears the "Live updates unavailable" banner with no backend change (and opens a duplicate socket). |
-| D-051 | [#53](https://github.com/uprightbass360/arm-v3/issues/53) | S3 | fixed-later | devtools | #81 | #89 | Emptying the `ARM_ALLOWED_ORIGINS` default breaks WS for the Vue `arm-ui` on 8081 (the image install.sh deploys and the dev compose's 8081 service), whose nginx never forwards `X-Forwarded-Host`. |
+| D-051 | [#53](https://github.com/uprightbass360/arm-v3/issues/53) | S3 | hoisted | devtools | #81 | #81 | Emptying the `ARM_ALLOWED_ORIGINS` default breaks WS for the Vue `arm-ui` on 8081 (the image install.sh deploys and the dev compose's 8081 service), whose nginx never forwards `X-Forwarded-Host`. |
 | D-052 | [#54](https://github.com/uprightbass360/arm-v3/issues/54) | S4 | open | backend | #81 | — | Stale test docstring: "empty allowlist means service-token only" contradicts the same PR's same-origin default. |
-| D-053 | [#55](https://github.com/uprightbass360/arm-v3/issues/55) | S2 | fixed-later | devtools | #83 | #85 | `setup-dev.sh up` force-removes rippers/transcoders with work in flight — a routine redeploy kills a running rip. |
-| D-054 | [#56](https://github.com/uprightbass360/arm-v3/issues/56) | S3 | fixed-later | devtools | #83 | #94 | `setup-dev.sh up` removes every ripper container but nothing respawns them when compose leaves the backend running. |
-| D-055 | [#57](https://github.com/uprightbass360/arm-v3/issues/57) | S3 | fixed-later | devtools | #83 | #85 | `arm-data:/data` named volume is created root-owned, so the EACCES this commit claims to fix persists. |
+| D-053 | [#55](https://github.com/uprightbass360/arm-v3/issues/55) | S2 | hoisted | devtools | #83 | #83 | `setup-dev.sh up` force-removes rippers/transcoders with work in flight — a routine redeploy kills a running rip. |
+| D-054 | [#56](https://github.com/uprightbass360/arm-v3/issues/56) | S3 | hoisted | devtools | #83 | #83 | `setup-dev.sh up` removes every ripper container but nothing respawns them when compose leaves the backend running. |
+| D-055 | [#57](https://github.com/uprightbass360/arm-v3/issues/57) | S3 | hoisted | devtools | #83 | #83 | `arm-data:/data` named volume is created root-owned, so the EACCES this commit claims to fix persists. |
 | D-056 | [#58](https://github.com/uprightbass360/arm-v3/issues/58) | S4 | open | docs | #83 | — | Contributor docs still tell people to use bare `docker compose up -d`, which this PR's CLAUDE.md says never to do. |
 | D-057 | [#59](https://github.com/uprightbass360/arm-v3/issues/59) | S3 | untested-needs-hardware | backend | #84 | — | Removing the boot-time truncate makes orphaned BUSY GPU rows permanent: `cancel_running`'s docker-stop path (and deleting a spawned-but-unclaimed task) deletes the task row without releasing its GPU. |
 | D-058 | [#60](https://github.com/uprightbass360/arm-v3/issues/60) | S3 | open | ui-neu | #84 | — | Transcoder page per-device GPU rows are fetched once on mount and never refreshed, so their busy/available state contradicts the polled summary count. |
@@ -120,7 +120,7 @@ Hygiene checks requested up front (no defect rows):
 | D-066 | [#68](https://github.com/uprightbass360/arm-v3/issues/68) | S3 | untested-needs-hardware | backend | #85 | — | Cancelling an in-process passthrough task does not stop the copy: the file still lands in `/media` and the raw source is unlinked after the user deleted the task. |
 | D-067 | [#69](https://github.com/uprightbass360/arm-v3/issues/69) | S3 | open | ui-neu | #85 | — | Ripper-only (`ARM_TRANSCODE_CAPABLE=false`) hides the Transcoder page and nav while the backend silently holds previously queued encode tasks forever. |
 | D-068 | [#70](https://github.com/uprightbass360/arm-v3/issues/70) | S4 | open | backend | #85 | — | `GET /api/config` reports `transcode_enabled: true` on a ripper-only deployment where encode is effectively disabled. |
-| D-069 | [#71](https://github.com/uprightbass360/arm-v3/issues/71) | S3 | fixed-later | ui-neu | #87 | #102 | GpusCard subscribes to `gpu.probed` without starting the WebSocket and shows no in-progress state after Re-probe, so on a directly loaded Settings page the row stays "Never probed"/stale forever. |
+| D-069 | [#71](https://github.com/uprightbass360/arm-v3/issues/71) | S3 | hoisted | ui-neu | #87 | #87 | GpusCard subscribes to `gpu.probed` without starting the WebSocket and shows no in-progress state after Re-probe, so on a directly loaded Settings page the row stays "Never probed"/stale forever. |
 | D-070 | [#72](https://github.com/uprightbass360/arm-v3/issues/72) | S3 | untested-needs-hardware | backend | #87 | — | An infrastructure failure during a re-probe (container could not start, docker wait error, 120 s timeout) is written as `encoder_kinds=[]`, wiping a previously verified device so queued vendor-pinned tasks terminally fail and `any_*` work silently drops to CPU. |
 | D-071 | [#73](https://github.com/uprightbass360/arm-v3/issues/73) | S3 | open | transcode | #87 | — | A `vaapi_*` (or AMD-resolved `any_*`) preset with `container=webm` passes preset validation but every task fails at run time because the ffmpeg VAAPI engine only muxes MKV/MP4. |
 | D-072 | [#74](https://github.com/uprightbass360/arm-v3/issues/74) | S3 | open | devtools | #87 | — | install.sh-generated compose does not forward `ARM_TRANSCODE_IMAGE_QSV` / `_VAAPI` / `_NVENC` to the backend, so the PR's operator instruction for air-gapped/private-registry installs has no effect. |
@@ -197,7 +197,7 @@ $ bash install.sh on any host, then: docker compose ps   # armv3-ripper-srN rest
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/3
 
-### D-002  S1  fixed-later  backend  origin #64
+### D-002  S1  hoisted  backend  origin #64
 
 **Title.** `/api/ripper/register` returns a body without `updated_at`; the ripper's `Drive.model_validate` raises and the container crash-loops — no enrolled drive can ever register.
 
@@ -215,6 +215,7 @@ FakeSession never expires attributes, so the tier-1 `test_register_*` tests cann
 **Tip check.** Fixed by #65 (`feat/drive-lifecycle-4`) in `2a0600eb` ("refresh drive rows after commit before serialising them": adds `await session.refresh(drive)` before `return drive`, tip `routers/ripper.py:525`). `git branch -r --contains 2a0600eb` → origin/feat/drive-lifecycle-4 (not a straggler). Recommend: **move down** — #64 merged alone ships a ripper that can never register.
 
 **Suggested fix location.** feat/drive-lifecycle-3 — cherry-pick the ripper.py hunk of `2a0600eb` (and add a real-DB e2e register test; none exists).
+**Hoisted.** 2026-10-03: `0f387e727` on `feat/drive-lifecycle-3`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Reproduced on the e2e harness at head as above; fix commit read.
 
@@ -435,7 +436,7 @@ ScanSummary(detected=1, ignored=0, enrolled=1, absent=0, pruned=0)
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/14
 
-### D-013  S2  fixed-later  backend  origin #64
+### D-013  S2  hoisted  backend  origin #64
 
 **Title.** Enroll creates the container, then 500s on `DriveView.model_validate` (expired `updated_at`); row stays `enrolled` while the UI reports failure.
 
@@ -452,12 +453,13 @@ updated_at  Error extracting attribute: MissingGreenlet: greenlet_spawn has not 
 **Tip check.** Fixed by #65 in `2a0600eb` (`await db.refresh(drive)` before `_view_for`, tip `routers/drives.py:422,440,509`). Not a straggler. Recommend: **move down** (the ignore/unignore hunks belong to #62; the enroll/unenroll hunks to this PR).
 
 **Suggested fix location.** feat/drive-lifecycle-3 for enroll/unenroll; feat/drive-lifecycle-2 for ignore/unignore.
+**Hoisted.** 2026-10-03: `0f387e727` on `feat/drive-lifecycle-3` (ignore/unignore half: `5d3be876c` on feat/drive-lifecycle-2). The copy in the later PR becomes empty on restack.
 
 **Verification.** Reproduced on the e2e harness at head; fix commit read.
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/15
 
-### D-014  S2  fixed-later  devtools  origin #64
+### D-014  S2  hoisted  devtools  origin #64
 
 **Title.** Nothing builds `ARM_RIPPER_IMAGE` (`arm-ripper:latest`): on a compose-built install every enroll is 502 "ImageNotFound".
 
@@ -470,12 +472,13 @@ updated_at  Error extracting attribute: MissingGreenlet: greenlet_spawn has not 
 **Tip check.** Fixed by #65 in `27405d14` ("build-only arm-ripper service; setup-dev stops enumerating drives": adds `arm-ripper:` with `deploy.replicas: 0`, tip `docker-compose.yml.example:245-251`). Not a straggler. Recommend: **move down**.
 
 **Suggested fix location.** feat/drive-lifecycle-3.
+**Hoisted.** 2026-10-03: `f81bc061f` on `feat/drive-lifecycle-3`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Code/compose read; untested-needs-hardware for the end-to-end enroll (`docker compose up -d --build` on a fresh clone, then enroll from the UI; `devtools/iso-smoke.sh`).
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/16
 
-### D-015  S2  fixed-later  devtools  origin #64
+### D-015  S2  hoisted  devtools  origin #64
 
 **Title.** setup-dev.sh / iso-smoke.sh still launch rippers without `ARM_DRIVE_ID` (and with the removed `ARM_DRIVE_SERIAL`); every generated `arm-ripper-srN` crash-loops at Settings() and conflicts with the manager's containers.
 
@@ -488,6 +491,7 @@ updated_at  Error extracting attribute: MissingGreenlet: greenlet_spawn has not 
 **Tip check.** Fixed by #65: `27405d14` (setup-dev stops emitting ripper services) and `4ad41905` ("iso-smoke borrows an enrolled drive and registers by id"); both `git branch -r --contains` → origin/feat/drive-lifecycle-4. (Tip's later iso-smoke rewrite `5ed5c5c9` is a straggler, but the breakage is already gone at #65.) Recommend: **move down** — or at minimum merge #64 and #65 together.
 
 **Suggested fix location.** feat/drive-lifecycle-3.
+**Hoisted.** 2026-10-03: `d78fc0b91` on `feat/drive-lifecycle-3`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Code read; untested-needs-hardware (`bash devtools/setup-dev.sh && docker compose up -d && docker compose ps`).
 
@@ -1202,7 +1206,7 @@ expect(FakeWS.instances.length).toBe(4);           // pending timer fires a 4th
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/52
 
-### D-051  S3  fixed-later  devtools  origin #81
+### D-051  S3  hoisted  devtools  origin #81
 
 **Title.** Emptying the `ARM_ALLOWED_ORIGINS` default breaks WS for the Vue `arm-ui` on 8081 (the image install.sh deploys and the dev compose's 8081 service), whose nginx never forwards `X-Forwarded-Host`.
 
@@ -1222,6 +1226,7 @@ DATABASE_URL=postgresql://x:x@localhost/x ARM_SERVICE_TOKEN=x uv run python -c "
 **Tip check.** Fixed by #89 (chore/remove-vue-ui) in `daddb6a4` ("chore(ui): remove the Vue UI; ui-neu becomes arm-ui on 8081" — deletes `services/ui/`, compose has a single `arm-ui` on `8081:443` built from ui-neu whose nginx carries the forwarded headers); `git branch -r --contains daddb6a4` -> origin/chore/remove-vue-ui and above. Recommend: **move down** — merged alone, #81 leaves the 8081 UI (the one install.sh ships and setup-dev.sh points at) with no live updates on every fresh dev `.env`; a two-line `proxy_set_header X-Forwarded-Host $http_host; X-Forwarded-Proto $scheme;` in `services/ui/nginx.conf` (or keeping the 8081 default in `.env.example` until #89) closes it.
 
 **Suggested fix location.** feat/ws-origins-live-status — same nginx hunk as `services/ui-neu/nginx.conf:52-56`, applied to `services/ui/nginx.conf`.
+**Hoisted.** 2026-10-03: `9444a2291` on `feat/ws-origins-live-status`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Static (nginx config + `_origin_allowed` evaluation); end-to-end confirmation needs the compose stack (`bash devtools/setup-dev.sh up`, open `https://localhost:8081`, watch the backend log for "origin not allowed") — untested here, no Docker.
 
@@ -1249,7 +1254,7 @@ DATABASE_URL=postgresql://x:x@localhost/x ARM_SERVICE_TOKEN=x uv run python -c "
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/54
 
-### D-053  S2  fixed-later  devtools  origin #83
+### D-053  S2  hoisted  devtools  origin #83
 
 **Title.** `setup-dev.sh up` force-removes rippers/transcoders with work in flight — a routine redeploy kills a running rip.
 
@@ -1268,12 +1273,13 @@ if [[ "${ACTION}" == "up" ]]; then
 **Tip check.** Fixed by #85 (`feat/no-transcode-mode`, which carries the setup-dev hardening commits) in `34260a69` "harden setup-dev.sh up (build-first, DB backup, ripper guard, health wait)" + `d67096f2` (guards ACTIVE work only, idle rippers still replaced) + `3ecd0e58` (dd detection, bounded exec waits): tip `devtools/setup-dev.sh:483-519` `guard_running_spawned` refuses with exit 1 unless `--force` when a running `arm.task_id` container exists or a running ripper has makemkvcon/abcde/dd. `lowest_pr.sh 34260a69` -> #85 (the reviewer's `git branch -r --contains` reading of #89 was an alphabetical-listing artefact). Recommend: **move down** — #83 alone ships a mandated command that destroys in-flight work.
 
 **Suggested fix location.** feat/setup-dev-stack-lifecycle — bring `guard_running_spawned` + `--force` down with the build-first ordering.
+**Hoisted.** 2026-10-03: `44d6f214a` on `feat/setup-dev-stack-lifecycle`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Code trace; untested-needs-hardware for the live effect: start a rip (or `bash devtools/iso-smoke.sh` mid-transcode), run `bash devtools/setup-dev.sh up`, observe the ripper/transcoder container is removed and the job status.
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/55
 
-### D-054  S3  fixed-later  devtools  origin #83
+### D-054  S3  hoisted  devtools  origin #83
 
 **Title.** `setup-dev.sh up` removes every ripper container but nothing respawns them when compose leaves the backend running.
 
@@ -1292,12 +1298,13 @@ docker ps --filter label=arm.drive_id  # empty; `docker compose ps arm-backend` 
 **Tip check.** Fixed by #94 (`chore/ui-neu-ux-polish`) in `4f80aee3` "setup-dev up respawns rippers when the backend keeps running": records `backend_started_at` before `up`, `compose restart arm-backend` when unchanged (`respawn_rippers_if_needed`), and `34260a69` (#89) moved the removal AFTER the build. `git branch -r --contains 4f80aee3` includes `origin/chore/ui-neu-ux-polish` → not a straggler. Recommend: **move down** — #83 merged alone makes the documented "always use this" path strand enrolled drives on every no-op redeploy.
 
 **Suggested fix location.** feat/setup-dev-stack-lifecycle — cherry-pick the `backend_started_at`/`respawn_rippers_if_needed` block and the build-before-remove ordering.
+**Hoisted.** 2026-10-03: `44d6f214a` on `feat/setup-dev-stack-lifecycle`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Code trace at head (main.py:240-255 is the only reconcile call site; `compose up -d --build` does not recreate an unchanged service). untested-needs-hardware for the live run: `bash devtools/setup-dev.sh up` twice on a box with one enrolled drive, then `docker ps --filter label=arm.drive_id`.
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/56
 
-### D-055  S3  fixed-later  devtools  origin #83
+### D-055  S3  hoisted  devtools  origin #83
 
 **Title.** `arm-data:/data` named volume is created root-owned, so the EACCES this commit claims to fix persists.
 
@@ -1316,6 +1323,7 @@ docker volume create t && docker run --rm -v t:/data python:3.14-slim-bookworm s
 **Tip check.** Fixed by #85 (`feat/no-transcode-mode`, which carries the infra commits) in `b399d010` "bake /data ownership so fresh arm-data volumes are writable" (tip `services/backend/Dockerfile:53-55` `mkdir -p /data/cache/images /data/cache/thediscdb /data/themes && chown -R 1000:1000 /data && chmod -R 2775 /data`), `baa87ca9` (entrypoint guard now `for d in /logs /raw /media /data`, tip `docker-entrypoint.sh:299`), and `ff4578d5`/`60975f5d` (one-shot `arm-data-init` service re-owns the volume to PUID:PGID for non-1000 ids). `lowest_pr.sh b399d010` -> #85 (not #89 as first reported). Recommend: **move down** — at minimum `b399d010` belongs with the volume it makes usable; #83 alone adds a volume the backend cannot write.
 
 **Suggested fix location.** feat/setup-dev-stack-lifecycle — Dockerfile `/data` seeding + entrypoint `/data` guard; `arm-data-init` can stay in #89.
+**Hoisted.** 2026-10-03: `ff3f0db17` on `feat/setup-dev-stack-lifecycle` plus `16a8eafef` (entrypoint /data guard). The copy in the later PR becomes empty on restack.
 
 **Verification.** Code inspection of Dockerfile/entrypoint at head + docker volume-seeding semantics. untested-needs-hardware for the end-to-end: `bash devtools/setup-dev.sh up && docker compose logs arm-backend | grep -i 'thediscdb.*Errno 13'`.
 
@@ -1614,7 +1622,7 @@ error = msg.includes('409') ? 'That GPU is in use by a running transcode. ...' :
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/70
 
-### D-069  S3  fixed-later  ui-neu  origin #87
+### D-069  S3  hoisted  ui-neu  origin #87
 
 **Title.** GpusCard subscribes to `gpu.probed` without starting the WebSocket and shows no in-progress state after Re-probe, so on a directly loaded Settings page the row stays "Never probed"/stale forever.
 
@@ -1633,6 +1641,7 @@ grep -n "import" services/ui-neu/frontend/src/routes/settings/+page.svelte   # n
 **Tip check.** Fixed by #102 (`feat/first-run-setup`) in `81ab0281` "feat(ui): GPU card encoder chips, probe progress, CPU empty state" (adds `wsClient.start()` in `onMount` with the comment "Start the socket ourselves: on the setup walkthrough no other store has", plus a per-row `StatusStrip` "Testing encoders..." with a 2-minute timeout keyed on `gpu.probed.payload.gpu_id`). The same patch also sits on the tip as `9ff1aa08` (patch-id identical). Recommend: move down the one-line `wsClient.start()` into #87 (without it the Re-probe button this PR adds does not visibly do anything on a fresh Settings load); leave the progress-strip part in #102 (it depends on `StatusStrip`/`Glyph` names that arrive later).
 
 **Suggested fix location.** feat/encoder-first-presets — the Re-probe button and the subscription are both introduced here.
+**Hoisted.** 2026-10-03: `d276c86b4` on `feat/encoder-first-presets`. The copy in the later PR becomes empty on restack.
 
 **Verification.** Code-read of head and tip (`git show origin/integration/all-prs-3:...GpusCard.svelte`); vitest passes at head because tests inject events directly. Browser check: load `https://localhost:8081/settings` cold (not via the dashboard), click Re-probe, observe the row never updates.
 
