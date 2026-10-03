@@ -34,36 +34,28 @@ repos:
           - arm_transcode
         types: [python]
 
-      # ESLint + Prettier run as local hooks against the UI's own
-      # node_modules (no global install needed). Both run the whole UI
-      # tree per-invocation rather than per-file — same pattern as mypy
-      # above — because ESLint flat config + Prettier need cwd inside
-      # services/ui to discover their configs.
+      # ESLint + Prettier run as local hooks against ui-neu's own node_modules
+      # (no global install needed). Like mypy above, each run covers the whole
+      # frontend tree rather than the staged files, because the configs are
+      # discovered from services/ui-neu/frontend.
       #
-      # First-time setup: `npm install --prefix services/ui` once.
-      - id: eslint-ui
-        name: eslint (ui)
-        entry: bash -c 'cd services/ui && npm run --silent lint:fix'
+      # One-time setup: `npm ci --prefix services/ui-neu/frontend`
+      # (devtools/setup-dev.sh already does this).
+      - id: eslint-ui-neu
+        name: eslint (ui-neu)
+        entry: bash -c 'cd services/ui-neu/frontend && npm run --silent lint:fix'
         language: system
         pass_filenames: false
-        files: ^services/ui/.+\.(ts|mts|tsx|vue|js|cjs|mjs)$
+        files: ^services/ui-neu/frontend/.+\.(ts|js|svelte)$
+        exclude: ^services/ui-neu/frontend/(src/lib/types/api\.gen\.ts|static/)
 
-      - id: prettier-ui
-        name: prettier (ui)
-        entry: bash -c 'cd services/ui && npm run --silent format'
+      - id: prettier-ui-neu
+        name: prettier (ui-neu)
+        entry: bash -c 'cd services/ui-neu/frontend && npm run --silent format'
         language: system
         pass_filenames: false
-        files: ^services/ui/.+\.(ts|mts|tsx|vue|js|cjs|mjs|json|css|md|html)$
-
-      # vue-tsc is the UI's mypy — strict TypeScript + Vue SFC typecheck.
-      # Slower than eslint/prettier but still fast enough for pre-commit;
-      # catches real bugs that lint misses (wrong props, missing keys, etc.)
-      - id: typecheck-ui
-        name: typecheck (ui, vue-tsc)
-        entry: bash -c 'cd services/ui && npm run --silent typecheck'
-        language: system
-        pass_filenames: false
-        files: ^services/ui/.+\.(ts|mts|tsx|vue)$
+        files: ^services/ui-neu/frontend/.+\.(ts|js|svelte|css|json|html)$
+        exclude: ^services/ui-neu/frontend/(src/lib/types/api\.gen\.ts|static/|package-lock\.json$)
 
   - repo: https://github.com/koalaman/shellcheck-precommit
     rev: v0.10.0

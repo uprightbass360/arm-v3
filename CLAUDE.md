@@ -5,15 +5,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this repo is
 
 Automatic Ripping Machine **v3** — a greenfield rebuild that now occupies the
-whole repository. It is a multi-service system (FastAPI Backend, Vue UI, a
+whole repository. It is a multi-service system (FastAPI Backend, SvelteKit UI, a
 ripper per optical drive, and an ephemeral transcoder) on Postgres, and it
 shares nothing with the legacy v2 codebase at the code level. ARM v2 is frozen
 and not in this tree; its code remains in the repository's pre-cutover git history.
 
 Start with the architecture docs:
 
-- [docs/arch/README.md](docs/arch/README.md) — architecture overview and index.
-- [docs/arch/01-architecture.md](docs/arch/01-architecture.md) — service topology.
+- [docs/developers/architecture/README.md](docs/developers/architecture/README.md) — architecture overview and index.
+- [docs/developers/architecture/01-architecture.md](docs/developers/architecture/01-architecture.md) — service topology.
 - [docs/plans/MASTER_IMPLEMENTATION_PLAN.md](docs/plans/MASTER_IMPLEMENTATION_PLAN.md) — per-phase rollout.
 
 ## Project memory (read this at session start)
@@ -33,7 +33,7 @@ Layout:
 - [services/backend/](services/backend/) — FastAPI app (`arm_backend`), Alembic migrations ([services/backend/migrations/](services/backend/migrations/)), the WebSocket hub, and dispatchers (transcode, notification, log-tail). JWT + service-token auth.
 - [services/ripper/](services/ripper/) — per-drive poller + Backend client + makemkv/HandBrake/abcde drivers (`arm_ripper`). One ripper service per optical drive.
 - [services/transcode/](services/transcode/) — ephemeral, per-task transcoder spawned by the Backend (`arm_transcode`).
-- [services/ui/](services/ui/) — Vue 3 SPA served by nginx. Its TypeScript API types are generated from the Backend's OpenAPI schema.
+- [services/ui-neu/](services/ui-neu/) - SvelteKit (Svelte 5) SPA served by nginx, published as the `arm-ui` image. Its TypeScript API types are generated from the committed OpenAPI snapshot ([services/ui-neu/openapi.snapshot.json](services/ui-neu/openapi.snapshot.json)).
 - [services/_common/](services/_common/) — shared container entrypoint (CA-merge + PUID drop + tini exec).
 - [packages/arm_common/](packages/arm_common/) — shared Pydantic schemas, enums, SQLModel models, ULID helper, and structured-logging helpers, imported by every Python service.
 
@@ -46,8 +46,8 @@ Postgres, via async SQLAlchemy/SQLModel. Schema is managed by Alembic under [ser
 The UI is generated from the Backend's OpenAPI schema, and CI's `openapi-drift` job fails if they diverge. After changing a Backend router or an `arm_common` schema that affects the API, regenerate both and commit the artifacts:
 
 ```bash
-bash devtools/regen-openapi-snapshot.sh    # refresh services/ui/openapi.snapshot.json
-cd services/ui && npm run openapi-types     # regenerate the TypeScript types
+bash devtools/regen-openapi-snapshot.sh    # refresh services/ui-neu/openapi.snapshot.json
+bash services/ui-neu/scripts/codegen.sh    # regenerate the TypeScript types (api.gen.ts)
 ```
 
 ## Commands
@@ -71,18 +71,22 @@ containers (they are not compose services).
 uv run pytest                  # all backend / ripper / transcode suites — zero infra
 ```
 
-The suite needs no Docker, Postgres, drives, or network (in-memory fake session + file-backed SQLite). See [docs/arch/09-testing.md](docs/arch/09-testing.md) for the two-tier design (fast fake-session unit tests + the real-DB e2e harness under `tests/e2e/`) and the Backend's 100%-statement-coverage policy. Heavier end-to-end drills live in `devtools/`: `bash devtools/iso-smoke.sh` (full scan → rip → transcode against an ISO fixture, no disc) and `bash devtools/crash-drill.sh` (backend crash recovery).
+The suite needs no Docker, Postgres, drives, or network (in-memory fake session + file-backed SQLite). See [docs/developers/architecture/09-testing.md](docs/developers/architecture/09-testing.md) for the two-tier design (fast fake-session unit tests + the real-DB e2e harness under `tests/e2e/`) and the Backend's 100%-statement-coverage policy. Heavier end-to-end drills live in `devtools/`: `bash devtools/iso-smoke.sh` (full scan → rip → transcode against an ISO fixture, no disc) and `bash devtools/crash-drill.sh` (backend crash recovery).
 
 ### Lint / format / types
 
 ```bash
 uv run pre-commit install              # install the git hook once
-uv run pre-commit run --all-files      # ruff, mypy, eslint, prettier, vue-tsc, shellcheck
+uv run pre-commit run --all-files      # ruff, mypy, eslint + prettier (ui-neu), shellcheck
+cd services/ui-neu/frontend && npm run check && npx vitest run   # UI: svelte-check + tests
+cd services/ui-neu/frontend && npm run lint && npm run format    # UI: ESLint + Prettier (format rewrites files)
 ```
+
+The ui-neu hooks need `npm ci --prefix services/ui-neu/frontend` once (`setup-dev.sh` does it). The bulk Prettier reformat is listed in `.git-blame-ignore-revs`; run `git config blame.ignoreRevsFile .git-blame-ignore-revs` to skip it in `git blame`.
 
 ## Development model
 
-Trunk-based: `main` is the trunk and always releasable; short-lived branches merge back via PR; releases are semver **tags** on `main` (built by `release.yml`), and `latest` tracks `main`. There is no long-lived dev branch. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/arch/08-v2-isolation-and-cutover.md](docs/arch/08-v2-isolation-and-cutover.md).
+Trunk-based: `main` is the trunk and always releasable; short-lived branches merge back via PR; releases are semver **tags** on `main` (built by `release.yml`), and `latest` tracks `main`. There is no long-lived dev branch. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/developers/architecture/08-v2-isolation-and-cutover.md](docs/developers/architecture/08-v2-isolation-and-cutover.md).
 
 ## Gotchas / invariants
 
