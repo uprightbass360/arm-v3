@@ -163,7 +163,7 @@ jobs:
     name: publish (installer bundle)
     # Only after every image leg has published: the installer pins the images
     # of the release it is attached to.
-    needs: publish
+    # needs: publish   (removed for the armv3 job test: that fork has no Docker Hub secrets, so publish cannot pass there)
     runs-on: ubuntu-latest
     permissions:
       contents: write   # create the GitHub release if it is missing, attach the bundle
