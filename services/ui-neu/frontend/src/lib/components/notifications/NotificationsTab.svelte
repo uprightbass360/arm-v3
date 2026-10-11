@@ -1,8 +1,13 @@
 <script lang="ts">
-	import type { Channel, Catalog, ChannelCreate, AppriseConfig } from '$lib/types/notifications';
+	import type { Channel, Catalog, AppriseConfig } from '$lib/types/notifications';
 	import {
-		fetchChannels, fetchServices, fetchEventTypes, createChannel, updateChannel,
-		deleteChannel, testSendChannel, composeUrl, testConfig
+		fetchChannels,
+		fetchServices,
+		fetchEventTypes,
+		updateChannel,
+		deleteChannel,
+		testSendChannel,
+		testConfig
 	} from '$lib/api/channels';
 	import type { EventTypeInfo } from '$lib/api/channels';
 	import { addToast } from '$lib/stores/toast.svelte';
@@ -10,6 +15,7 @@
 	import FilterPills, { type ChannelFilter } from './FilterPills.svelte';
 	import ChannelList from './ChannelList.svelte';
 	import AddChannelForm, { type AddChannelBody } from './AddChannelForm.svelte';
+	import { createChannelFromBody, toConfig } from './channelActions';
 	import type { EditorBody } from './ChannelEditor.svelte';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 
@@ -23,7 +29,9 @@
 	let filter = $state<ChannelFilter>('all');
 	let deleteTarget = $state<Channel | null>(null);
 
-	$effect(() => { load(); });
+	$effect(() => {
+		load();
+	});
 
 	// The system in-app channel (ncl_inbox) is the UI notification bell, not an
 	// external Apprise destination: it has no URL to test and can't be deleted
@@ -56,35 +64,19 @@
 		paused: channels.filter((c) => !c.enabled).length,
 		issues: channels.filter((c) => c.last_error).length
 	});
-	const visible = $derived(channels.filter((c) =>
-		filter === 'all' ? true :
-		filter === 'enabled' ? c.enabled :
-		filter === 'paused' ? !c.enabled :
-		!!c.last_error
-	));
+	const visible = $derived(
+		channels.filter((c) =>
+			filter === 'all' ? true : filter === 'enabled' ? c.enabled : filter === 'paused' ? !c.enabled : !!c.last_error
+		)
+	);
 
 	function serviceNameFor(c: Channel): string {
 		return c.type === 'apprise' ? 'Service' : c.type;
 	}
 
-	async function toConfig(body: { type: string; config: Record<string, unknown>; serviceId: string | null }) {
-		if (body.type === 'apprise' && body.serviceId) {
-			// neu composes the url server-side from {service_id, fields}.
-			return { type: 'apprise', url: '', service_id: body.serviceId, fields: body.config };
-		}
-		return { type: body.type, ...body.config };
-	}
-
 	async function handleAdd(body: AddChannelBody) {
 		try {
-			const config = await toConfig(body);
-			const payload: ChannelCreate = {
-				type: body.type, name: body.name, enabled: body.enabled,
-				config: config as ChannelCreate['config'],
-				subscribed_events: body.subscribed_events,
-				templates: body.templates
-			};
-			const created = await createChannel(payload);
+			const created = await createChannelFromBody(body);
 			channels = [created, ...channels];
 			addOpen = false;
 			addToast({ tone: 'success', title: 'Channel added', body: `${created.name} is now listening for events.` });
@@ -169,8 +161,7 @@
 
 	async function handleTestUnsaved(body: AddChannelBody) {
 		try {
-			const config = await toConfig(body);
-			await testConfigAndToast(body.type, config, body.subscribed_events[0] ?? firstEventKey());
+			await testConfigAndToast(body.type, toConfig(body), body.subscribed_events[0] ?? firstEventKey());
 		} catch (e) {
 			addToast({ tone: 'error', title: 'Test failed', body: e instanceof Error ? e.message : '' });
 		}
@@ -216,26 +207,38 @@
 		}
 	}
 
-	function toggleExpand(c: Channel) { expandedId = expandedId === c.id ? null : c.id; }
+	function toggleExpand(c: Channel) {
+		expandedId = expandedId === c.id ? null : c.id;
+	}
 </script>
 
-<div class="space-y-5">
+<div class="stack notifications-tab">
 	{#if loadError}
-		<p class="rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-500/40 dark:bg-red-900/20 dark:text-red-300">{loadError}</p>
+		<p class="alert alert-danger notifications-tab-load-error">{loadError}</p>
 	{:else if !loaded}
-		<div class="py-8 text-center text-gray-400">Loading channels...</div>
+		<div class="notifications-tab-loading">Loading channels...</div>
 	{:else}
 		<StatStrip total={counts.total} issues={counts.issues} subscribedEvents={counts.subscribedEvents} />
 
 		{#if addOpen}
-			<AddChannelForm {catalog} {eventTypes} onsave={handleAdd} oncancel={() => (addOpen = false)} ontest={handleTestUnsaved} />
+			<AddChannelForm
+				{catalog}
+				{eventTypes}
+				onsave={handleAdd}
+				oncancel={() => (addOpen = false)}
+				ontest={handleTestUnsaved}
+			/>
 		{/if}
 
 		{#if channels.length > 0}
-			<div class="flex items-center justify-between gap-3 rounded-lg border border-primary/15 bg-page px-4 py-3 dark:border-primary/20 dark:bg-primary/5">
+			<div class="panel-section notifications-tab-toolbar">
 				<FilterPills active={filter} counts={filterCounts} onselect={(f) => (filter = f)} />
 				{#if !addOpen}
-					<button type="button" onclick={() => (addOpen = true)} class="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-on-primary hover:bg-primary-hover">+ Add channel</button>
+					<button
+						type="button"
+						onclick={() => (addOpen = true)}
+						class="btn btn-primary btn-sm notifications-tab-add-btn">+ Add channel</button
+					>
 				{/if}
 			</div>
 			<ChannelList
@@ -247,15 +250,18 @@
 				ontoggle={handleToggle}
 				ontest={handleTestSaved}
 				onexpand={toggleExpand}
+				onedit={toggleExpand}
 				oneditorsave={handleEditorSave}
 				oneditortest={handleEditorTest}
 				ondelete={(c) => (deleteTarget = c)}
 			/>
 		{:else if !addOpen}
-			<div class="rounded-lg border border-primary/15 bg-page p-8 text-center dark:border-primary/20 dark:bg-primary/5">
-				<p class="text-sm font-semibold text-primary">No notification channels yet</p>
-				<p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Add one to start receiving alerts for rip and transcode events.</p>
-				<button type="button" onclick={() => (addOpen = true)} class="mt-4 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-on-primary hover:bg-primary-hover">Add your first channel</button>
+			<div class="panel-section notifications-tab-empty">
+				<p class="notifications-tab-empty-title">No notification channels yet</p>
+				<p class="notifications-tab-empty-body">Add one to start receiving alerts for rip and transcode events.</p>
+				<button type="button" onclick={() => (addOpen = true)} class="btn btn-primary notifications-tab-empty-cta"
+					>Add your first channel</button
+				>
 			</div>
 		{/if}
 	{/if}
@@ -270,3 +276,61 @@
 	onconfirm={confirmDelete}
 	oncancel={() => (deleteTarget = null)}
 />
+
+<style>
+	/* space-y-5 (1.25rem), not .stack's default gap (1rem). */
+	.notifications-tab {
+		gap: 1.25rem;
+	}
+	.notifications-tab-load-error {
+		padding: 0.75rem 1rem;
+	}
+	.notifications-tab-loading {
+		padding: 2rem 0;
+		text-align: center;
+		color: var(--color-text-faint);
+	}
+	/* panel-section's own uniform 1rem padding vs this toolbar's px-4 py-3;
+	   the original was bg-page, not panel-section's own primary-tint-1. */
+	.notifications-tab-toolbar {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.75rem 1rem;
+		background: var(--color-page);
+	}
+	/* the original was rounded-md px-3 py-1.5 text-xs (0.375rem radius,
+	   0.375rem vertical padding, 1rem bundled line-height) with no border at
+	   all; btn-primary's radius-lg, btn-sm's 0.25rem vertical padding and
+	   inherited 1.25rem line-height (btn-sm sets font-size but not
+	   line-height), and its own 1px border are all a hair off. */
+	.notifications-tab-add-btn {
+		border: 0;
+		border-radius: var(--radius-md);
+		padding: 0.375rem 0.75rem;
+		line-height: 1rem;
+	}
+	/* the original was p-8 (2rem all around, matches panel-section's default
+	   of 1rem doubled); stated explicitly for clarity. */
+	.notifications-tab-empty {
+		padding: 2rem;
+		text-align: center;
+		background: var(--color-page);
+	}
+	.notifications-tab-empty-title {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		font-weight: 600;
+		color: var(--color-primary);
+	}
+	.notifications-tab-empty-body {
+		margin-top: 0.25rem;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-secondary);
+	}
+	.notifications-tab-empty-cta {
+		margin-top: 1rem;
+	}
+</style>

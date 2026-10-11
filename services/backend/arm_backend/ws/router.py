@@ -1,7 +1,9 @@
 """FastAPI WS route — /ws.
 
 Wire shape:
-    1. Origin allowlist (skipped for service-token subprotocol or origin-less connects).
+    1. Origin gate: same-origin (Origin matches the request's Host /
+       X-Forwarded-Host) or the ARM_ALLOWED_ORIGINS allowlist; skipped for
+       service-token subprotocol or origin-less connects.
     2. Accept upgrade.
     3. 5s window for the first message; must be {op:auth, token:...}.
     4. resolve_principal(); reject (4401) on failure.
@@ -55,14 +57,33 @@ CLOSE_UNAUTHORIZED = 4401
 CLOSE_FORBIDDEN = 4403
 
 
-def _origin_allowed(origin: str | None, subprotocols: list[str]) -> bool:
+def _origin_allowed(
+    origin: str | None,
+    subprotocols: list[str],
+    *,
+    request_host: str | None = None,
+    request_scheme: str = "https",
+    forwarded_host: str | None = None,
+    forwarded_proto: str | None = None,
+) -> bool:
     if SERVICE_TOKEN_SUBPROTOCOL in subprotocols:
         return True
     if not origin:
         return True
-    if not settings.ARM_ALLOWED_ORIGINS:
+    if origin in settings.ARM_ALLOWED_ORIGINS:
+        return True
+    # Same-origin default (G-28): a browser cannot forge Origin or Host, and
+    # X-Forwarded-Host/-Proto are set by our own proxies (ui-neu nginx, vite
+    # dev) from the URL the browser actually used. An Origin that matches the
+    # host this socket was opened against is this deployment's own UI, whatever
+    # LAN name or port it is reachable at, so no static allowlist entry is
+    # needed for it. ARM_ALLOWED_ORIGINS remains for split-origin topologies
+    # where the UI is served from a different origin than the WS endpoint.
+    host = (forwarded_host or request_host or "").split(",")[0].strip().lower()
+    if not host:
         return False
-    return origin in settings.ARM_ALLOWED_ORIGINS
+    scheme = (forwarded_proto or request_scheme).split(",")[0].strip().lower()
+    return origin.strip().lower() == f"{scheme}://{host}"
 
 
 @router.websocket("/ws")
@@ -72,10 +93,21 @@ async def ws_endpoint(
     sec_websocket_protocol: str | None = Header(default=None),
     x_arm_hostname: str | None = Header(default=None),
     x_arm_task_id: str | None = Header(default=None),
+    host: str | None = Header(default=None),
+    x_forwarded_host: str | None = Header(default=None),
+    x_forwarded_proto: str | None = Header(default=None),
 ) -> None:
     subprotocols = [p.strip() for p in (sec_websocket_protocol or "").split(",") if p.strip()]
 
-    if not _origin_allowed(origin, subprotocols):
+    request_scheme = "https" if websocket.url.scheme in ("wss", "https") else "http"
+    if not _origin_allowed(
+        origin,
+        subprotocols,
+        request_host=host,
+        request_scheme=request_scheme,
+        forwarded_host=x_forwarded_host,
+        forwarded_proto=x_forwarded_proto,
+    ):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="origin not allowed")
         return
 
@@ -87,6 +119,11 @@ async def ws_endpoint(
     signing_key: bytes | None = getattr(websocket.app.state, "signing_key", None)
     try:
         principal = await _do_auth(websocket, x_arm_hostname, x_arm_task_id, signing_key)
+    except _ClientGone:
+        # The browser closed the socket before authenticating (a page
+        # navigation or reload mid-handshake): nothing to answer, nothing to log.
+        logger.debug("ws client disconnected before auth")
+        return
     except _AuthFailure as e:
         await _send_error(websocket, e.code, e.reason)
         await websocket.close(code=e.code, reason=e.reason)
@@ -101,6 +138,10 @@ async def ws_endpoint(
         pass
     finally:
         await hub.disconnect(websocket)
+
+
+class _ClientGone(Exception):
+    """The peer disconnected before sending its auth message."""
 
 
 class _AuthFailure(Exception):
@@ -119,6 +160,8 @@ async def _do_auth(
         raw = await asyncio.wait_for(websocket.receive_json(), timeout=AUTH_TIMEOUT_SECONDS)
     except asyncio.TimeoutError as e:
         raise _AuthFailure(CLOSE_UNAUTHORIZED, "auth timeout") from e
+    except WebSocketDisconnect as e:
+        raise _ClientGone from e
     except Exception as e:
         raise _AuthFailure(CLOSE_BAD_MESSAGE, "auth message must be JSON") from e
 

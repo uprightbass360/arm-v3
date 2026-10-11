@@ -18,13 +18,14 @@ from arm_common.models import (
     Config,
     RipPreset,
     Session,
+    SessionRoute,
     TranscodePreset,
     User,
 )
 from arm_common.models.user import ADMIN_ROLE, GUEST_ROLE
 from arm_common import (
     ContainerFormat,
-    HwPreference,
+    DiscType,
     IdentificationMode,
     MediaType,
     NotificationChannel,
@@ -32,7 +33,6 @@ from arm_common import (
     RetentionPolicy,
     TrackSelection,
     TranscodeTool,
-    VideoCodec,
 )
 
 logger = logging.getLogger("arm_backend.seeders")
@@ -115,6 +115,7 @@ async def _seed_config_singleton(session: AsyncSession) -> None:
                 default_retention_policy=RetentionPolicy.KEEP_FOREVER,
                 notification_apprise_urls=[],
                 session_signing_key=secrets.token_bytes(32),
+                transcode_enabled=True,
             )
         )
         await session.flush()
@@ -123,6 +124,24 @@ async def _seed_config_singleton(session: AsyncSession) -> None:
     # Back-fill session_signing_key if it was never generated.
     if existing.session_signing_key is None:
         existing.session_signing_key = secrets.token_bytes(32)
+        session.add(existing)
+        await session.flush()
+
+    # One-shot backfill for the env->DB move of the dispatcher parallelism
+    # cap: NULL means this install has never seen the column, so seed it from
+    # the legacy MAX_PARALLEL_TRANSCODES env value (default 1). After this,
+    # the column is authoritative and Settings edits stick.
+    if existing.max_parallel_transcodes is None:
+        from arm_backend.config import settings  # noqa: PLC0415 — avoid import cycle at module load
+
+        existing.max_parallel_transcodes = settings.MAX_PARALLEL_TRANSCODES
+        session.add(existing)
+        await session.flush()
+
+    # One-shot backfill for the transcode toggle: NULL means the row predates
+    # the column. Existing deployments keep transcoding exactly as before.
+    if existing.transcode_enabled is None:
+        existing.transcode_enabled = True
         session.add(existing)
         await session.flush()
 
@@ -228,21 +247,18 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.HANDBRAKE,
         "preset_ref": "H.265 MKV 1080p30",
         "container": ContainerFormat.MKV,
-        "codec": VideoCodec.H265,
-        "hw_preference": None,
+        "encoder": "any_h265",
     },
     {
-        # GPU-preferred sibling: same HandBrake preset, but `hw_preference=ANY`
-        # so the dispatcher will hand it the first available NVENC/VAAPI/QSV
-        # GPU advertising H.265 and fall back to CPU if none is free.
+        # GPU-preferred sibling: same HandBrake preset and encoder. Kept as its
+        # own row because built-in sessions (and existing installs) reference it.
         "id": "tpr_builtin_plex_1080p_h265_gpu",
         "name": "Plex 1080p H.265 (GPU preferred)",
         "media_type": MediaType.MOVIE,
         "tool": TranscodeTool.HANDBRAKE,
         "preset_ref": "H.265 MKV 1080p30",
         "container": ContainerFormat.MKV,
-        "codec": VideoCodec.H265,
-        "hw_preference": HwPreference.ANY,
+        "encoder": "any_h265",
     },
     {
         "id": "tpr_builtin_plex_2160p_hevc",
@@ -251,8 +267,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.HANDBRAKE,
         "preset_ref": "H.265 MKV 2160p60 4K",
         "container": ContainerFormat.MKV,
-        "codec": VideoCodec.H265,
-        "hw_preference": None,
+        "encoder": "any_h265",
     },
     {
         # Pure copy of the MakeMKV-produced .mkv onto /media — `tool=none`
@@ -265,8 +280,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.NONE,
         "preset_ref": None,
         "container": ContainerFormat.MKV,
-        "codec": None,
-        "hw_preference": None,
+        "encoder": "preset",
     },
     {
         "id": "tpr_builtin_tv_plex_1080p_h265",
@@ -275,8 +289,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.HANDBRAKE,
         "preset_ref": "H.265 MKV 1080p30",
         "container": ContainerFormat.MKV,
-        "codec": VideoCodec.H265,
-        "hw_preference": None,
+        "encoder": "any_h265",
     },
     {
         "id": "tpr_builtin_music_flac",
@@ -285,8 +298,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.ABCDE,
         "preset_ref": "flac",
         "container": ContainerFormat.FLAC,
-        "codec": None,
-        "hw_preference": None,
+        "encoder": "preset",
     },
     {
         "id": "tpr_builtin_music_mp3_v0",
@@ -295,8 +307,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.ABCDE,
         "preset_ref": "mp3",
         "container": ContainerFormat.MP3,
-        "codec": None,
-        "hw_preference": None,
+        "encoder": "preset",
     },
     {
         "id": "tpr_builtin_data_passthrough",
@@ -305,8 +316,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.NONE,
         "preset_ref": None,
         "container": ContainerFormat.NONE,
-        "codec": None,
-        "hw_preference": None,
+        "encoder": "preset",
     },
     {
         "id": "tpr_builtin_iso_passthrough",
@@ -315,8 +325,7 @@ TRANSCODE_PRESETS: list[dict[str, Any]] = [
         "tool": TranscodeTool.NONE,
         "preset_ref": None,
         "container": ContainerFormat.ISO,
-        "codec": None,
-        "hw_preference": None,
+        "encoder": "preset",
     },
 ]
 
@@ -330,7 +339,7 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.MOVIE,
         "rip_preset_id": "rpr_builtin_movie_main_feature",
         "transcode_preset_id": "tpr_builtin_plex_1080p_h265",
-        "output_path_template": "{title} ({year})/{title} ({year}) - Track {track} - {transcode_slug}.{ext}",
+        "output_path_template": "{title} ({year?})/{title} ({year?}) - Track {track} - {transcode_slug}.{ext}",
     },
     {
         "id": "ses_builtin_movie_plex_1080p_gpu",
@@ -338,7 +347,7 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.MOVIE,
         "rip_preset_id": "rpr_builtin_movie_main_feature",
         "transcode_preset_id": "tpr_builtin_plex_1080p_h265_gpu",
-        "output_path_template": "{title} ({year})/{title} ({year}) - Track {track} - {transcode_slug}.{ext}",
+        "output_path_template": "{title} ({year?})/{title} ({year?}) - Track {track} - {transcode_slug}.{ext}",
     },
     {
         "id": "ses_builtin_movie_plex_2160p",
@@ -346,7 +355,7 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.MOVIE,
         "rip_preset_id": "rpr_builtin_movie_main_feature",
         "transcode_preset_id": "tpr_builtin_plex_2160p_hevc",
-        "output_path_template": "{title} ({year})/{title} ({year}) - Track {track} - {transcode_slug}.{ext}",
+        "output_path_template": "{title} ({year?})/{title} ({year?}) - Track {track} - {transcode_slug}.{ext}",
     },
     {
         "id": "ses_builtin_movie_archive",
@@ -354,19 +363,19 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.MOVIE,
         "rip_preset_id": "rpr_builtin_movie_archive",
         "transcode_preset_id": "tpr_builtin_passthrough_mkv",
-        "output_path_template": "{title} ({year})/{title} ({year}) - Track {track} ({duration_human}) - {transcode_slug}.{ext}",
+        "output_path_template": "{title} ({year?})/{title} ({year?}) - Track {track} ({duration_human}) - {transcode_slug}.{ext}",
     },
     {
         # Same `rpr_builtin_movie_archive` (every title), but each track is
-        # transcoded H.265 with `hw_preference=ANY` instead of remuxed —
-        # disc-equivalent contents in a smaller form, GPU-accelerated when
-        # the host has matching silicon and CPU otherwise.
+        # transcoded H.265 with the `any_h265` encoder instead of remuxed:
+        # disc-equivalent contents in a smaller form, on whichever GPU is
+        # eligible for H.265.
         "id": "ses_builtin_movie_archive_gpu",
         "name": "Movie to Archive H.265 (GPU preferred)",
         "media_type": MediaType.MOVIE,
         "rip_preset_id": "rpr_builtin_movie_archive",
         "transcode_preset_id": "tpr_builtin_plex_1080p_h265_gpu",
-        "output_path_template": "{title} ({year})/{title} ({year}) - Track {track} ({duration_human}) - {transcode_slug}.{ext}",
+        "output_path_template": "{title} ({year?})/{title} ({year?}) - Track {track} ({duration_human}) - {transcode_slug}.{ext}",
     },
     {
         "id": "ses_builtin_tv_plex_1080p",
@@ -374,7 +383,7 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.TV,
         "rip_preset_id": "rpr_builtin_tv_all_tracks",
         "transcode_preset_id": "tpr_builtin_tv_plex_1080p_h265",
-        "output_path_template": "{show} ({year})/Season {season}/{show} - S{season}D{disc}T{track} ({duration_human}) - {transcode_slug}.{ext}",
+        "output_path_template": "{show} ({year?})/Season {season}/{show} - S{season}D{disc}T{track} ({duration_human}) - {transcode_slug}.{ext}",
     },
     {
         "id": "ses_builtin_music_flac",
@@ -406,9 +415,50 @@ SESSIONS: list[dict[str, Any]] = [
         "media_type": MediaType.ISO,
         "rip_preset_id": "rpr_builtin_iso_dump",
         "transcode_preset_id": "tpr_builtin_iso_passthrough",
-        "output_path_template": "{title} ({year})/{title} ({year}).iso",
+        "output_path_template": "{title} ({year?})/{title} ({year?}).iso",
     },
 ]
+
+
+# --- Built-in session routes (G-17) --------------------------------------------
+
+# A music disc routes to a music session out of the box; video stays on the
+# drive default to preserve existing behavior (no video routes seeded).
+SESSION_ROUTES: list[dict[str, Any]] = [
+    {"media_type": MediaType.MUSIC, "disc_type": DiscType.CD, "session_id": "ses_builtin_music_flac"},
+    {"media_type": MediaType.MUSIC, "disc_type": None, "session_id": "ses_builtin_music_flac"},
+]
+
+
+async def _seed_session_routes(session: AsyncSession) -> None:
+    """Seed the built-in session routes exactly once (I1).
+
+    Unlike the id-keyed builtins above, `SessionRoute` rows have no
+    deterministic id to key an idempotent per-row insert on (their natural
+    key is `(media_type, disc_type)`), so a plain empty-table gate isn't
+    enough: a user who deliberately clears every route would get them
+    silently reseeded on the very next boot, since "empty" can't distinguish
+    "never seeded" from "seeded then deleted".
+
+    `config.session_routes_seeded` closes that gap: seed only when the table
+    is empty AND the flag is false, then set the flag true — whether this
+    call actually inserted fresh rows or found the table already populated
+    (converges old/pre-migration states where rows exist but the flag
+    hadn't been set yet).
+    """
+    config_row = (
+        await session.execute(select(Config).where(col(Config.id) == CONFIG_SINGLETON_ID))
+    ).scalar_one_or_none()
+    if config_row is not None and config_row.session_routes_seeded:
+        return
+    existing = (await session.execute(select(SessionRoute))).scalars().first()
+    if existing is None:
+        for row in SESSION_ROUTES:
+            session.add(SessionRoute(**row))
+    if config_row is not None:
+        config_row.session_routes_seeded = True
+        session.add(config_row)
+    await session.flush()
 
 
 class _BuiltinRow(Protocol):
@@ -424,16 +474,22 @@ async def _insert_missing(
     session: AsyncSession,
     model: type[_BuiltinRow],
     rows: Iterable[dict[str, Any]],
+    sync_fields: tuple[str, ...] = ("name",),
 ) -> None:
     """Insert built-in rows that are absent. An existing row is left alone
-    except for its name: built-ins are clone-to-edit, so the seeder owns the
-    name and corrects it when the shipped text changes (e.g. the 2026-09
-    special-character cleanup), without a migration."""
+    except for `sync_fields`: built-ins are clone-to-edit, so the seeder owns
+    those fields and corrects them when the shipped value changes (e.g. the
+    2026-09 special-character cleanup, or the {year?} template change),
+    without a migration."""
     for row in rows:
         existing = (await session.execute(select(model).where(col(model.id) == row["id"]))).scalar_one_or_none()
         if existing is not None:
-            if getattr(existing, "name", None) != row["name"]:
-                existing.name = row["name"]
+            changed = False
+            for field in sync_fields:
+                if getattr(existing, field, None) != row[field]:
+                    setattr(existing, field, row[field])
+                    changed = True
+            if changed:
                 session.add(existing)
             continue
         session.add(model(**row, is_builtin=True))
@@ -447,5 +503,6 @@ async def run_seeders(session: AsyncSession) -> None:
     await _seed_inapp_channel(session)
     await _insert_missing(session, RipPreset, RIP_PRESETS)
     await _insert_missing(session, TranscodePreset, TRANSCODE_PRESETS)
-    await _insert_missing(session, Session, SESSIONS)
+    await _insert_missing(session, Session, SESSIONS, sync_fields=("name", "output_path_template"))
+    await _seed_session_routes(session)
     await session.commit()

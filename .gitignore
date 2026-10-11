@@ -135,9 +135,6 @@ venv.bak/
 # Rope project settings
 .ropeproject
 
-# mkdocs documentation
-/site
-
 # mypy
 .mypy_cache/
 .dmypy.json
@@ -198,6 +195,7 @@ arm.yaml
 # Node / npm — UI deps installed by devtools/setup-dev.sh (npm ci) and rebuilt
 # inside the UI Docker image; never commit them.
 node_modules/
+site/.cache/
 
 # Local Docker bind-mount runtime state. Dev nests these under ./arm/ (the dev
 # mirror of production's ~/arm prefix); the bare entries cover pre-migration
@@ -219,7 +217,6 @@ node_modules/
 # `git filter-branch` before force-push.
 /certs/
 .claude/scheduled_tasks.lock
-services/ui/src/api/generated.ts
 .superpowers/
 .playwright-mcp/
 services/ui-neu/nginx.http.conf
@@ -231,3 +228,4 @@ services/ui-neu/nginx.http.conf
 
 # Local gh CLI response cache — accidentally committed; must stay untracked.
 /gh-cli-cache/
+.screenshots/

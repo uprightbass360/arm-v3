@@ -1,24 +1,71 @@
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from arm_common.enums import DiscType, JobStatus, SessionApplicationStatus, TrackKind, TrackStatus, TranscodeTaskStatus
+from arm_common.enums import (
+    APPLY_OK_JOB_STATUSES,
+    APPLY_PARK_JOB_STATUSES,
+    NON_TERMINAL_JOB_STATUSES,
+    RESOLVABLE_JOB_STATUSES,
+    TERMINAL_JOB_STATUSES,
+    DiscType,
+    JobStatus,
+    MediaType,
+    SessionApplicationStatus,
+    TrackKind,
+    TrackRole,
+    TrackStatus,
+    TranscodeTaskStatus,
+)
+from arm_common.disc_shape import looks_episodic as _looks_episodic
+from arm_common.schemas.identity import IdentityClaims
+from arm_common.schemas.job_metadata import ExternalIds, JobMetadata, MusicMeta
 
 
 class ResolveRequest(BaseModel):
+    """POST /api/jobs/{id}/resolve body.
+
+    title/year are the full identity statement: every resolve restates them,
+    so there is no "omitted" case for these two -- whatever value is sent
+    (including null) is exactly what lands.
+
+    media_type/season/disc_number/disc_total are classifications, not part of
+    that statement, and follow different semantics: **omitted = keep** the
+    stored value (a title-only fix -- e.g. picking a title in the identify
+    dialog after a disc-hint source already filled disc_number/disc_total --
+    must not wipe them), **explicit null = clear** it (the operator saying
+    "this isn't a season" / "clear the kind" / "clear the disc position").
+    The same omitted=keep / explicit-null=clears rule applies per-field
+    inside `external_ids`: sending `external_ids` at all starts an identity
+    edit, and each of its member fields (imdb/tmdb/tvdb/musicbrainz_release)
+    that is explicitly present -- even as `null` -- clears that one id,
+    while a member field left out of the payload keeps its previously
+    stored value. Distinguishing "sent null" from "not sent" requires
+    Pydantic's `model_fields_set`, not an `is not None` check, since both
+    collapse to the same `None` once parsed.
+    """
+
+    # Unknown keys are a caller bug: the free-form metadata bag is gone (G-03/§3.4).
+    model_config = ConfigDict(extra="forbid")
+
     title: str
     year: int | None = None
     disc_number: int | None = None
     disc_total: int | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    media_type: MediaType | None = None
+    season: int | None = None
+    # Typed replacements for the last free-form uses.
+    music: MusicMeta | None = None
+    external_ids: ExternalIds | None = None
 
 
 class ManualTriggerRequest(BaseModel):
     """POST /api/jobs/manual — kick off a rip on a drive that already has a
     disc in the tray. The ripper picks it up via WS command and runs the
     normal scan→identify→rip flow; the optional `session_id` is stamped on
-    the resulting Job's metadata so `rip-complete` auto-applies it.
+    the resulting Job's `pending_session_id` column so `rip-complete`
+    auto-applies it.
     """
 
     drive_id: str
@@ -105,6 +152,29 @@ class TranscodeProgressSummary(BaseModel):
     percent: float
 
 
+class JobActions(BaseModel):
+    """Operator actions the backend will accept for a job in its current status.
+
+    Derived from the same status groups the endpoints enforce, so a UI button
+    gated on these flags cannot offer an action its endpoint rejects. Role
+    (admin/guest) gating stays in the UI.
+    """
+
+    can_resolve: bool
+    can_apply: bool
+    can_abandon: bool
+    can_delete: bool
+
+
+def job_actions_for(status: JobStatus) -> JobActions:
+    return JobActions(
+        can_resolve=status in RESOLVABLE_JOB_STATUSES,
+        can_apply=status in APPLY_OK_JOB_STATUSES or status in APPLY_PARK_JOB_STATUSES,
+        can_abandon=status in NON_TERMINAL_JOB_STATUSES,
+        can_delete=status in TERMINAL_JOB_STATUSES,
+    )
+
+
 class JobView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -118,12 +188,22 @@ class JobView(BaseModel):
     status: JobStatus
     title: str | None
     year: int | None
+    # Identity columns (step 2): the identified kind, the user-supplied TV
+    # season, and the explicit per-rip session choice.
+    media_type: MediaType | None = None
+    season: int | None = None
+    pending_session_id: str | None = None
+    # Sessions applied to this job that are parked (waiting_identify): pre-rip
+    # they fan out at rip-complete; post-rip something else holds them (e.g.
+    # transcoding disabled). Filled by GET /api/jobs and GET /api/jobs/{id}
+    # only; other endpoints returning a JobView leave it empty.
+    parked_session_ids: list[str] = []
     disc_number: int | None = None
     disc_total: int | None = None
     # Computed at identify; UI prefers `poster_url_manual` if set.
     poster_url: str | None = None
     poster_url_manual: str | None = None
-    metadata_json: dict[str, Any]
+    metadata_json: JobMetadata
     resumed_from_crash: bool
     # Timed review gate: when the countdown started (AWAITING_REVIEW). Drives the
     # ripper's remaining-delay calc + the UI's cosmetic countdown. Null otherwise.
@@ -136,6 +216,34 @@ class JobView(BaseModel):
     # Populated by the jobs list + detail endpoints by aggregating the job's
     # session_applications. None when no session has been applied.
     transcode_progress: TranscodeProgressSummary | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def actions(self) -> JobActions:
+        return job_actions_for(self.status)
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def looks_episodic(self) -> bool:
+        """The stored scan looks like a TV disc (several same-length episode
+        titles, no feature): the title search defaults to TV (spec 3.3)."""
+        scan = self.metadata_json.scan_result
+        return bool(scan and _looks_episodic(scan.titles))
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def has_series(self) -> bool:
+        """A TV show is known: a TMDb id of kind tv, a TVDB or TVmaze id, or a
+        show id some episode source resolved (spec 3.4). False means the
+        Match Episodes tab asks for the series first."""
+        identity = self.metadata_json.identity
+        ids = identity.external_ids if identity else None
+        if ids and ((ids.tmdb and ids.tmdb_kind == "tv") or ids.tvdb or ids.tvmaze):
+            return True
+        claims = self.metadata_json.identity_claims
+        if isinstance(claims, IdentityClaims):
+            return any(src.inputs.get("show_id") for src in claims.sources.values())
+        return False
 
 
 class HeldJobView(BaseModel):
@@ -151,9 +259,17 @@ class HeldJobView(BaseModel):
     paused: bool
 
 
+TrackRevertField = Literal[
+    "role", "title", "season", "episode_number", "episode_number_end", "episode_name", "custom_filename", "excluded"
+]
+
+
 class TrackEditRequest(BaseModel):
     """One entry in JobUpdateRequest.tracks. `track_id` selects the row; every
-    other field is an optional operator edit (omitted=untouched, null=clear)."""
+    other field is an optional operator edit (omitted=untouched, null=clear).
+    Identity fields become `manual` identity proposals; `revert_fields` drops
+    the operator's value for those fields and hands them back to the
+    automatic sources."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -162,11 +278,14 @@ class TrackEditRequest(BaseModel):
     year: int | None = None
     imdb_id: str | None = None
     poster_url: str | None = None
-    video_type: str | None = None
+    role: TrackRole | None = None
+    season: int | None = None
     episode_number: int | None = None
+    episode_number_end: int | None = None
     episode_name: str | None = None
     excluded: bool | None = None
     custom_filename: str | None = None
+    revert_fields: list[TrackRevertField] = Field(default_factory=list)
 
 
 class JobUpdateRequest(BaseModel):
@@ -179,6 +298,9 @@ class JobUpdateRequest(BaseModel):
     poster_url_manual: str | None = None
     disc_number: int | None = None
     disc_total: int | None = None
+    # The header Movie | TV switch: the type alone, ids untouched. The episode
+    # stage re-runs on the change (routers/jobs.py identity snapshot).
+    media_type: MediaType | None = None
     tracks: list[TrackEditRequest] | None = None
 
 
@@ -213,17 +335,20 @@ class TrackView(BaseModel):
     attempts: int
     last_error: str | None
     label: str | None = None
-    role: str | None = None
+    role: TrackRole | None = None
     edition: str | None = None
     title: str | None = None
     year: int | None = None
     imdb_id: str | None = None
     poster_url: str | None = None
-    video_type: str | None = None
     episode_number: int | None = None
     episode_name: str | None = None
+    episode_number_end: int | None = None
+    season: int | None = None
     excluded: bool = False
     custom_filename: str | None = None
+    # {attribute: source_id} for resolver-managed fields (display-only).
+    identity_provenance: dict[str, str] | None = None
 
 
 class RipStartResponse(BaseModel):
@@ -238,6 +363,40 @@ class RipStartResponse(BaseModel):
     min_length_seconds: int | None = None
 
 
+# The one definition of apply/fan-out skip reasons — the backend engine
+# (arm_backend.auto_session) imports this rather than re-declaring it, so the
+# wire schema and the engine can never drift.
+#
+# "no_tracks" — no Track rows exist yet (pre-rip-start apply); fans out once
+# rip-complete/resolve drains it. "no_outputs" (Fix 75-7) — Track rows DO
+# exist but none qualify for this session's media_type/exclusion, so
+# compute_outputs legitimately resolves zero paths; re-applying after the
+# rip won't change that outcome the way "no_tracks" implies it will.
+# "media_mismatch" — the session's media_type is incompatible with the
+# job's drive/disc-type routing (see `_media_types_compatible`); fanning
+# out would apply the wrong session to the wrong kind of disc.
+# "transcode_disabled" — the session resolves an encode (non-passthrough)
+# preset but the deployment's runtime transcode switch is off (or the
+# deployment isn't transcode-capable); passthrough sessions are never
+# gated this way.
+# "encoder_unavailable": the session resolves an encode preset whose
+# catalog encoder is vendor-pinned (`arm_common.encoders.EncoderSpec.kind
+# == "gpu"`) and no enabled `Gpu` row's probe currently verifies that
+# vendor/codec; checked after the `transcode_disabled` gate, so a deployment
+# with transcoding off reports "transcode_disabled" even when the encoder
+# would also be unavailable.
+ApplySkippedReason = Literal[
+    "collisions",
+    "template",
+    "session_missing",
+    "no_tracks",
+    "no_outputs",
+    "media_mismatch",
+    "transcode_disabled",
+    "encoder_unavailable",
+]
+
+
 class ResolveFanOutOutcomeView(BaseModel):
     """One waiting_identify application's post-resolve outcome.
 
@@ -245,13 +404,15 @@ class ResolveFanOutOutcomeView(BaseModel):
     promoted and `task_count` newly-created transcode tasks are queued.
     Anything else → the application stays parked in `waiting_identify`
     and `error_detail` carries the reason for the UI to surface.
+    `skipped_reason='no_tracks'` is the benign case: the rip has not started
+    yet (no Track rows exist), so the application fans out at rip-complete.
     """
 
     session_application_id: str
     session_id: str
     status: SessionApplicationStatus
     task_count: int
-    skipped_reason: Literal["collisions", "template", "session_missing"] | None = None
+    skipped_reason: ApplySkippedReason | None = None
     error_detail: str | None = None
 
 

@@ -14,6 +14,7 @@ is no longer used for dispatch; `notifications_enabled` remains the global
 master toggle. New URLs should be added as channels via /api/notifications.
 """
 
+import logging
 from datetime import datetime, timezone
 from typing import Literal
 
@@ -23,18 +24,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from arm_backend.auth import require_jwt, require_writer
-from arm_backend.config import settings
+from arm_backend.auto_session import drain_parked_applications_after_rip
+from arm_backend.config import effective_transcode_capable, settings
 from arm_backend.db import get_session
+from arm_backend.identity.sources.registry import (
+    episode_auto_apply,
+    episode_sources_setting,
+    episode_tolerance,
+    hint_sources_setting,
+)
 from arm_backend.makemkv_status import makemkv_state_detail
 from arm_backend.seeders import CONFIG_SINGLETON_ID
-from arm_common import Config, Job, JobStatus, User
+from arm_common import Config, Job, JobStatus, SessionApplication, SessionApplicationStatus, User
 from arm_common.config_metadata import CONFIG_FIELD_META
+from arm_common.enums import REDRAIN_JOB_STATUSES
 from arm_common.schemas import ConfigUpdateRequest, ConfigView, KeyCheckRequest, KeyCheckResponse
 from arm_common.secrets import HIDDEN_SECRET
 
 _KEY_CHECK_TIMEOUT_SECONDS = 10.0
 
 router = APIRouter(prefix="/api/config", tags=["config"])
+
+logger = logging.getLogger("arm_backend.routers.config")
 
 _NON_EDITABLE_KEYS = frozenset(m.key for m in CONFIG_FIELD_META if not m.editable)
 
@@ -43,6 +54,8 @@ _NON_EDITABLE_KEYS = frozenset(m.key for m in CONFIG_FIELD_META if not m.editabl
 # actually exposed: e.g. when tvdb_api_key gains its registry+ConfigView entry (B29),
 # it masks automatically; a secret-tier field not yet on ConfigView is skipped.
 _SECRET_KEYS = frozenset(m.key for m in CONFIG_FIELD_META if m.tier == "secret") & set(ConfigView.model_fields)
+
+_RANKED_META = {m.key: m for m in CONFIG_FIELD_META if m.type == "ranked"}
 
 
 def _to_view(cfg: Config) -> ConfigView:
@@ -63,11 +76,22 @@ def _to_view(cfg: Config) -> ConfigView:
         makemkv_sdf_enabled=bool(cfg.makemkv_sdf_enabled),
         thediscdb_enabled=bool(cfg.thediscdb_enabled),
         thediscdb_refresh_days=int(cfg.thediscdb_refresh_days) if cfg.thediscdb_refresh_days is not None else 7,
+        episode_sources=list(episode_sources_setting(cfg)),
+        disc_hint_sources=list(hint_sources_setting(cfg)),
+        episode_match_tolerance_seconds=episode_tolerance(cfg),
+        episode_auto_apply=episode_auto_apply(cfg),
         ripping_paused=bool(cfg.ripping_paused),
         # bool()/int() coerce the None a bare in-memory Config carries (DB-level
         # server_default only) for rows/fixtures predating these columns.
         hold_for_review=bool(cfg.hold_for_review),
         manual_wait_seconds=int(cfg.manual_wait_seconds) if cfg.manual_wait_seconds is not None else 60,
+        drive_scan_interval_seconds=int(cfg.drive_scan_interval_seconds or 30),
+        drive_detected_prune_days=int(cfg.drive_detected_prune_days or 7),
+        max_parallel_transcodes=int(cfg.max_parallel_transcodes) if cfg.max_parallel_transcodes is not None else 1,
+        max_parallel_iso_rips=int(cfg.max_parallel_iso_rips or 1),
+        # None-coerce covers rows/fixtures predating the column (NULL = enabled).
+        transcode_enabled=cfg.transcode_enabled is not False,
+        transcode_capable=effective_transcode_capable(settings),
         default_retention_policy=cfg.default_retention_policy,
         notification_apprise_urls=list(cfg.notification_apprise_urls or []),
         notifications_enabled=cfg.notifications_enabled,
@@ -75,6 +99,7 @@ def _to_view(cfg: Config) -> ConfigView:
         makemkv_key_valid=cfg.makemkv_key_valid,
         makemkv_key_state=cfg.makemkv_key_state,
         makemkv_key_checked_at=cfg.makemkv_key_checked_at,
+        makemkv_key_checked_by_drive_id=cfg.makemkv_key_checked_by_drive_id,
         updated_by_user_id=cfg.updated_by_user_id,
         updated_at=cfg.updated_at,
     )
@@ -130,11 +155,57 @@ async def update_config(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"invalid metadata_provider: {fields['metadata_provider']!r} (must be 'tmdb' or 'omdb')",
         )
+    for key in ("drive_scan_interval_seconds", "drive_detected_prune_days", "max_parallel_transcodes"):
+        if key in fields and (fields[key] is None or fields[key] < 1):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{key} must be a positive integer")
+    if "max_parallel_iso_rips" in fields:
+        cap = fields["max_parallel_iso_rips"]
+        if cap is None or isinstance(cap, bool) or not 1 <= cap <= 8:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="max_parallel_iso_rips must be 1 to 8")
+    if "transcode_enabled" in fields and fields["transcode_enabled"] is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="transcode_enabled must be a boolean")
+    for key, meta in _RANKED_META.items():
+        if key not in fields:
+            continue
+        values = fields[key]
+        if values is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{key} must be a list")
+        unknown = [v for v in values if v not in (meta.enum_values or [])]
+        if unknown:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{key}: unknown value(s) {', '.join(unknown)}",
+            )
+        if len(set(values)) != len(values):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"{key}: duplicate values")
+    if "episode_match_tolerance_seconds" in fields:
+        tol = fields["episode_match_tolerance_seconds"]
+        # Pydantic's lax int validator accepts a JSON bool (bool is an int
+        # subclass) and coerces it to 0/1 before `fields` sees it, so the
+        # bool-ness check has to read the raw wire value, not `tol`.
+        raw_tol = raw.get("episode_match_tolerance_seconds")
+        if tol is None or isinstance(raw_tol, bool) or not 1 <= tol <= 1800:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="episode_match_tolerance_seconds must be 1 to 1800"
+            )
+    if "episode_auto_apply" in fields and fields["episode_auto_apply"] is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="episode_auto_apply must be true or false")
+    if fields.get("transcode_enabled") is True and not effective_transcode_capable(settings):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="cannot enable transcoding: this deployment is ripper-only "
+            "(ARM_TRANSCODE_CAPABLE=false and no ARM_TRANSCODE_DOCKER_HOST)",
+        )
     # Detect un-pause (ripping_paused ON -> OFF) before applying, so we can give
     # held review-gate discs a FRESH countdown rather than resuming an already-
     # expired one (which would auto-rip the instant ripping resumes — surprising
     # to an operator who paused to deal with it later). timed-review-gate spec §6.3.
     unpausing = bool(cfg.ripping_paused) and fields.get("ripping_paused") is False
+    # Detect transcoding re-enable (OFF -> ON). A NULL column reads as enabled,
+    # so only an explicit False counts as "was off". Encode applications that
+    # reached the parked-application drain while the toggle was off stayed
+    # WAITING_IDENTIFY; they're re-drained after the commit below.
+    reenabling_transcode = cfg.transcode_enabled is False and fields.get("transcode_enabled") is True
 
     for key, value in fields.items():
         setattr(cfg, key, value)
@@ -150,7 +221,52 @@ async def update_config(
 
     await session.commit()
     await session.refresh(cfg)
-    return _to_view(cfg)
+    view = _to_view(cfg)
+    if reenabling_transcode:
+        await _redrain_parked_applications(session, request)
+    return view
+
+
+async def _redrain_parked_applications(session: AsyncSession, request: Request) -> None:
+    """Promote encode applications parked while transcoding was off.
+
+    Runs after the toggle commit, so `transcode_enabled_now` reads the new
+    value. Reuses the after-rip drain (which commits per job, logs per
+    application, and never raises); any failure here is logged and swallowed
+    so the PATCH itself always succeeds once the toggle is saved.
+    """
+    hub = getattr(request.app.state, "ws_hub", None)
+    try:
+        parked_job_ids = {
+            app.job_id
+            for app in (
+                await session.execute(
+                    select(SessionApplication).where(
+                        col(SessionApplication.status) == SessionApplicationStatus.WAITING_IDENTIFY
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        }
+        if not parked_job_ids:
+            return
+        jobs = list(
+            (
+                await session.execute(
+                    select(Job)
+                    .where(col(Job.id).in_(sorted(parked_job_ids)))
+                    .where(col(Job.status).in_(list(REDRAIN_JOB_STATUSES)))
+                )
+            )
+            .scalars()
+            .all()
+        )
+    except Exception:  # noqa: BLE001 - re-drain must never fail the config PATCH
+        logger.warning("transcode re-enable: listing parked session_applications failed", exc_info=True)
+        return
+    for job in jobs:
+        await drain_parked_applications_after_rip(session, job, hub, trigger="transcode re-enable")
 
 
 _KEY_ATTR = {"tmdb": "tmdb_api_key", "omdb": "omdb_api_key", "tvdb": "tvdb_api_key", "makemkv": "makemkv_key"}

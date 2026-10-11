@@ -2,27 +2,29 @@
 	import { onDestroy } from 'svelte';
 	import { jobLogDownloadUrl } from '$lib/api/logs';
 	import { createJobLog } from '$lib/stores/jobLog.svelte';
-	import { isJobActive } from '$lib/utils/job-type';
+	import { isLive } from '$lib/utils/job-status-groups';
+	import type { JobView } from '$lib/types/api.gen';
 	import LogView from '$lib/components/LogView.svelte';
 
 	interface Props {
 		jobId: string;
-		status: string | null;
+		job: Pick<JobView, 'status' | 'transcode_progress'>;
 		defaultOpen?: boolean;
 	}
 
-	let { jobId, status, defaultOpen }: Props = $props();
+	let { jobId, job, defaultOpen }: Props = $props();
 
 	const log = createJobLog(jobId, { limit: 200 });
 
-	let open = $state(defaultOpen ?? isJobActive(status));
+	let open = $state(defaultOpen ?? isLive(job));
 
 	// Lifecycle: fetch once always; subscribe to the live feed only while the
-	// job is active, and tear the subscription down the moment it goes
-	// terminal (status prop changing, or unmount).
+	// job is live (this includes an in-flight transcode), and tear the
+	// subscription down the moment it stops being live (job prop changing, or
+	// unmount).
 	let started = false;
 	$effect(() => {
-		const active = isJobActive(status);
+		const active = isLive(job);
 		if (active && !started) {
 			started = true;
 			log.start();
@@ -46,42 +48,81 @@
 	<div class="flex flex-wrap items-center justify-between gap-2">
 		<button
 			type="button"
-			onclick={() => { open = !open; }}
-			class="flex items-center gap-2 text-lg font-semibold text-gray-900 dark:text-white"
+			onclick={() => {
+				open = !open;
+			}}
+			class="job-log-panel-toggle"
+			aria-expanded={open}
 		>
-			<svg class="h-4 w-4 transition-transform {open ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+			<svg class="h-4 w-4 chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 				<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
 			</svg>
 			Log
-			<span class="text-sm font-normal text-gray-500 dark:text-gray-400">({log.entries.length} lines)</span>
+			<span class="job-log-panel-count">({log.entries.length} lines)</span>
 			{#if log.live}
-				<span class="flex items-center gap-1.5 text-xs font-normal text-green-600 dark:text-green-400">
-					<span class="h-2 w-2 rounded-full bg-green-500"></span>
+				<span class="job-log-panel-live">
+					<span class="job-log-panel-live-dot"></span>
 					live
 				</span>
 			{/if}
 		</button>
-		<div class="flex items-center gap-3 text-sm">
-			<a
-				href="/logs/{jobId}"
-				data-testid="job-log-open"
-				class="text-primary-text hover:underline dark:text-primary-text-dark"
-			>
-				Open full log
-			</a>
-			<a
-				href={jobLogDownloadUrl(jobId)}
-				data-testid="job-log-download"
-				class="text-primary-text hover:underline dark:text-primary-text-dark"
-			>
-				Download .zip
-			</a>
+		<div class="flex items-center gap-3">
+			<a href="/logs/{jobId}" data-testid="job-log-open" class="btn btn-link"> Open full log </a>
+			<a href={jobLogDownloadUrl(jobId)} data-testid="job-log-download" class="btn btn-link"> Download .zip </a>
 		</div>
 	</div>
 
 	{#if open}
 		<div class="mt-3">
-			<LogView entries={log.entries} loading={log.loading} error={log.error} live={log.live} />
+			{#if log.loading && log.entries.length === 0}
+				<p class="job-log-panel-loading">Loading log...</p>
+			{:else}
+				<LogView entries={log.entries} error={log.error} />
+			{/if}
 		</div>
 	{/if}
 </section>
+
+<style>
+	.job-log-panel-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-size: 1.125rem;
+		line-height: 1.75rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	.job-log-panel-toggle .chevron {
+		transition: transform var(--motion-fast) var(--ease);
+	}
+	.job-log-panel-toggle[aria-expanded='true'] .chevron {
+		transform: rotate(90deg);
+	}
+	.job-log-panel-count {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		font-weight: 400;
+		color: var(--color-text-muted);
+	}
+	.job-log-panel-loading {
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	.job-log-panel-live {
+		display: flex;
+		align-items: center;
+		gap: 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 400;
+		color: var(--color-success);
+	}
+	.job-log-panel-live-dot {
+		height: 0.5rem;
+		width: 0.5rem;
+		border-radius: 9999px;
+		background: var(--color-success);
+	}
+</style>

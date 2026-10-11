@@ -4,6 +4,9 @@
 	import { reveal } from '$lib/transitions';
 	import { login } from '$lib/api/auth';
 	import { applyLogin, isGuest } from '$lib/stores/auth';
+	import CopyBlock from '$lib/components/CopyBlock.svelte';
+
+	const FIRST_BOOT_COMMAND = 'docker exec armv3-backend cat /logs/first-boot.log';
 
 	let username = $state('');
 	let password = $state('');
@@ -16,12 +19,21 @@
 	// not fire for a probe. 200 = guest access enabled, anything else = hide
 	// the Continue-as-Guest button.
 	let guestEnabled = $state(false);
+	// First run (setup not finished): say where the admin password is, hide
+	// guest browsing (it's off until setup), and send the admin into setup.
+	let firstRun = $state(false);
 	onMount(async () => {
 		try {
 			const res = await fetch('/api/system/version');
 			guestEnabled = res.ok;
 		} catch {
 			guestEnabled = false;
+		}
+		try {
+			const res = await fetch('/api/setup/status');
+			firstRun = res.ok && (await res.json()).first_run === true;
+		} catch {
+			firstRun = false;
 		}
 	});
 
@@ -33,7 +45,8 @@
 		try {
 			const result = await login(username, password);
 			applyLogin(result);
-			goto(result.password_must_change ? '/change-password' : '/');
+			if (firstRun && result.role === 'admin') goto('/setup');
+			else goto(result.password_must_change ? '/change-password' : '/');
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Login failed';
 		} finally {
@@ -42,32 +55,105 @@
 	}
 </script>
 
-<div class="flex min-h-screen items-center justify-center p-4">
-	<form onsubmit={onSubmit} class="w-full max-w-sm space-y-4 rounded-lg border border-primary/20 bg-surface p-6 dark:bg-surface-dark">
-		<h1 class="text-lg font-semibold">Sign in to ARM</h1>
+<div class="login-page">
+	<form onsubmit={onSubmit} class="panel stack login-page-form">
+		<h1 class="login-page-title">Sign in to ARM</h1>
 		{#if error}
-			<p class="rounded bg-red-100 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-300">{error}</p>
+			<p class="alert alert-danger">{error}</p>
 		{/if}
-		<label class="block text-sm">
-			<span class="mb-1 block">Username</span>
-			<input bind:value={username} type="text" name="username" required autocomplete="username" class="w-full rounded border border-primary/20 px-3 py-2 dark:bg-surface-dark" />
+		<label class="field">
+			<span class="field-label">Username</span>
+			<input bind:value={username} type="text" name="username" required autocomplete="username" />
 		</label>
-		<label class="block text-sm">
-			<span class="mb-1 block">Password</span>
-			<input bind:value={password} type="password" name="password" required autocomplete="current-password" class="w-full rounded border border-primary/20 px-3 py-2 dark:bg-surface-dark" />
+		<label class="field">
+			<span class="field-label">Password</span>
+			<input bind:value={password} type="password" name="password" required autocomplete="current-password" />
 		</label>
-		<button type="submit" disabled={submitting} class="w-full rounded bg-primary px-4 py-2 font-medium text-white disabled:opacity-60">
+		<button type="submit" disabled={submitting} class="btn btn-primary login-page-submit">
 			{submitting ? 'Signing in...' : 'Sign in'}
 		</button>
-		{#if $isGuest && guestEnabled}
-			<button
-				type="button"
-				onclick={() => goto('/')}
-				in:reveal
-				class="w-full rounded bg-amber-500 px-4 py-2 font-medium text-white hover:bg-amber-600"
-			>
+		{#if firstRun}
+			<div class="login-page-first-run" data-testid="login-first-run">
+				<p>First time? The admin password is in ARM's first-boot log. Run this on the server:</p>
+				<CopyBlock text={FIRST_BOOT_COMMAND} />
+			</div>
+		{/if}
+		{#if $isGuest && guestEnabled && !firstRun}
+			<button type="button" onclick={() => goto('/')} in:reveal class="btn btn-warning login-page-guest">
 				Continue as Guest
 			</button>
 		{/if}
 	</form>
 </div>
+
+<style>
+	/* full-viewport centering wrapper; not a block, this page's own shell */
+	.login-page {
+		display: flex;
+		min-height: 100vh;
+		align-items: center;
+		justify-content: center;
+		padding: 1rem;
+	}
+	/* original was p-6 (1.5rem), not panel's own 1rem default */
+	.login-page-form {
+		width: 100%;
+		max-width: 24rem;
+		gap: 1rem;
+		padding: 1.5rem;
+	}
+	.login-page-title {
+		font-size: 1.125rem;
+		line-height: 1.75rem;
+		font-weight: 600;
+		color: var(--color-text);
+	}
+	/* the original inputs had no background utility at all (transparent,
+	   inheriting the panel's own surface colour, since text-sm was inherited
+	   from the wrapping <label> so field's own default text-sm sizing
+	   already matches) and a lighter border (border-primary/20 =
+	   --color-border, not field's own --color-border-strong default) */
+	.login-page-form input {
+		border-color: var(--color-border);
+		background: transparent;
+	}
+	/* the buttons sit OUTSIDE the text-sm label wrapper and carried no
+	   text-size utility of their own, so they render at the ambient body
+	   size (1rem/1.5rem, confirmed live), not .btn's own text-sm default -
+	   height 40px vs .btn's 36px */
+	.login-page-submit,
+	.login-page-guest {
+		font-size: 1rem;
+		line-height: 1.5rem;
+	}
+	/* original had no border/ring class at all; .btn-primary's own border
+	   is invisible (same colour as the fill) but still occupies 2px of
+	   layout height without this - measured 2px taller than baseline */
+	.login-page-submit {
+		width: 100%;
+		border: 0;
+	}
+	/* the original Continue-as-Guest button was a SOLID filled amber pill
+	   (bg-amber-500 text-white), not btn-warning's outlined/soft look - the
+	   button's own fill/text colours are restated on top of the modifier for
+	   its distinct call-to-action tone; btn-warning still supplies the base
+	   box model (border/radius/height) and border:0 removes its outline */
+	.login-page-guest {
+		width: 100%;
+		border: 0;
+		background: var(--color-warning);
+		color: var(--color-on-primary);
+	}
+	/* darkens on hover like the original's bg-amber-500 -> hover:bg-amber-600;
+	   no darker warning token exists, so filter substitutes for a literal
+	   colour (the lint bans raw colour keywords, even inside color-mix) */
+	.login-page-first-run {
+		display: grid;
+		gap: 0.5rem;
+		font-size: 0.875rem;
+		color: var(--color-text-muted);
+	}
+	.login-page-guest:hover {
+		filter: brightness(0.9);
+	}
+</style>

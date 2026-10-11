@@ -1,18 +1,20 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderComponent, screen, fireEvent, cleanup, waitFor } from '$lib/test-utils';
 import DriveCard from './DriveCard.svelte';
-import type { DriveView as Drive, SessionView } from '$lib/types/api.gen';
+import type { DriveView as Drive, SessionView, TranscodePresetView } from '$lib/types/api.gen';
+import { setTranscoderEnabled } from '$lib/stores/config';
 vi.mock('$lib/api/drives', () => ({
 	updateDrive: vi.fn(() => Promise.resolve()),
-	deleteDrive: vi.fn(() => Promise.resolve())
+	unenrollDrive: vi.fn(() => Promise.resolve())
 }));
 vi.mock('$lib/api/jobs', () => ({
 	triggerManual: vi.fn(() => Promise.resolve({ drive_id: 'drv_1', session_id: null }))
 }));
 import { triggerManual } from '$lib/api/jobs';
 const triggerManualMock = vi.mocked(triggerManual);
-import { updateDrive } from '$lib/api/drives';
+import { updateDrive, unenrollDrive } from '$lib/api/drives';
 const updateDriveMock = vi.mocked(updateDrive);
+const unenrollDriveMock = vi.mocked(unenrollDrive);
 
 function createDrive(overrides: Partial<Drive> = {}): Drive {
 	return {
@@ -34,6 +36,14 @@ function createDrive(overrides: Partial<Drive> = {}): Drive {
 		disc_enum_timeout: null,
 		created_at: null,
 		updated_at: null,
+		lifecycle: 'enrolled',
+		present: true,
+		identity_kind: 'by_id',
+		serial: 'SN123',
+		by_id_name: 'usb-VENDOR_MODEL_SN123-0:0',
+		vendor: 'VENDOR',
+		model: 'MODEL',
+		last_error: null,
 		current_job: null,
 		...overrides
 	};
@@ -88,10 +98,42 @@ describe('DriveCard', () => {
 			expect(screen.getByText('Drive drv_1')).toBeInTheDocument();
 		});
 
-		it('shows Stale badge and Remove button for offline drives', () => {
-			renderDrive({ status: 'offline' });
-			expect(screen.getByText('Stale')).toBeInTheDocument();
-			expect(screen.getByText('Remove')).toBeInTheDocument();
+		it('renders the detached copy and dims the card when offline and absent', () => {
+			const { container } = renderDrive({ status: 'offline', present: false, media_status: 'detached' });
+			expect(screen.getByText('○ detached: reconnect the drive')).toBeInTheDocument();
+			// the original shell's only status-driven style was opacity-60 while
+			// detached, carried here as the data-detached state hook.
+			expect(container.querySelector('.drive-card')).toHaveAttribute('data-detached', 'true');
+		});
+
+		// The pre-migration card shell (git 441d35d2) was a fixed
+		// `border-primary/20` box: drive status coloured the inline header
+		// label only, never the card. So the shell stays a plain `card` -
+		// `card-status` would add a 4px left accent stripe the baseline has
+		// no counterpart for. DriveCard needs an enrolled drive to render, so
+		// the parity harness never exercises it on the local stack; assert the
+		// shell's classes here instead.
+		it.each(['online', 'offline', 'error'] as const)(
+			'keeps the card shell free of a status accent when status is %s',
+			(status) => {
+				const { container } = renderDrive({ status });
+				const card = container.querySelector('.drive-card');
+				expect(card).toHaveClass('card');
+				expect(card).not.toHaveClass('card-status');
+				expect(card).not.toHaveAttribute('data-status');
+			}
+		);
+
+		it('shows the error reason', () => {
+			renderDrive({ status: 'error', last_error: 'identity mismatch: row is bound to X' });
+			expect(screen.getByText(/identity mismatch: row is bound to X/)).toBeInTheDocument();
+		});
+
+		it('shows an amber offline label when enrolled, offline, and still present', () => {
+			renderDrive({ status: 'offline', present: true, media_status: null });
+			const badge = screen.getByTestId('drive-status-label');
+			expect(badge).toHaveTextContent('offline');
+			expect(badge.className).toContain('badge-warning');
 		});
 	});
 
@@ -169,6 +211,41 @@ describe('DriveCard', () => {
 		});
 	});
 
+	describe('unenroll', () => {
+		it('Unenroll confirms, calls the API and notifies', async () => {
+			vi.spyOn(window, 'confirm').mockReturnValue(true);
+			const onupdate = vi.fn();
+			renderComponent(DriveCard, { props: { drive: createDrive(), sessions: [], onupdate } });
+			await fireEvent.click(screen.getByTestId('drive-unenroll'));
+			await waitFor(() => expect(onupdate).toHaveBeenCalled());
+			expect(window.confirm).toHaveBeenCalledWith(
+				'Unenroll Main Drive? Its ripper container is stopped and removed. If the drive is still connected it reappears under Detected on the next scan.'
+			);
+			expect(unenrollDriveMock).toHaveBeenCalledWith('drv_1');
+		});
+
+		it('Unenroll is disabled while ripping', () => {
+			renderDrive({ status: 'ripping' });
+			expect(screen.getByTestId('drive-unenroll')).toBeDisabled();
+		});
+
+		it('never shows Remove', () => {
+			renderDrive({ status: 'offline' });
+			expect(screen.queryByText('Remove')).not.toBeInTheDocument();
+		});
+
+		it('surfaces an unenroll failure inline instead of swallowing it', async () => {
+			vi.spyOn(window, 'confirm').mockReturnValue(true);
+			unenrollDriveMock.mockRejectedValueOnce(new Error('cannot unenroll: a drive is ripping'));
+			renderDrive();
+			await fireEvent.click(screen.getByTestId('drive-unenroll'));
+			await waitFor(() =>
+				expect(screen.getByTestId('drive-unenroll-error')).toHaveTextContent('cannot unenroll: a drive is ripping')
+			);
+			expect(screen.getByTestId('drive-unenroll')).not.toBeDisabled();
+		});
+	});
+
 	describe('manual rip', () => {
 		it('renders the session select with "— none —" and prop sessions (built-in flagged)', () => {
 			renderDrive({}, [
@@ -199,9 +276,7 @@ describe('DriveCard', () => {
 			triggerManualMock.mockRejectedValueOnce(new Error('ripping is paused; no new jobs accepted'));
 			renderDrive({ id: 'drv_1' });
 			await fireEvent.click(screen.getByTestId('drive-start-rip'));
-			await waitFor(() =>
-				expect(screen.getByTestId('drive-manual-error')).toHaveTextContent('ripping is paused')
-			);
+			await waitFor(() => expect(screen.getByTestId('drive-manual-error')).toHaveTextContent('ripping is paused'));
 		});
 
 		it('resets the session selection and calls onupdate after a successful rip', async () => {
@@ -243,18 +318,14 @@ describe('DriveCard', () => {
 			renderDrive({ id: 'drv_1', default_session_id: null }, sessions);
 			await fireEvent.click(screen.getByTitle('Drive settings'));
 			await fireEvent.change(screen.getByTestId('drive-default-session'), { target: { value: 'ses_2' } });
-			await waitFor(() =>
-				expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { default_session_id: 'ses_2' })
-			);
+			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { default_session_id: 'ses_2' }));
 		});
 
 		it('clears the default (null) when "— none —" is chosen', async () => {
 			renderDrive({ id: 'drv_1', default_session_id: 'ses_1' }, sessions);
 			await fireEvent.click(screen.getByTitle('Drive settings'));
 			await fireEvent.change(screen.getByTestId('drive-default-session'), { target: { value: '' } });
-			await waitFor(() =>
-				expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { default_session_id: null })
-			);
+			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { default_session_id: null }));
 		});
 
 		it('surfaces a save error inline', async () => {
@@ -262,9 +333,62 @@ describe('DriveCard', () => {
 			renderDrive({ id: 'drv_1', default_session_id: null }, sessions);
 			await fireEvent.click(screen.getByTitle('Drive settings'));
 			await fireEvent.change(screen.getByTestId('drive-default-session'), { target: { value: 'ses_1' } });
-			await waitFor(() =>
-				expect(screen.getByTestId('drive-default-session-error')).toHaveTextContent('default boom')
-			);
+			await waitFor(() => expect(screen.getByTestId('drive-default-session-error')).toHaveTextContent('default boom'));
+		});
+	});
+
+	describe('ripper-only deployment (not transcode-capable)', () => {
+		const sessions = [
+			{ id: 'ses_raw', name: 'Raw finalize', is_builtin: true, transcode_preset_id: null } as SessionView,
+			{ id: 'ses_pass', name: 'Passthrough', is_builtin: false, transcode_preset_id: 'tpr_none' } as SessionView,
+			{ id: 'ses_enc', name: 'Plex 1080p', is_builtin: false, transcode_preset_id: 'tpr_hb' } as SessionView
+		];
+		const transcodePresets = [
+			{ id: 'tpr_none', tool: 'none' } as TranscodePresetView,
+			{ id: 'tpr_hb', tool: 'handbrake' } as TranscodePresetView
+		];
+
+		function render(overrides: Partial<Drive> = {}) {
+			return renderComponent(DriveCard, { props: { drive: createDrive(overrides), sessions, transcodePresets } });
+		}
+
+		function optionLabels(testId: string): string[] {
+			const sel = screen.getByTestId(testId) as HTMLSelectElement;
+			return Array.from(sel.options).map((o) => o.textContent?.trim() ?? '');
+		}
+
+		afterEach(() => setTranscoderEnabled(true));
+
+		it('Start-rip picker offers only passthrough sessions', () => {
+			setTranscoderEnabled(false);
+			render();
+			expect(optionLabels('drive-session-select')).toEqual(['- none -', 'Raw finalize (built-in)', 'Passthrough']);
+		});
+
+		it('default-session picker offers only passthrough sessions', async () => {
+			setTranscoderEnabled(false);
+			render();
+			await fireEvent.click(screen.getByTitle('Drive settings'));
+			expect(optionLabels('drive-default-session')).toEqual(['- none -', 'Raw finalize (built-in)', 'Passthrough']);
+		});
+
+		it('keeps an already-saved encode default visible so the select shows the real value', async () => {
+			setTranscoderEnabled(false);
+			render({ default_session_id: 'ses_enc' });
+			await fireEvent.click(screen.getByTitle('Drive settings'));
+			const sel = screen.getByTestId('drive-default-session') as HTMLSelectElement;
+			expect(sel.value).toBe('ses_enc');
+			expect(optionLabels('drive-default-session')).toContain('Plex 1080p');
+			// ...but it is still not offered for a new manual rip.
+			expect(optionLabels('drive-session-select')).not.toContain('Plex 1080p');
+		});
+
+		it('capable deployment keeps every session in both pickers', async () => {
+			setTranscoderEnabled(true);
+			render();
+			expect(optionLabels('drive-session-select')).toContain('Plex 1080p');
+			await fireEvent.click(screen.getByTitle('Drive settings'));
+			expect(optionLabels('drive-default-session')).toContain('Plex 1080p');
 		});
 	});
 
@@ -272,6 +396,75 @@ describe('DriveCard', () => {
 		it('renders a SkeletonCard when drive prop is omitted', () => {
 			const { container } = renderComponent(DriveCard, { props: {} });
 			expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
+		});
+	});
+
+	describe('rip mode (setup spec D1)', () => {
+		it('offers Default (follow the global switch), Auto and Manual; Default writes null', async () => {
+			renderComponent(DriveCard, { props: { drive: createDrive({ drive_mode: 'manual' }), globalAutoRip: true } });
+			const select = screen.getByLabelText(/rip mode/i) as HTMLSelectElement;
+			expect(select.value).toBe('manual');
+			expect(screen.getByRole('option', { name: 'Default (Auto)' })).toBeInTheDocument();
+			await fireEvent.change(select, { target: { value: '' } });
+			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { drive_mode: null }));
+		});
+
+		it('names the global default it would follow', () => {
+			renderComponent(DriveCard, { props: { drive: createDrive(), globalAutoRip: false } });
+			expect(screen.getByRole('option', { name: 'Default (Manual)' })).toBeInTheDocument();
+			expect((screen.getByLabelText(/rip mode/i) as HTMLSelectElement).value).toBe('');
+		});
+	});
+
+	describe('essentials variant (setup walkthrough)', () => {
+		it('shows Ready for an online drive and saves the name on blur and 4K on change', async () => {
+			renderComponent(DriveCard, {
+				props: {
+					drive: createDrive({ display_name: null, connection: 'usb' } as Partial<Drive>),
+					variant: 'essentials'
+				}
+			});
+			expect(screen.getByText('Ready')).toBeInTheDocument();
+			expect(screen.getByText('VENDOR MODEL')).toBeInTheDocument();
+			expect(screen.getByText('USB')).toBeInTheDocument();
+			expect(screen.queryByLabelText(/rip mode/i)).toBeNull();
+			const name = screen.getByLabelText(/friendly name/i);
+			await fireEvent.input(name, { target: { value: 'Living room' } });
+			await fireEvent.blur(name);
+			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { display_name: 'Living room' }));
+			await fireEvent.click(screen.getByLabelText(/4k uhd/i));
+			await waitFor(() => expect(updateDriveMock).toHaveBeenCalledWith('drv_1', { uhd_capable: true }));
+		});
+
+		it('shows Starting ripper until the drive comes online, and a reported error', () => {
+			const { unmount } = renderComponent(DriveCard, {
+				props: { drive: createDrive({ status: 'offline' }), variant: 'essentials' }
+			});
+			expect(screen.getByText('Starting ripper...')).toBeInTheDocument();
+			unmount();
+			renderComponent(DriveCard, {
+				props: { drive: createDrive({ last_error: 'container exited 125' }), variant: 'essentials' }
+			});
+			expect(screen.getByText('container exited 125')).toBeInTheDocument();
+		});
+
+		it('says a detached drive is not connected instead of starting', () => {
+			renderComponent(DriveCard, {
+				props: {
+					drive: createDrive({ status: 'offline', present: false, media_status: 'detached' }),
+					variant: 'essentials'
+				}
+			});
+			expect(screen.getByText('Not connected')).toBeInTheDocument();
+			expect(screen.queryByText('Starting ripper...')).toBeNull();
+		});
+
+		it('does not save an unchanged name', async () => {
+			renderComponent(DriveCard, { props: { drive: createDrive(), variant: 'essentials' } });
+			const name = screen.getByLabelText(/friendly name/i);
+			await fireEvent.input(name, { target: { value: 'Main Drive' } });
+			await fireEvent.blur(name);
+			expect(updateDriveMock).not.toHaveBeenCalled();
 		});
 	});
 });

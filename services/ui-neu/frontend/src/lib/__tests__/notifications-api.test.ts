@@ -7,7 +7,13 @@ function jsonResponse(data: unknown, ok = true) {
 	return { ok, status: ok ? 200 : 500, statusText: ok ? 'OK' : 'Error', json: () => Promise.resolve(data) };
 }
 
-import { fetchNotifications, fetchNotificationCount, dismissNotification, dismissAllNotifications } from '../api/notifications';
+import {
+	fetchNotifications,
+	fetchNotificationCount,
+	dismissNotification,
+	dismissAllNotifications,
+	purgeNotifications
+} from '../api/notifications';
 
 beforeEach(() => mockFetch.mockReset());
 
@@ -25,7 +31,10 @@ describe('fetchNotificationCount', () => {
 		mockFetch.mockResolvedValue(jsonResponse({ unseen: 1, seen: 0, cleared: 0, total: 1 }));
 		const result = await fetchNotificationCount();
 		expect(result.unseen).toBe(1);
-		expect(mockFetch).toHaveBeenCalledWith('/api/notifications/inbox/count', expect.objectContaining({ method: 'GET' }));
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/notifications/inbox/count',
+			expect.objectContaining({ method: 'GET' })
+		);
 	});
 });
 
@@ -33,16 +42,40 @@ describe('dismissNotification', () => {
 	it('PATCHes /api/notifications/inbox/:id with seen+cleared', async () => {
 		mockFetch.mockResolvedValue(jsonResponse({ id: 'abc', seen: true, cleared: true }));
 		await dismissNotification('abc');
-		expect(mockFetch).toHaveBeenCalledWith('/api/notifications/inbox/abc', expect.objectContaining({ method: 'PATCH' }));
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/notifications/inbox/abc',
+			expect.objectContaining({ method: 'PATCH' })
+		);
 		const init = mockFetch.mock.calls[0][1] as RequestInit;
 		expect(JSON.parse(init.body as string)).toEqual({ seen: true, cleared: true });
 	});
 });
 
 describe('dismissAllNotifications', () => {
-	it('POSTs /api/notifications/inbox/dismiss-all', async () => {
-		mockFetch.mockResolvedValue(jsonResponse({}));
-		await dismissAllNotifications();
-		expect(mockFetch).toHaveBeenCalledWith('/api/notifications/inbox/dismiss-all', expect.objectContaining({ method: 'POST' }));
+	it('POSTs /api/notifications/inbox/dismiss-all and returns the updated count', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ updated: 3 }));
+		const result = await dismissAllNotifications();
+		expect(result).toEqual({ updated: 3 });
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/notifications/inbox/dismiss-all',
+			expect.objectContaining({ method: 'POST' })
+		);
+	});
+});
+
+describe('purgeNotifications', () => {
+	it('POSTs /api/notifications/inbox/purge and returns the deleted count', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ deleted: 2 }));
+		const result = await purgeNotifications();
+		expect(result).toEqual({ deleted: 2 });
+		expect(mockFetch).toHaveBeenCalledWith(
+			'/api/notifications/inbox/purge',
+			expect.objectContaining({ method: 'POST' })
+		);
+	});
+
+	it('rejects when the backend errors', async () => {
+		mockFetch.mockResolvedValue(jsonResponse({ detail: 'boom' }, false));
+		await expect(purgeNotifications()).rejects.toThrow();
 	});
 });

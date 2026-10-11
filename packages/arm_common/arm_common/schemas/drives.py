@@ -6,10 +6,20 @@ PATCH endpoint and any future helpers can share validation rules.
 """
 
 from datetime import datetime
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from arm_common.enums import DriveMediaStatus, DriveMode, DriveStatus, JobStatus
+from arm_common.enums import (
+    DriveIdentityKind,
+    DriveKind,
+    DriveLifecycle,
+    DriveMediaStatus,
+    DriveMode,
+    DriveSourceKind,
+    DriveStatus,
+    JobStatus,
+)
 
 
 class DriveCurrentJobView(BaseModel):
@@ -39,7 +49,23 @@ class DriveView(BaseModel):
     disc_enum_timeout: int | None
     created_at: datetime | None
     updated_at: datetime | None
+    # Lifecycle (spec §1). `lifecycle` is the operator's decision; `present`
+    # is whether the hardware is here right now — orthogonal.
+    lifecycle: DriveLifecycle
+    present: bool
+    identity_kind: DriveIdentityKind | None
+    serial: str | None
+    by_id_name: str | None
+    vendor: str | None
+    model: str | None
+    last_error: str | None
     current_job: DriveCurrentJobView | None = None
+    # Bus the drive hangs off, derived from by_id_name's prefix; not stored
+    # (setup spec 2026-10-01 §6.6). "usb" | "sata" | "other" | None.
+    connection: Literal["usb", "sata", "other"] | None = None
+    kind: DriveKind = DriveKind.OPTICAL
+    source_kind: DriveSourceKind | None = None
+    source_path: str | None = None
 
 
 class DriveUpdateRequest(BaseModel):
@@ -64,19 +90,45 @@ class DriveUpdateRequest(BaseModel):
 
 
 class DriveDiagnosticItem(BaseModel):
+    """One row of GET /api/drives/diagnostic's "Look for issues" panel: the
+    lifecycle model's own verdict on a drive, not just heartbeat staleness."""
+
     id: str
+    lifecycle: DriveLifecycle
+    present: bool
+    identity_kind: DriveIdentityKind | None
+    device_path: str
+    status: DriveStatus
     # DriveMediaStatus is a StrEnum, so this serializes to its string value
     # (e.g. "loaded") in the JSON response.
     media_status: DriveMediaStatus | None
     media_status_at: datetime | None
+    # Enrolled only: "running" | "exited" | "missing" | "stale-image" |
+    # "unknown"; None for detected/ignored rows (no ripper container).
+    container: str | None
+    last_error: str | None
     healthy: bool
     notes: list[str]
 
 
 class DriveDiagnosticResponse(BaseModel):
     drives: list[DriveDiagnosticItem]
+    # Scanner / manager / host-disk level notes — not tied to any one drive.
+    system: list[str] = Field(default_factory=list)
 
 
 class DriveRescanResponse(BaseModel):
     online: int
     stale: int
+    detected: int = 0
+    ignored: int = 0
+    enrolled: int = 0
+    absent: int = 0
+    pruned: int = 0
+
+
+class DriveDevicePathUpdateRequest(BaseModel):
+    """Ripper → backend: the drive now occupies this node (replug under a
+    new srN). Keeps the UI's node current without a re-register."""
+
+    device_path: str

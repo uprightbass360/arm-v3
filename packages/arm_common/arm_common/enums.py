@@ -25,13 +25,66 @@ class DriveMediaStatus(StrEnum):
     NO_DISC = "no_disc"  # CDS_NO_DISC
     TRAY_OPEN = "tray_open"  # CDS_TRAY_OPEN
     NOT_READY = "not_ready"  # CDS_DRIVE_NOT_READY (medium spinning up)
-    UNAVAILABLE = "unavailable"  # open() failed — kernel ENODEV / device file gone
+    # The device node exists but open() was refused (EPERM/EACCES — cgroup
+    # rule not honoured, wrong group). Present-but-misconfigured; distinct
+    # from DETACHED so the UI can say "fix permissions", not "plug it in".
+    UNAVAILABLE = "unavailable"
     UNKNOWN = "unknown"  # CDS_NO_INFO, or ioctl unsupported on a probed device
+    # No hardware behind this drive's identity right now (ENOENT/ENXIO/ENODEV):
+    # unplugged, or not yet enumerated. The ripper keeps heartbeating so the
+    # row stays visible; the backend derives DriveStatus.OFFLINE from this.
+    DETACHED = "detached"
 
 
 class DriveMode(StrEnum):
     AUTO = "auto"  # ripper auto-rips on disc insert
     MANUAL = "manual"  # ripper waits for an explicit manual.trigger
+
+
+class DriveLifecycle(StrEnum):
+    """Operator-owned state of a physical optical drive the backend has seen.
+    Presence (plugged in right now) is a separate, orthogonal fact."""
+
+    DETECTED = "detected"  # seen by the scanner, no decision yet
+    IGNORED = "ignored"  # operator said "not ARM's" — never nag, never prune
+    ENROLLED = "enrolled"  # operator said "ARM's" — a ripper serves it (Plan 3 spawns it)
+    RETIRED = "retired"  # a virtual (ISO) drive whose one-shot rip has ended
+
+
+class DriveKind(StrEnum):
+    """What a Drive row represents. OPTICAL is a physical drive the scanner
+    found; VIRTUAL is an ephemeral per-ISO-rip drive row (source_kind /
+    source_path identify the ISO), created enrolled and retired when its one
+    rip ends."""
+
+    OPTICAL = "optical"
+    VIRTUAL = "virtual"
+
+
+class DriveSourceKind(StrEnum):
+    """What a virtual drive's source is: an .iso image, or a disc folder (a
+    BDMV / VIDEO_TS tree MakeMKV reads directly)."""
+
+    ISO = "iso"
+    FOLDER = "folder"
+
+
+class IsoPreparePhase(StrEnum):
+    """What an ISO ripper is doing before its job exists: scanning the image
+    (or its extracted folder) or unpacking it for MakeMKV."""
+
+    SCANNING = "scanning"
+    EXTRACTING = "extracting"
+
+
+class DriveIdentityKind(StrEnum):
+    """What a Drive row's identity is keyed on. BY_ID is the udev
+    /dev/disk/by-id link name (stable across replug and renumbering); PORT
+    is the sysfs device path — the degraded fallback for drives that expose
+    no serial, and the UI says so."""
+
+    BY_ID = "by_id"
+    PORT = "port"
 
 
 class JobStatus(StrEnum):
@@ -45,10 +98,15 @@ class JobStatus(StrEnum):
     # The rip pipeline parks here, counting down `manual_wait_seconds`; on expiry
     # it auto-starts (unless globally paused), or the operator Starts/Cancels.
     # Distinct from AWAITING_USER_ID ("could not identify — needs operator ID").
-    # Resolvable (PRESERVE) for identity edits; non-terminal; not an APPLY status.
+    # Resolvable (PRESERVE) for identity edits; non-terminal. Review Track rows
+    # may already exist (identify persists them for the review card), but the
+    # disc is not ripped: an applied session always parks and fans out at
+    # rip-complete.
     AWAITING_REVIEW = "awaiting_review"
-    # Set by the (future) deferred-placeholder rip path when a disc rips
-    # successfully but identification never landed. Resolvable via the
+    # Set by rip-complete when a placeholder disc rips successfully but
+    # identification never landed (metadata_json["unidentified"]): transcode
+    # is gated on identity, so the after-rip hooks wait for resolve, which
+    # promotes this to RIPPED (not IDENTIFIED). Resolvable via the
     # /resolve endpoint just like AWAITING_USER_ID. Inert today — no code
     # path sets this yet.
     RIPPED_AWAITING_IDENTIFY = "ripped_awaiting_identify"
@@ -78,6 +136,42 @@ PRE_RIP_JOB_STATUSES: frozenset[JobStatus] = frozenset(
 )
 NON_TERMINAL_JOB_STATUSES: frozenset[JobStatus] = PRE_RIP_JOB_STATUSES | frozenset({JobStatus.RIPPING})
 
+# Identity edits (POST /jobs/{id}/resolve). PROMOTE flips status (to IDENTIFIED,
+# or RIPPED for a ripped placeholder); PRESERVE edits identity in place.
+RESOLVABLE_PROMOTE_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {JobStatus.AWAITING_USER_ID, JobStatus.RIPPED_AWAITING_IDENTIFY}
+)
+RESOLVABLE_PRESERVE_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {
+        JobStatus.IDENTIFIED,
+        JobStatus.RIPPED,
+        JobStatus.RIPPED_PARTIAL,
+        # A held review-gate disc accepts identity edits WITHOUT flipping status —
+        # resolve = "I've identified it"; the separate Start = "begin ripping".
+        # PRESERVE (not PROMOTE) keeps it in AWAITING_REVIEW after an edit.
+        JobStatus.AWAITING_REVIEW,
+    }
+)
+RESOLVABLE_JOB_STATUSES: frozenset[JobStatus] = RESOLVABLE_PROMOTE_JOB_STATUSES | RESOLVABLE_PRESERVE_JOB_STATUSES
+# Session apply (POST /jobs/{id}/transcode). OK = resolve outputs now (or park
+# as no_tracks pre-rip); PARK = park as waiting_identify until identity lands.
+APPLY_OK_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {JobStatus.IDENTIFIED, JobStatus.AWAITING_REVIEW, JobStatus.RIPPED, JobStatus.RIPPED_PARTIAL}
+)
+APPLY_PARK_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {JobStatus.AWAITING_USER_ID, JobStatus.RIPPED_AWAITING_IDENTIFY}
+)
+# Rip finished (successfully or as a placeholder); Track rows exist.
+POST_RIP_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {JobStatus.RIPPED, JobStatus.RIPPED_PARTIAL, JobStatus.RIPPED_AWAITING_IDENTIFY}
+)
+# Jobs whose parked applications are re-drained when transcoding is re-enabled:
+# the rip is done and identity is known, so the only thing that held an encode
+# application parked was the toggle.
+REDRAIN_JOB_STATUSES: frozenset[JobStatus] = frozenset(
+    {JobStatus.RIPPED, JobStatus.RIPPED_PARTIAL, JobStatus.IDENTIFIED, JobStatus.AWAITING_REVIEW}
+)
+
 
 class TrackStatus(StrEnum):
     QUEUED = "queued"
@@ -90,6 +184,18 @@ class TrackKind(StrEnum):
     VIDEO_TITLE = "video_title"
     AUDIO_TRACK = "audio_track"
     DATA_DUMP = "data_dump"
+
+
+class TrackRole(StrEnum):
+    """What one title on a disc is. Set by identity sources via the resolver
+    (arm_backend.identity) or by the operator; replaces the old free-text
+    role and the per-track video_type."""
+
+    MAIN = "main"
+    EPISODE = "episode"
+    EXTRA = "extra"
+    TRAILER = "trailer"
+    OTHER = "other"
 
 
 class MediaType(StrEnum):
@@ -134,11 +240,6 @@ class ContainerFormat(StrEnum):
     OGG = "ogg"
     ISO = "iso"
     NONE = "none"
-
-
-class HwPreference(StrEnum):
-    CPU_ONLY = "cpu_only"
-    ANY = "any"
 
 
 class RetentionPolicy(StrEnum):
@@ -250,3 +351,29 @@ class UserRole(StrEnum):
 
     ADMIN = "admin"
     GUEST = "guest"
+
+
+class SetupStep(StrEnum):
+    """First-run setup walkthrough steps, in walkthrough order (setup spec 2026-10-01).
+
+    Stored as VARCHAR keys inside Config.setup_progress JSON, validated in the app.
+    """
+
+    ACCOUNT = "account"
+    SYSTEM = "system"
+    DRIVES = "drives"
+    MAKEMKV = "makemkv"
+    METADATA = "metadata"
+    DISCS = "discs"
+    TRANSCODING = "transcoding"
+    NOTIFICATIONS = "notifications"
+    FINISH = "finish"
+
+
+SETUP_STEP_ORDER: tuple[SetupStep, ...] = tuple(SetupStep)
+
+
+class SetupStepState(StrEnum):
+    DONE = "done"
+    SKIPPED = "skipped"
+    ATTENTION = "attention"

@@ -22,7 +22,10 @@ export interface WebhookConfig {
 
 export interface BashConfig {
 	type: 'bash';
-	script_path: string;
+	script: string;
+	timeout_seconds?: number;
+	inputs?: Record<string, string>;
+	secret_keys?: string[];
 }
 
 export type ChannelConfig = AppriseConfig | WebhookConfig | BashConfig;
@@ -30,6 +33,7 @@ export type ChannelConfig = AppriseConfig | WebhookConfig | BashConfig;
 export interface ChannelTemplate {
 	title?: string | null;
 	body?: string | null;
+	inputs?: Record<string, string> | null;
 }
 
 export interface Channel {
@@ -117,9 +121,3 @@ export function isCatalogField(v: unknown): v is CatalogField {
 	const f = v as Record<string, unknown>;
 	return typeof f.key === 'string' && typeof f.label === 'string' && typeof f.type === 'string';
 }
-
-// Shared input styling for the notification form fields, so the long
-// Tailwind class string lives in one place (components can't reach the
-// settings page's local inputClass constant).
-export const FIELD_INPUT_CLASS =
-	'rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary dark:border-primary/30 dark:bg-primary/10 dark:text-white';

@@ -4,7 +4,7 @@ The CRC64 is read via PyCdlib (pydvdid) and needs only read access to the
 disc — no mount, no CAP_SYS_ADMIN. A DVD's CRC64 feeds the 1337server lookup
 that runs before OMDb/TMDB. pydvdid returns None for anything without a
 /VIDEO_TS tree, so it's a cheap no-op on Blu-ray / CD, and it reads ISO
-sources (ARM_MANUAL_TRIGGER_ISO) directly with no loop-mount.
+sources (ARM_SOURCE_PATH) directly with no loop-mount.
 
 Disc-type classification is handled upstream by MakeMKV's CINFO:1 (see
 makemkv.scan_disc), so the probe no longer mounts the disc — which is why the
@@ -17,9 +17,13 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
+from arm_common.schemas import BdDiscMeta
+
 from arm_ripper.drive_poll import DriveState, read_drive_status
+from arm_ripper.scan.bd_meta import probe_bd_meta
+from arm_ripper.scan.matrix256_fp import probe_matrix256
 from arm_ripper.scan.thediscdb_hash import probe_thediscdb_hash
-from arm_ripper.source import is_iso_source
+from arm_ripper.source import is_file_source, is_folder_source
 
 logger = logging.getLogger("arm_ripper.scan.disc_probe")
 
@@ -33,6 +37,8 @@ DEVICE_READY_TIMEOUT_SECONDS = 6.0
 class DiscProbe:
     crc64: str | None
     thediscdb: str | None = None
+    matrix256: str | None = None
+    bd_meta: BdDiscMeta | None = None
 
 
 async def await_device_ready(device_path: str) -> bool:
@@ -45,11 +51,11 @@ async def await_device_ready(device_path: str) -> bool:
 
     Returns True once DISC_OK (probe is safe). Returns False on a genuine
     no-medium reading (NO_DISC / TRAY_OPEN) or if the readiness budget expires
-    while the device stays NOT_READY / NO_INFO. ISO sources are always ready.
+    while the device stays NOT_READY / NO_INFO. ISO and disc-folder sources are always ready.
     Never raises — read_drive_status's OSError (e.g. ENOMEDIUM on the re-settling
     device) is caught here and treated as not-ready.
     """
-    if is_iso_source(device_path):
+    if is_file_source(device_path):
         return True
     from arm_ripper.config import settings  # lazy: avoid import-time Settings() construction
 
@@ -71,9 +77,9 @@ async def await_device_ready(device_path: str) -> bool:
     return False
 
 
-async def probe_disc(device_path: str) -> DiscProbe:
-    """Compute the disc's pydvdid CRC64 and TheDiscDB ContentHash, read off
-    the device via PyCdlib.
+async def probe_disc(device_path: str, *, bluray: bool = False) -> DiscProbe:
+    """Compute the disc's pydvdid CRC64, TheDiscDB ContentHash, and (Blu-ray
+    only) BDMT disc title, read off the device via PyCdlib.
 
     Needs only read access to the disc — no mount, no CAP_SYS_ADMIN — so a
     DVD always gets its 1337server fingerprint, even on discs the kernel
@@ -81,19 +87,37 @@ async def probe_disc(device_path: str) -> DiscProbe:
     drops root. pydvdid returns None for anything without a /VIDEO_TS tree
     (Blu-ray / CD), so this is a cheap no-op there.
 
+    `bluray=True` additionally opens the disc a third time to read the BDMT
+    disc title (`BDMV/META/DL/bdmt_<lang>.xml`); the caller (scan_disc) passes
+    it only once the disc type is known, so DVD/CD scans skip this extra
+    pycdlib open entirely.
+
     Probes only when the device reports ready (see await_device_ready); an
     unready device degrades to crc64=None and thediscdb=None without racing
     either probe. Never raises.
     """
-    if not await await_device_ready(device_path):
+    if is_folder_source(device_path):
+        # pydvdid and PyCdlib read a device or an image, not a folder.
         return DiscProbe(crc64=None, thediscdb=None)
+    if not await await_device_ready(device_path):
+        return DiscProbe(crc64=None, thediscdb=None, matrix256=None)
     crc64 = await asyncio.to_thread(_compute_crc, device_path)
     if crc64:
         logger.info("dvd crc64 device=%s value=%s", device_path, crc64)
     thediscdb = await asyncio.to_thread(probe_thediscdb_hash, device_path)
     if thediscdb:
         logger.info("thediscdb hash device=%s value=%s", device_path, thediscdb)
-    return DiscProbe(crc64=crc64, thediscdb=thediscdb)
+    matrix256 = await asyncio.to_thread(probe_matrix256, device_path)
+    if matrix256:
+        logger.info("matrix256 device=%s value=%s", device_path, matrix256)
+    bd_meta = None
+    if bluray:
+        bd_meta = await asyncio.to_thread(probe_bd_meta, device_path)
+        if bd_meta:
+            logger.info(
+                "bdmt device=%s name=%r set=%s/%s", device_path, bd_meta.name, bd_meta.set_number, bd_meta.num_sets
+            )
+    return DiscProbe(crc64=crc64, thediscdb=thediscdb, matrix256=matrix256, bd_meta=bd_meta)
 
 
 def _compute_crc(device_path: str) -> str | None:

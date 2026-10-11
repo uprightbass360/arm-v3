@@ -2,6 +2,7 @@
 	import { resolveJob } from '$lib/api/jobs';
 	import type { JobView, ResolveResponse } from '$lib/types/api.gen';
 	import { driveLabel } from '$lib/utils/drive-name';
+	import { isAwaitingIdentity } from '$lib/utils/job-status-groups';
 
 	let {
 		job,
@@ -25,17 +26,13 @@
 	// case (status awaiting_user_id / ripped_awaiting_identify) from the
 	// "auto-identify landed wrong metadata, correct it" case (post-rip
 	// status). The submit endpoint is the same; only the copy differs.
-	const isEditMode = $derived(
-		!['awaiting_user_id', 'ripped_awaiting_identify'].includes(job.status)
-	);
+	const isEditMode = $derived(!isAwaitingIdentity(job.status));
 
 	// CD-only: per-track count comes from the preserved scan_result on the
 	// job's metadata_json. If it's absent we skip the per-track inputs and
 	// show a helper line; the resolve still succeeds.
 	const scanTrackCount = $derived(
-		Array.isArray(
-			(job.metadata_json?.scan_result as { titles?: unknown[] } | undefined)?.titles
-		)
+		Array.isArray((job.metadata_json?.scan_result as { titles?: unknown[] } | undefined)?.titles)
 			? ((job.metadata_json.scan_result as { titles: unknown[] }).titles.length as number)
 			: 0
 	);
@@ -53,11 +50,7 @@
 	let error = $state<string | null>(null);
 
 	const canSubmit = $derived(
-		submitting
-			? false
-			: isCd
-				? album.trim().length > 0 && artist.trim().length > 0
-				: title.trim().length > 0
+		submitting ? false : isCd ? album.trim().length > 0 && artist.trim().length > 0 : title.trim().length > 0
 	);
 
 	async function submit(event: Event): Promise<void> {
@@ -66,7 +59,7 @@
 		submitting = true;
 		error = null;
 		try {
-			const metadata = isCd
+			const music = isCd
 				? {
 						artist: artist.trim(),
 						album: album.trim(),
@@ -76,7 +69,7 @@
 			const resp = await resolveJob(job.id, {
 				title: isCd ? album.trim() : title.trim(),
 				year: year ?? null,
-				metadata
+				music
 			});
 			onidentified(resp);
 		} catch (e) {
@@ -87,64 +80,42 @@
 	}
 </script>
 
-<div class="fixed inset-0 z-50 flex items-center justify-center">
-	<button
-		type="button"
-		class="absolute inset-0 bg-black/50"
-		aria-label="Close dialog"
-		onclick={onclose}
-	></button>
+<div class="modal">
+	<button type="button" class="identify-dialog-backdrop" aria-label="Close dialog" onclick={onclose}></button>
 
-	<div
-		class="relative z-10 w-full max-w-xl rounded-lg bg-surface p-6 shadow-xl dark:bg-surface-dark"
-		data-dialog
-		role="dialog"
-		aria-modal="true"
-		aria-labelledby="identify-dialog-title"
-	>
-		<h3
-			id="identify-dialog-title"
-			class="text-lg font-semibold text-gray-900 dark:text-white"
-		>
+	<div class="modal-panel" data-dialog role="dialog" aria-modal="true" aria-labelledby="identify-dialog-title">
+		<h3 id="identify-dialog-title" class="modal-title">
 			{isEditMode ? 'Edit identity' : 'Identify this disc'}
 		</h3>
 
 		{#if error}
-			<p class="mt-2 text-sm text-red-600 dark:text-red-400" data-testid="identify-error">
+			<p class="field-error mt-2" data-testid="identify-error">
 				{error}
 			</p>
 		{/if}
 
 		{#if isEditMode}
-			<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-				Update the title, year, and metadata for this job. Status stays as-is. Existing
-				transcoded files keep their original filenames - re-apply a session if you want new
-				outputs under the corrected name.
+			<p class="modal-body">
+				Update the title, year, and metadata for this job. Status stays as-is. Existing transcoded files keep their
+				original filenames - re-apply a session if you want new outputs under the corrected name.
 			</p>
 		{:else}
-			<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
-				The disc on drive <code class="font-mono">{driveLabel(job.drive_id, driveNames)}</code> couldn't be identified
-				automatically. Fill in the details so ARM can proceed. Any session you've already applied
-				will pick up the resolved metadata and queue its transcode tasks.
+			<p class="modal-body">
+				The disc on drive <code class="mono">{driveLabel(job.drive_id, driveNames)}</code> couldn't be identified automatically.
+				Fill in the details so ARM can proceed. Any session you've already applied will pick up the resolved metadata and
+				queue its transcode tasks.
 			</p>
 		{/if}
 
 		<form class="mt-4" onsubmit={submit}>
 			{#if isCd}
 				<div class="mb-3 flex gap-3">
-					<label class="flex-[2] text-sm font-medium text-gray-700 dark:text-gray-300">
-						Album
-						<input
-							bind:value={album}
-							type="text"
-							required
-							data-testid="identify-album"
-							disabled={submitting}
-							class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-						/>
+					<label class="field identify-dialog-field-wide">
+						<span class="field-label">Album</span>
+						<input bind:value={album} type="text" required data-testid="identify-album" disabled={submitting} />
 					</label>
-					<label class="flex-1 text-sm font-medium text-gray-700 dark:text-gray-300">
-						Year
+					<label class="field flex-1">
+						<span class="field-label">Year</span>
 						<input
 							bind:value={year}
 							type="number"
@@ -152,29 +123,21 @@
 							max="2100"
 							data-testid="identify-year"
 							disabled={submitting}
-							class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
 						/>
 					</label>
 				</div>
 				<div class="mb-3">
-					<label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-						Artist
-						<input
-							bind:value={artist}
-							type="text"
-							required
-							data-testid="identify-artist"
-							disabled={submitting}
-							class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-						/>
+					<label class="field">
+						<span class="field-label">Artist</span>
+						<input bind:value={artist} type="text" required data-testid="identify-artist" disabled={submitting} />
 					</label>
 				</div>
 				{#if scanTrackCount > 0}
 					<div class="mb-3">
-						<div class="mb-1 text-sm text-gray-500 dark:text-gray-400">Track titles</div>
+						<div class="field-label mb-1">Track titles</div>
 						{#each trackTitles as _t, idx (idx)}
 							<div class="mb-1 flex items-center gap-2">
-								<span class="w-8 text-right text-sm text-gray-500 dark:text-gray-400">
+								<span class="w-8 identify-dialog-track-index">
 									{String(idx + 1).padStart(2, '0')}
 								</span>
 								<input
@@ -182,32 +145,24 @@
 									type="text"
 									data-testid={`identify-track-${idx + 1}`}
 									disabled={submitting}
-									class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+									class="field-control flex-1"
 								/>
 							</div>
 						{/each}
 					</div>
 				{:else}
-					<p class="mb-3 text-sm text-gray-500 dark:text-gray-400">
-						Track count couldn't be determined from the scan; transcoded filenames will fall back
-						to generic names.
+					<p class="field-help mb-3">
+						Track count couldn't be determined from the scan; transcoded filenames will fall back to generic names.
 					</p>
 				{/if}
 			{:else}
 				<div class="mb-3 flex gap-3">
-					<label class="flex-[2] text-sm font-medium text-gray-700 dark:text-gray-300">
-						Title
-						<input
-							bind:value={title}
-							type="text"
-							required
-							data-testid="identify-title"
-							disabled={submitting}
-							class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-						/>
+					<label class="field identify-dialog-field-wide">
+						<span class="field-label">Title</span>
+						<input bind:value={title} type="text" required data-testid="identify-title" disabled={submitting} />
 					</label>
-					<label class="flex-1 text-sm font-medium text-gray-700 dark:text-gray-300">
-						Year
+					<label class="field flex-1">
+						<span class="field-label">Year</span>
 						<input
 							bind:value={year}
 							type="number"
@@ -215,30 +170,35 @@
 							max="2100"
 							data-testid="identify-year"
 							disabled={submitting}
-							class="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
 						/>
 					</label>
 				</div>
 			{/if}
 
-			<div class="mt-4 flex justify-end gap-3">
-				<button
-					type="button"
-					onclick={onclose}
-					disabled={submitting}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-				>
-					Cancel
-				</button>
-				<button
-					type="submit"
-					disabled={!canSubmit}
-					data-testid="identify-submit"
-					class="rounded-lg px-4 py-2 text-sm font-medium confirm-btn-primary disabled:cursor-not-allowed disabled:opacity-50"
-				>
+			<div class="modal-actions">
+				<button type="button" onclick={onclose} disabled={submitting} class="btn"> Cancel </button>
+				<button type="submit" disabled={!canSubmit} data-testid="identify-submit" class="btn btn-primary">
 					{submitting ? 'Saving...' : isEditMode ? 'Edit identity' : 'Identify disc'}
 				</button>
 			</div>
 		</form>
 	</div>
 </div>
+
+<style>
+	.identify-dialog-track-index {
+		text-align: right;
+		font-size: 0.875rem;
+		line-height: 1.25rem;
+		color: var(--color-text-muted);
+	}
+	/* the backdrop click-catcher sits absolutely inside .modal (which already
+	   draws the fixed scrim + centering); it just needs to fill that box */
+	.identify-dialog-backdrop {
+		position: absolute;
+		inset: 0;
+	}
+	.identify-dialog-field-wide {
+		flex: 2 1 0%;
+	}
+</style>

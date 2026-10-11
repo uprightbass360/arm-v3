@@ -42,7 +42,8 @@ import os
 #     for a real SQLite one before the lifespan opens a connection.
 #   - ARM_SERVICE_TOKEN: "tok-service" — the value the service-token tests
 #     (e.g. test_transcoder_router) hard-code in their auth headers.
-# Empty ARM_HOST_* + no docker socket => transcode dispatcher stays disabled.
+# Empty ARM_HOST_* + no docker client => the transcode dispatcher still starts
+# and ticks live (sweeps + in-process passthrough), but never spawns a container.
 os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/x")
 os.environ.setdefault("ARM_SERVICE_TOKEN", "tok-service")
 
@@ -50,9 +51,10 @@ from collections.abc import AsyncIterator, Iterator  # noqa: E402
 from pathlib import Path  # noqa: E402
 
 import pytest  # noqa: E402
+from fastapi import FastAPI  # noqa: E402
 from sqlalchemy import JSON  # noqa: E402
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine  # noqa: E402
 from sqlalchemy.ext.compiler import compiles  # noqa: E402
 from sqlmodel import SQLModel  # noqa: E402
 
@@ -98,14 +100,10 @@ def _sqlite_url(tmp_path_factory: pytest.TempPathFactory) -> str:
 
 
 @pytest.fixture
-def app_client(_sqlite_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[object]:
-    """Boot the real app against a fresh SQLite DB and yield a `TestClient`.
-
-    The DB file is unique per test (function-scoped `tmp_path`), so seeded
-    state never leaks between tests.
-    """
-    from fastapi.testclient import TestClient
-
+def e2e_app(_sqlite_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[tuple[FastAPI, AsyncEngine]]:
+    """The real app wired to a fresh SQLite DB, not yet started, plus its
+    engine. `app_client` starts it; a test that drives the lifespan itself
+    (e.g. a failing shutdown) opens its own `TestClient`."""
     import arm_backend.db as db_mod
     import arm_backend.main as main_mod
     import arm_backend.routers.auth as auth_router_mod
@@ -134,11 +132,13 @@ def app_client(_sqlite_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     monkeypatch.setattr(db_mod, "SessionLocal", test_sessionmaker)
     monkeypatch.setattr(main_mod, "SessionLocal", test_sessionmaker)
 
-    # Force the docker-less lifespan path deterministically: the transcode
-    # dispatcher needs a real docker socket, which the SQLite e2e tier can't
-    # provide. Without this the lifespan would branch on whatever the host
-    # happens to have, making main.py coverage environment-dependent.
-    monkeypatch.setattr(main_mod, "_build_docker_client", lambda _docker_host="": None)
+    # Force the docker-less lifespan path deterministically: container spawns
+    # need a real docker socket, which the SQLite e2e tier can't provide. The
+    # dispatcher still starts and runs live ticks against the test DB with
+    # docker None (sweeps + in-process passthrough only). Without this the
+    # lifespan would branch on whatever the host happens to have, making
+    # main.py coverage environment-dependent.
+    monkeypatch.setattr(main_mod, "_build_docker_client", lambda _docker_host="", **_kw: None)
 
     # Deterministic GPU inventory: ARM_GPUS is unset under test, so the loader
     # would return [] anyway, but pin it so the `transcode.hw_unavailable` emit
@@ -168,21 +168,37 @@ def app_client(_sqlite_url: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     main_mod.app.dependency_overrides[db_mod.get_session] = _override_get_session
 
     try:
-        with TestClient(main_mod.app) as client:
-            try:
-                yield client
-            finally:
-                # Dispose the async engine on the TestClient's *own* event loop
-                # while it's still alive (`client.portal` runs the app lifespan
-                # loop that opened these aiosqlite connections). Otherwise the
-                # pooled connections' background worker threads outlive the loop
-                # and raise "Event loop is closed" at GC, which pytest surfaces
-                # as a PytestUnhandledThreadExceptionWarning attributed — by
-                # timing, misleadingly — to whatever test is running then.
-                client.portal.call(test_engine.dispose)  # type: ignore[attr-defined,union-attr]
+        yield main_mod.app, test_engine
     finally:
         main_mod.app.dependency_overrides.clear()
         _restore_column_types(saved_types)
+
+
+@pytest.fixture
+def app_client(e2e_app: tuple[FastAPI, AsyncEngine]) -> Iterator[object]:
+    """Boot the real app against a fresh SQLite DB and yield a `TestClient`.
+
+    The DB file is unique per test (function-scoped `tmp_path`), so seeded
+    state never leaks between tests.
+    """
+    from fastapi.testclient import TestClient
+
+    app, test_engine = e2e_app
+    with TestClient(app) as client:
+        try:
+            yield client
+        finally:
+            dispose_on_client_loop(client, test_engine)
+
+
+def dispose_on_client_loop(client: object, engine: AsyncEngine) -> None:
+    """Dispose the async engine on the TestClient's *own* event loop while it's
+    still alive (`client.portal` runs the app lifespan loop that opened these
+    aiosqlite connections). Otherwise the pooled connections' background
+    worker threads outlive the loop and raise "Event loop is closed" at GC,
+    which pytest surfaces as a PytestUnhandledThreadExceptionWarning
+    attributed, misleadingly, to whatever test is running then."""
+    client.portal.call(engine.dispose)  # type: ignore[attr-defined]
 
 
 def _patched_log_tailer_init(log_dir: str) -> object:

@@ -19,16 +19,28 @@ os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost/x")
 os.environ.setdefault("ARM_SERVICE_TOKEN", "tok-service")
 
 import pytest  # noqa: E402
+from paramiko.ssh_exception import SSHException  # noqa: E402
 
 from arm_backend.config import Settings  # noqa: E402
 from arm_backend.transcode_dispatcher import TranscodeDispatcher  # noqa: E402
 from arm_backend.ws import WSHub  # noqa: E402
 from arm_common import (  # noqa: E402
+    Config,
+    ContainerFormat,
+    Gpu,
+    GpuStatus,
+    GpuVendor,
+    MediaType,
+    Session,
     SessionApplication,
     SessionApplicationStatus,
+    Track,
+    TranscodePreset,
     TranscodeTask,
     TranscodeTaskStatus,
+    TranscodeTool,
 )
+from arm_common.enums import TrackKind  # noqa: E402
 from tests._fakes import FakeSession  # noqa: E402
 
 
@@ -67,7 +79,13 @@ def _db_factory(db: FakeSession) -> Any:
     return _Factory()
 
 
-def _app_with_one_task(status: TranscodeTaskStatus, **task_kwargs: Any) -> FakeSession:
+def _app_with_one_task(status: TranscodeTaskStatus, *, passthrough: bool = False, **task_kwargs: Any) -> FakeSession:
+    """One session_application + one task. Defaults to an ENCODE task (a real
+    HANDBRAKE preset resolves via the session), matching the pre-Task-6
+    container-spawn tests. `passthrough=True` gives the session no
+    transcode_preset_id, so `is_passthrough_preset` routes the task through
+    `execute_passthrough_task` instead of the container-spawn path.
+    """
     db = FakeSession()
     db.rows["session_applications"] = [
         SessionApplication(
@@ -78,6 +96,33 @@ def _app_with_one_task(status: TranscodeTaskStatus, **task_kwargs: Any) -> FakeS
             overwrite=False,
         )
     ]
+    db.rows["sessions"] = [
+        Session(
+            id="ses_x",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id=None if passthrough else "tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = (
+        []
+        if passthrough
+        else [
+            TranscodePreset(
+                id="tpr_x",
+                name="Plex 1080p",
+                media_type=MediaType.MOVIE,
+                is_builtin=True,
+                tool=TranscodeTool.HANDBRAKE,
+                preset_ref="H.265 MKV 1080p30",
+                container=ContainerFormat.MKV,
+                encoder="preset",
+            )
+        ]
+    )
     fields: dict[str, Any] = dict(
         id="txt_1",
         session_application_id="sap_x",
@@ -90,6 +135,61 @@ def _app_with_one_task(status: TranscodeTaskStatus, **task_kwargs: Any) -> FakeS
     fields.update(task_kwargs)
     db.rows["transcode_tasks"] = [TranscodeTask(**fields)]
     return db
+
+
+def _passthrough_db(tmp_path: Path, *, output_path: str = "Iron Man (2008)/Iron Man.mkv") -> tuple[FakeSession, Path]:
+    """A queued passthrough task (no transcode preset) wired to a real raw
+    file on disk, so `execute_passthrough_task`'s file move actually succeeds
+    and the task lands DONE. Returns (db, raw_path)."""
+    raw = tmp_path / "raw" / "t0.mkv"
+    raw.parent.mkdir(parents=True)
+    raw.write_bytes(b"data")
+    db = _app_with_one_task(
+        TranscodeTaskStatus.QUEUED,
+        passthrough=True,
+        output_path=output_path,
+        created_at=datetime.now(UTC),
+    )
+    db.rows["tracks"] = [
+        Track(
+            id="trk_1",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            kind=TrackKind.VIDEO_TITLE,
+            index=1,
+            source_ref="t0",
+            output_path=str(raw),
+        )
+    ]
+    return db, raw
+
+
+def test_is_transport_death_detects_direct_eof_error() -> None:
+    """Fix 76-9: paramiko commonly surfaces a dead transport as a raw
+    EOFError (not just SSHException/ConnectionResetError/BrokenPipeError)."""
+    from arm_backend.transcode_dispatcher import _is_transport_death
+
+    assert _is_transport_death(EOFError("EOF"))
+
+
+def test_is_transport_death_detects_eof_error_nested_in_cause_chain() -> None:
+    """docker-py wraps the underlying transport error; walk __cause__ to
+    find an EOFError root cause, same as the existing SSHException path."""
+    from arm_backend.transcode_dispatcher import _is_transport_death
+
+    inner = EOFError("EOF")
+    try:
+        try:
+            raise inner
+        except EOFError as e:
+            raise RuntimeError("docker APIError wrapper") from e
+    except RuntimeError as wrapped:
+        assert _is_transport_death(wrapped)
+
+
+def test_is_transport_death_rejects_unrelated_error() -> None:
+    from arm_backend.transcode_dispatcher import _is_transport_death
+
+    assert not _is_transport_death(ValueError("not a transport error"))
 
 
 def _orphan_db(
@@ -266,7 +366,30 @@ async def test_spawn_caps_at_max_parallel() -> None:
             overwrite=False,
         )
     ]
-    # 1 already in_progress + 2 queued; MAX_PARALLEL=2 → 1 spawn slot.
+    db.rows["sessions"] = [
+        Session(
+            id="ses_x",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    # 1 already in_progress + 2 queued (both encode); MAX_PARALLEL=2 → 1 spawn slot.
     db.rows["transcode_tasks"] = [
         TranscodeTask(
             id="txt_running",
@@ -307,13 +430,17 @@ async def test_spawn_caps_at_max_parallel() -> None:
     docker.containers.run.assert_called_once()
 
 
-async def test_spawn_disabled_when_host_paths_unset() -> None:
-    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+async def test_spawn_holds_encode_when_host_paths_unset() -> None:
+    # No-transcode-mode contract: unset ARM_HOST_*_PATH no longer disables the
+    # whole dispatcher tick; it just holds ENCODE tasks (which need the
+    # container volume mounts) in QUEUED for a later tick.
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED, created_at=datetime.now(UTC))
     docker = MagicMock()
     disp = TranscodeDispatcher(_settings(ARM_HOST_RAW_PATH=""), _db_factory(db), docker, WSHub())
     spawned = await disp.spawn_pending(db)
     assert spawned == 0
     docker.containers.run.assert_not_called()
+    assert db.rows["transcode_tasks"][0].status == TranscodeTaskStatus.QUEUED
 
 
 async def test_spawn_continues_after_one_failure() -> None:
@@ -325,6 +452,29 @@ async def test_spawn_continues_after_one_failure() -> None:
             job_id="job_01JZXR7K3M5Q8N4VWA00000001",
             status=SessionApplicationStatus.QUEUED,
             overwrite=False,
+        )
+    ]
+    db.rows["sessions"] = [
+        Session(
+            id="ses_x",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
         )
     ]
     now = datetime.now(UTC)
@@ -347,6 +497,1014 @@ async def test_spawn_continues_after_one_failure() -> None:
     spawned = await disp.spawn_pending(db)
     assert spawned == 1  # second task succeeded; first logged + skipped
     assert docker.containers.run.call_count == 2
+
+
+async def test_spawn_pending_runs_spawn_container_via_to_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fix 76-4: `_spawn_container` does a blocking docker call (and, on the
+    SSH-rebuild path, a blocking TCP+SSH handshake that can take tens of
+    seconds against a black-holed host) — it must run off the event loop via
+    `asyncio.to_thread`, not synchronously inline in `spawn_pending`. Pin the
+    mechanism with a pass-through recorder standing in for `to_thread`:
+    running the loop under pytest-asyncio makes `to_thread` transparent, so
+    this only proves the call site is used, not concurrency itself."""
+    import asyncio
+
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), docker, WSHub())
+
+    calls: list[tuple[Any, ...]] = []
+    real_to_thread = asyncio.to_thread
+
+    async def _recording_to_thread(func: Any, *args: Any, **kwargs: Any) -> Any:
+        calls.append((func, args, kwargs))
+        return await real_to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _recording_to_thread)
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 1
+    assert len(calls) == 1
+    assert calls[0][0] == disp._spawn_container
+
+
+async def test_spawn_rebuilds_docker_client_on_dead_ssh_transport(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # First containers.run raises paramiko SSHException("SSH session not
+    # active"); the dispatcher must rebuild via the factory and retry once,
+    # and the retry (on the freshly-built client) succeeds.
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+    fresh = MagicMock()
+    factory_calls: list[int] = []
+
+    def factory() -> MagicMock:
+        factory_calls.append(1)
+        return fresh
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=factory)
+
+    with caplog.at_level(logging.WARNING, logger="arm_backend.transcode_dispatcher"):
+        spawned = await disp.spawn_pending(db)
+
+    assert factory_calls == [1]
+    dead.containers.run.assert_called_once()
+    fresh.containers.run.assert_called_once()  # retry happened on the fresh client
+    assert spawned == 1  # task ended up spawned, not failed
+    assert disp._docker is fresh
+    task = db.rows["transcode_tasks"][0]
+    assert task.status == TranscodeTaskStatus.QUEUED  # spawn_pending doesn't flip status itself
+    assert any("transport dead" in r.message for r in caplog.records)
+
+
+async def test_spawn_retry_does_not_loop() -> None:
+    # If the rebuilt client ALSO fails, the task follows the existing
+    # failure path (no infinite retry): exactly one rebuild attempt, and
+    # containers.run is called exactly twice total (original + one retry).
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+    still_dead = MagicMock()
+    still_dead.containers.run.side_effect = SSHException("SSH session not active")
+    factory_calls: list[int] = []
+
+    def factory() -> MagicMock:
+        factory_calls.append(1)
+        return still_dead
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=factory)
+
+    spawned = await disp.spawn_pending(db)
+
+    assert factory_calls == [1]  # rebuilt exactly once, no infinite retry
+    dead.containers.run.assert_called_once()
+    still_dead.containers.run.assert_called_once()
+    assert spawned == 0  # second failure follows the existing failure path
+    assert disp._docker is still_dead
+
+
+async def test_spawn_no_retry_without_factory() -> None:
+    # No docker_client_factory configured (local-socket deployments) —
+    # a transport-death-shaped error still just follows the plain failure
+    # path; no rebuild is attempted.
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    docker = MagicMock()
+    docker.containers.run.side_effect = SSHException("SSH session not active")
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    docker.containers.run.assert_called_once()
+    assert disp._docker is docker
+
+
+async def test_spawn_factory_returns_none_keeps_old_client(caplog: pytest.LogCaptureFixture) -> None:
+    """I2: `_build_docker_client` (main.py) returns None on any factory
+    failure, not an exception. Assigning `self._docker = None` would make
+    every LATER spawn raise AttributeError instead of following the
+    transport-death path — permanently wedging the dispatcher. The old
+    (dead) client must be kept instead, this tick's task follows the normal
+    failure path, and a LATER spawn attempt must trigger another rebuild
+    (proving the dispatcher isn't wedged)."""
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+    factory_calls: list[int] = []
+
+    def factory() -> None:
+        factory_calls.append(1)
+        return None
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=factory)
+
+    with caplog.at_level(logging.WARNING, logger="arm_backend.transcode_dispatcher"):
+        spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0  # task follows the existing failure path
+    assert disp._docker is dead  # old client kept, not wedged to None
+    assert factory_calls == [1]
+    assert any("rebuild returned None" in r.message for r in caplog.records)
+
+    # A LATER spawn attempt (e.g. next dispatcher tick) still detects
+    # transport death and re-attempts the rebuild — proving the dispatcher
+    # was not permanently wedged.
+    db.rows["transcode_tasks"][0].status = TranscodeTaskStatus.QUEUED
+    db.rows["transcode_tasks"][0].claimed_by = None
+    spawned_again = await disp.spawn_pending(db)
+    assert spawned_again == 0
+    assert factory_calls == [1, 1]
+
+
+async def test_spawn_successful_rebuild_closes_old_client() -> None:
+    """I2: when the factory returns a working client, the old (dead) client
+    is best-effort closed so its resources (e.g. the SSH transport) don't
+    leak."""
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+    fresh = MagicMock()
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=lambda: fresh)
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 1
+    assert disp._docker is fresh
+    dead.close.assert_called_once()
+
+
+# ---- no-transcode-mode routing -----------------------------------------------
+
+
+async def test_passthrough_task_executes_in_process_no_docker_call(tmp_path: Path) -> None:
+    db, raw = _passthrough_db(tmp_path)
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0  # passthrough never counts as a container spawn
+    docker.containers.run.assert_not_called()
+    task = db.rows["transcode_tasks"][0]
+    assert task.status == TranscodeTaskStatus.DONE
+    assert not raw.exists()
+
+
+async def test_passthrough_runs_even_with_zero_encode_slots(tmp_path: Path) -> None:
+    # One IN_PROGRESS encode task already consumes the sole slot
+    # (MAX_PARALLEL_TRANSCODES=1); the queued passthrough task must still
+    # execute: it isn't counted against encode_slots at all.
+    db, _raw = _passthrough_db(tmp_path)
+    db.rows["session_applications"].append(
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000002",
+            status=SessionApplicationStatus.RUNNING,
+            overwrite=False,
+        )
+    )
+    db.rows["transcode_tasks"].append(
+        TranscodeTask(
+            id="txt_running",
+            session_application_id="sap_enc",
+            source_track_id="trk_running",
+            status=TranscodeTaskStatus.IN_PROGRESS,
+            attempts=1,
+            progress_pct=50,
+            claimed_by="other-host",
+            claim_heartbeat_at=datetime.now(UTC),
+            output_path="other.mkv",
+        )
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(
+        _settings(MAX_PARALLEL_TRANSCODES=1, MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub()
+    )
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    docker.containers.run.assert_not_called()
+    passthrough_task = next(t for t in db.rows["transcode_tasks"] if t.id == "txt_1")
+    assert passthrough_task.status == TranscodeTaskStatus.DONE
+
+
+async def test_encode_tasks_held_when_disabled() -> None:
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED, created_at=datetime.now(UTC))
+    db.rows["config"] = [Config(id=1, transcode_enabled=False)]
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    docker.containers.run.assert_not_called()
+    assert db.rows["transcode_tasks"][0].status == TranscodeTaskStatus.QUEUED
+
+
+async def test_mixed_queue_disable_drain(tmp_path: Path) -> None:
+    # FIFO queue [encode, passthrough]; transcode_enabled=False must hold the
+    # encode task but still drain the passthrough task behind it.
+    db, _raw = _passthrough_db(tmp_path, output_path="Docs/movie.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC) + timedelta(seconds=1)
+    db.rows["session_applications"].append(
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000002",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    )
+    db.rows["sessions"].append(
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    )
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    db.rows["transcode_tasks"].insert(
+        0,
+        TranscodeTask(
+            id="txt_enc",
+            session_application_id="sap_enc",
+            source_track_id="trk_enc",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Iron Man (2008)/Iron Man.mkv",
+            created_at=datetime.now(UTC),
+        ),
+    )
+    db.rows["config"] = [Config(id=1, transcode_enabled=False)]
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    docker.containers.run.assert_not_called()
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    assert by_id["txt_enc"].status == TranscodeTaskStatus.QUEUED
+    assert by_id["txt_pt"].status == TranscodeTaskStatus.DONE
+
+
+async def test_reenable_resumes_on_next_tick() -> None:
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED, created_at=datetime.now(UTC))
+    db.rows["config"] = [Config(id=1, transcode_enabled=False)]
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+    assert spawned == 0
+    assert db.rows["transcode_tasks"][0].status == TranscodeTaskStatus.QUEUED
+
+    db.rows["config"][0].transcode_enabled = True
+    spawned_again = await disp.spawn_pending(db)
+
+    assert spawned_again == 1
+    docker.containers.run.assert_called_once()
+
+
+async def test_docker_none_holds_encode_and_runs_passthrough(tmp_path: Path) -> None:
+    # Ripper-only deployment: dispatcher constructed with docker_client=None.
+    db, _raw = _passthrough_db(tmp_path, output_path="Docs/movie.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC) + timedelta(seconds=1)
+    db.rows["session_applications"].append(
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000002",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    )
+    db.rows["sessions"].append(
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    )
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    db.rows["transcode_tasks"].insert(
+        0,
+        TranscodeTask(
+            id="txt_enc",
+            session_application_id="sap_enc",
+            source_track_id="trk_enc",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Iron Man (2008)/Iron Man.mkv",
+            created_at=datetime.now(UTC),
+        ),
+    )
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), None, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    assert by_id["txt_enc"].status == TranscodeTaskStatus.QUEUED
+    assert by_id["txt_pt"].status == TranscodeTaskStatus.DONE
+
+
+async def test_host_paths_unset_no_longer_blocks_passthrough(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    # Encode is held (no per-tick WARN storm; a debug summary line instead),
+    # but the passthrough task in the same tick still runs to completion.
+    db, _raw = _passthrough_db(tmp_path, output_path="Docs/movie.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC) + timedelta(seconds=1)
+    db.rows["session_applications"].append(
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000002",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    )
+    db.rows["sessions"].append(
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    )
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    db.rows["transcode_tasks"].insert(
+        0,
+        TranscodeTask(
+            id="txt_enc",
+            session_application_id="sap_enc",
+            source_track_id="trk_enc",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Iron Man (2008)/Iron Man.mkv",
+            created_at=datetime.now(UTC),
+        ),
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(
+        _settings(ARM_HOST_RAW_PATH="", MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub()
+    )
+
+    with caplog.at_level(logging.WARNING, logger="arm_backend.transcode_dispatcher"):
+        spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    docker.containers.run.assert_not_called()
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    assert by_id["txt_enc"].status == TranscodeTaskStatus.QUEUED
+    assert by_id["txt_pt"].status == TranscodeTaskStatus.DONE
+    # No per-tick WARN storm for the held encode task.
+    assert not any("ARM_HOST_*_PATH not set" in r.message for r in caplog.records)
+
+
+def test_probe_reports_not_capable_when_docker_none() -> None:
+    disp = TranscodeDispatcher(_settings(), _db_factory(FakeSession()), None, WSHub())
+    ok, detail = disp.probe()
+    assert ok is False
+    assert "ripper-only" in (detail or "")
+
+
+async def test_passthrough_runs_after_encode_held_by_slot_exhaustion(tmp_path: Path) -> None:
+    """An encode task blocked ONLY by zero free slots (enabled=True,
+    docker present, host paths set) must not stop a later-queued passthrough
+    task from running. This pins the `continue` at the
+    `encode_slots - spawned <= 0` check in spawn_pending: swapping it for a
+    `break` would stop the loop at the second (held) encode task and never
+    reach the passthrough task behind it.
+    """
+    db, _raw = _passthrough_db(tmp_path, output_path="Docs/movie.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC) + timedelta(seconds=2)
+    db.rows["session_applications"].append(
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000002",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    )
+    db.rows["sessions"].append(
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    )
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    # Two QUEUED encode tasks ahead of the passthrough task, FIFO: the first
+    # spawns (consuming the sole slot), the second is held purely by slot
+    # exhaustion (enabled=True, docker present, host paths set).
+    db.rows["transcode_tasks"].insert(
+        0,
+        TranscodeTask(
+            id="txt_enc_b",
+            session_application_id="sap_enc",
+            source_track_id="trk_enc_b",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Movie B/Movie B.mkv",
+            created_at=datetime.now(UTC) + timedelta(seconds=1),
+        ),
+    )
+    db.rows["transcode_tasks"].insert(
+        0,
+        TranscodeTask(
+            id="txt_enc_a",
+            session_application_id="sap_enc",
+            source_track_id="trk_enc_a",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Movie A/Movie A.mkv",
+            created_at=datetime.now(UTC),
+        ),
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(
+        _settings(MAX_PARALLEL_TRANSCODES=1, MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub()
+    )
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 1
+    docker.containers.run.assert_called_once()
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    # spawn_pending doesn't flip status itself (the container's own /claim
+    # call does that) so both encode tasks stay QUEUED either way; the
+    # signal that the second was actually reached (not skipped by a
+    # premature `break`) is the passthrough task behind it completing.
+    assert by_id["txt_enc_a"].status == TranscodeTaskStatus.QUEUED
+    assert by_id["txt_enc_b"].status == TranscodeTaskStatus.QUEUED
+    assert by_id["txt_pt"].status == TranscodeTaskStatus.DONE
+
+
+async def test_encode_scan_cap_examines_at_most_fifty() -> None:
+    """`_QUEUE_SCAN_LIMIT` caps only the ENCODE subset of the per-tick
+    scan (the queued select itself is unbounded so passthrough tasks can
+    never be crowded out). With 51 queued encode tasks and enough parallel
+    slots for all of them, only the first 50 are examined/spawned."""
+    db = FakeSession()
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    ]
+    db.rows["sessions"] = [
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    now = datetime.now(UTC)
+    db.rows["transcode_tasks"] = [
+        TranscodeTask(
+            id=f"txt_{i}",
+            session_application_id="sap_enc",
+            source_track_id=f"trk_{i}",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path=f"m{i}.mkv",
+            created_at=now + timedelta(seconds=i),
+        )
+        for i in range(51)
+    ]
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MAX_PARALLEL_TRANSCODES=100), _db_factory(db), docker, WSHub())
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 50
+    assert docker.containers.run.call_count == 50
+
+
+async def test_passthrough_exception_does_not_abort_tick(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-OSError exception raised from execute_passthrough_task
+    (e.g. hub.emit or aggregate_session_application blowing up) must not
+    propagate out of spawn_pending: it's caught, logged, and the loop moves
+    on to the next queued task."""
+    db, _raw_a = _passthrough_db(tmp_path, output_path="Docs/a.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt_a"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+
+    raw_b = tmp_path / "raw" / "t1.mkv"
+    raw_b.parent.mkdir(parents=True, exist_ok=True)
+    raw_b.write_bytes(b"data-b")
+    db.rows["tracks"].append(
+        Track(
+            id="trk_2",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            kind=TrackKind.VIDEO_TITLE,
+            index=2,
+            source_ref="t1",
+            output_path=str(raw_b),
+        )
+    )
+    db.rows["transcode_tasks"].append(
+        TranscodeTask(
+            id="txt_pt_b",
+            session_application_id="sap_x",
+            source_track_id="trk_2",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Docs/b.iso",
+            created_at=datetime.now(UTC) + timedelta(seconds=1),
+        )
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub())
+
+    import arm_backend.passthrough_executor as pt_mod
+
+    real_execute = pt_mod.execute_passthrough_task
+
+    async def _boom_for_a_else_real(db_: Any, task: Any, hub: Any, settings_: Any) -> bool:
+        if task.id == "txt_pt_a":
+            raise RuntimeError("boom from hub.emit")
+        return await real_execute(db_, task, hub, settings_)
+
+    monkeypatch.setattr(pt_mod, "execute_passthrough_task", _boom_for_a_else_real)
+
+    spawned = await disp.spawn_pending(db)  # must not raise
+
+    assert spawned == 0
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    # The raising task never got past its stub; status untouched.
+    assert by_id["txt_pt_a"].status == TranscodeTaskStatus.QUEUED
+    # The second passthrough task still ran to completion despite the first
+    # one's exception.
+    assert by_id["txt_pt_b"].status == TranscodeTaskStatus.DONE
+
+
+async def test_passthrough_row_deleted_before_its_turn_skips_cleanly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queued passthrough row can be deleted by a concurrent
+    writer (DELETE /api/transcodes/{id}, an overwrite eviction, a job-delete
+    cascade) after the tick's initial select grabbed it but before its turn
+    in the loop -- the FOR UPDATE lock protecting it was released the
+    moment an EARLIER passthrough task in this same tick committed its
+    claim (COMMIT is transaction-scoped). The loop must skip the now-gone
+    row cleanly, without raising, and keep going: a still-later queued
+    passthrough task must still run."""
+    db, _raw_a = _passthrough_db(tmp_path, output_path="Docs/a.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt_a"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+
+    raw_c = tmp_path / "raw" / "t2.mkv"
+    raw_c.parent.mkdir(parents=True, exist_ok=True)
+    raw_c.write_bytes(b"data-c")
+    db.rows["tracks"].append(
+        Track(
+            id="trk_c",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            kind=TrackKind.VIDEO_TITLE,
+            index=3,
+            source_ref="t2",
+            output_path=str(raw_c),
+        )
+    )
+    db.rows["transcode_tasks"].append(
+        TranscodeTask(
+            id="txt_pt_b",
+            session_application_id="sap_x",
+            source_track_id="trk_b_missing",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Docs/b.iso",
+            created_at=datetime.now(UTC) + timedelta(seconds=1),
+        )
+    )
+    db.rows["transcode_tasks"].append(
+        TranscodeTask(
+            id="txt_pt_c",
+            session_application_id="sap_x",
+            source_track_id="trk_c",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Docs/c.iso",
+            created_at=datetime.now(UTC) + timedelta(seconds=2),
+        )
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub())
+
+    import arm_backend.passthrough_executor as pt_mod
+
+    real_transcode_none = pt_mod.transcode_none
+
+    def _delete_b_then_move(input_path: Path, output_path: Path) -> int:
+        # Simulate a concurrent delete of txt_pt_b (a different session)
+        # while txt_pt_a's move is in flight.
+        db.rows["transcode_tasks"] = [t for t in db.rows["transcode_tasks"] if t.id != "txt_pt_b"]
+        return real_transcode_none(input_path, output_path)
+
+    monkeypatch.setattr(pt_mod, "transcode_none", _delete_b_then_move)
+
+    spawned = await disp.spawn_pending(db)  # must not raise
+
+    assert spawned == 0
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    assert by_id["txt_pt_a"].status == TranscodeTaskStatus.DONE
+    assert "txt_pt_b" not in by_id  # deleted, never resurrected
+    assert by_id["txt_pt_c"].status == TranscodeTaskStatus.DONE
+
+
+async def test_passthrough_session_poisoning_recovers_via_rollback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A DB-level raise from inside execute_passthrough_task's
+    own commit (StaleDataError, a dropped connection, ...) leaves the
+    session in "pending rollback" state; without an explicit rollback the
+    NEXT statement this function issues would raise PendingRollbackError
+    outside any try/except and abort the whole tick. spawn_pending's except
+    block must roll back so the next queued task still runs."""
+    db, _raw_a = _passthrough_db(tmp_path, output_path="Docs/a.iso")
+    db.rows["transcode_tasks"][0].id = "txt_pt_a"
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+
+    raw_b = tmp_path / "raw" / "t1.mkv"
+    raw_b.parent.mkdir(parents=True, exist_ok=True)
+    raw_b.write_bytes(b"data-b")
+    db.rows["tracks"].append(
+        Track(
+            id="trk_2",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            kind=TrackKind.VIDEO_TITLE,
+            index=2,
+            source_ref="t1",
+            output_path=str(raw_b),
+        )
+    )
+    db.rows["transcode_tasks"].append(
+        TranscodeTask(
+            id="txt_pt_b",
+            session_application_id="sap_x",
+            source_track_id="trk_2",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="Docs/b.iso",
+            created_at=datetime.now(UTC) + timedelta(seconds=1),
+        )
+    )
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MEDIA_ROOT=str(tmp_path / "media")), _db_factory(db), docker, WSHub())
+
+    real_commit = db.commit
+    calls = {"n": 0}
+
+    async def _commit_boom_once() -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("db gone")
+        await real_commit()
+
+    db.commit = _commit_boom_once  # type: ignore[method-assign]
+
+    rollback_calls: list[int] = []
+    real_rollback = db.rollback
+
+    async def _spy_rollback() -> None:
+        rollback_calls.append(1)
+        await real_rollback()
+
+    db.rollback = _spy_rollback  # type: ignore[method-assign]
+
+    spawned = await disp.spawn_pending(db)  # must not raise
+
+    assert spawned == 0
+    assert rollback_calls == [1]
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    # txt_pt_a's claim commit was the one that raised; txt_pt_b's own claim
+    # + terminal commits both succeed afterward, proving the session
+    # recovered.
+    assert by_id["txt_pt_b"].status == TranscodeTaskStatus.DONE
+
+
+async def test_encode_row_deleted_before_its_turn_skips_cleanly() -> None:
+    """Encode analog of the passthrough pre-claim re-verify: a concurrent delete of a queued encode
+    task between the tick's initial select and this task's turn in the
+    loop must be caught by the encode-side re-verify instead of pointing a
+    GPU's claimed_by_task_id at a row that's gone (an IntegrityError at
+    commit) or spawning a container for a task nobody can claim any more."""
+    db = FakeSession()
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    ]
+    db.rows["sessions"] = [
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="preset",
+        )
+    ]
+    now = datetime.now(UTC)
+    db.rows["transcode_tasks"] = [
+        TranscodeTask(
+            id="txt_enc_a",
+            session_application_id="sap_enc",
+            source_track_id="trk_a",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="a.mkv",
+            created_at=now,
+        ),
+        TranscodeTask(
+            id="txt_enc_b",
+            session_application_id="sap_enc",
+            source_track_id="trk_b",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="b.mkv",
+            created_at=now + timedelta(seconds=1),
+        ),
+    ]
+    docker = MagicMock()
+
+    def _spawn_side_effect(**kwargs: Any) -> Any:
+        # Simulate a concurrent delete of txt_enc_b (a different session)
+        # while txt_enc_a's container is being created.
+        if kwargs.get("labels", {}).get("arm.task_id") == "txt_enc_a":
+            db.rows["transcode_tasks"] = [t for t in db.rows["transcode_tasks"] if t.id != "txt_enc_b"]
+        return MagicMock()
+
+    docker.containers.run.side_effect = _spawn_side_effect
+
+    disp = TranscodeDispatcher(_settings(MAX_PARALLEL_TRANSCODES=2), _db_factory(db), docker, WSHub())
+    spawned = await disp.spawn_pending(db)  # must not raise
+
+    assert spawned == 1  # only txt_enc_a spawned
+    docker.containers.run.assert_called_once()
+    by_id = {t.id: t for t in db.rows["transcode_tasks"]}
+    assert "txt_enc_b" not in by_id  # deleted, never resurrected, no crash
+
+
+async def test_encode_claim_commit_raises_once_rolls_back_and_releases_gpu() -> None:
+    """The encode success path's
+    own prompt commit (`await db.commit()` right after a successful
+    container spawn) can itself raise -- the container IS running, but the
+    GPU-claim commit failed. That must not poison the session for the next
+    queued task (mirrors the passthrough except block's rollback), and the
+    GPU must not be left BUSY/claimed_by the task whose claim never made it
+    to disk -- the revert has to survive past the rollback that discarded
+    the original (failed) commit attempt.
+    """
+    db = FakeSession()
+    db.rows["session_applications"] = [
+        SessionApplication(
+            id="sap_enc",
+            session_id="ses_enc",
+            job_id="job_01JZXR7K3M5Q8N4VWA00000001",
+            status=SessionApplicationStatus.QUEUED,
+            overwrite=False,
+        )
+    ]
+    db.rows["sessions"] = [
+        Session(
+            id="ses_enc",
+            name="Movie to Plex",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            rip_preset_id="rpr_x",
+            transcode_preset_id="tpr_x",
+            output_path_template="{title}/{title}.mkv",
+        )
+    ]
+    db.rows["transcode_presets"] = [
+        TranscodePreset(
+            id="tpr_x",
+            name="Plex 1080p",
+            media_type=MediaType.MOVIE,
+            is_builtin=True,
+            tool=TranscodeTool.HANDBRAKE,
+            preset_ref="H.265 MKV 1080p30",
+            container=ContainerFormat.MKV,
+            encoder="any_h265",
+        )
+    ]
+    db.rows["gpus"] = [
+        Gpu(
+            id="gpu_1",
+            vendor=GpuVendor.VAAPI,
+            device_path="/dev/dri/renderD128",
+            encoder_kinds=["h265"],
+            status=GpuStatus.AVAILABLE,
+            claimed_by_task_id=None,
+            probed_at=datetime.now(UTC),
+        )
+    ]
+    now = datetime.now(UTC)
+    db.rows["transcode_tasks"] = [
+        TranscodeTask(
+            id="txt_enc_a",
+            session_application_id="sap_enc",
+            source_track_id="trk_a",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="a.mkv",
+            created_at=now,
+        ),
+        TranscodeTask(
+            id="txt_enc_b",
+            session_application_id="sap_enc",
+            source_track_id="trk_b",
+            status=TranscodeTaskStatus.QUEUED,
+            attempts=0,
+            progress_pct=0,
+            output_path="b.mkv",
+            created_at=now + timedelta(seconds=1),
+        ),
+    ]
+    docker = MagicMock()
+    disp = TranscodeDispatcher(_settings(MAX_PARALLEL_TRANSCODES=2), _db_factory(db), docker, WSHub())
+
+    real_commit = db.commit
+    calls = {"n": 0}
+
+    async def _commit_boom_once() -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("db gone")
+        await real_commit()
+
+    db.commit = _commit_boom_once  # type: ignore[method-assign]
+
+    rollback_calls: list[int] = []
+    real_rollback = db.rollback
+
+    async def _spy_rollback() -> None:
+        rollback_calls.append(1)
+        await real_rollback()
+
+    db.rollback = _spy_rollback  # type: ignore[method-assign]
+
+    spawned = await disp.spawn_pending(db)  # must not raise
+
+    # txt_enc_a's container really did start (docker.containers.run was
+    # called for it) even though its GPU-claim commit failed -- spawned
+    # still counts it. txt_enc_b's own claim + spawn + commit succeed
+    # normally afterward, proving the session recovered.
+    assert spawned == 2
+    assert docker.containers.run.call_count == 2
+    assert rollback_calls == [1]
+
+    gpu = db.rows["gpus"][0]
+    # The GPU ends up claimed by txt_enc_b, not dangling as BUSY for
+    # txt_enc_a's dead (never-committed) claim.
+    assert gpu.status == GpuStatus.BUSY
+    assert gpu.claimed_by_task_id == "txt_enc_b"
 
 
 # ---- stale-claim sweep -------------------------------------------------------
@@ -623,3 +1781,46 @@ async def test_tick_runs_orphan_sweep_after_stale_sweep(monkeypatch: pytest.Monk
     monkeypatch.setattr(disp, "spawn_pending", _spawn)
     await disp._tick()
     assert calls == ["stale", "orphan", "spawn"]
+
+
+async def test_spawn_factory_exception_keeps_old_client(caplog: pytest.LogCaptureFixture) -> None:
+    """A docker_client_factory that RAISES (rather than returning None) must
+    not wedge the dispatcher either: the old client is kept, the error is
+    logged, and the task follows the normal failure path."""
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+
+    def factory() -> MagicMock:
+        raise RuntimeError("ssh host unreachable")
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=factory)
+
+    with caplog.at_level(logging.WARNING, logger="arm_backend.transcode_dispatcher"):
+        spawned = await disp.spawn_pending(db)
+
+    assert spawned == 0
+    assert disp._docker is dead
+    dead.containers.run.assert_called_once()
+    assert any("rebuild failed" in r.message for r in caplog.records)
+
+
+async def test_spawn_rebuild_tolerates_old_client_close_failure() -> None:
+    """Closing the dead client is best-effort: a close() that raises must not
+    abort the retry on the freshly built client."""
+    db = _app_with_one_task(TranscodeTaskStatus.QUEUED)
+    db.rows["transcode_tasks"][0].created_at = datetime.now(UTC)
+    dead = MagicMock()
+    dead.containers.run.side_effect = SSHException("SSH session not active")
+    dead.close.side_effect = RuntimeError("transport already torn down")
+    fresh = MagicMock()
+
+    disp = TranscodeDispatcher(_settings(), _db_factory(db), dead, WSHub(), docker_client_factory=lambda: fresh)
+
+    spawned = await disp.spawn_pending(db)
+
+    assert spawned == 1
+    assert disp._docker is fresh
+    dead.close.assert_called_once()
+    fresh.containers.run.assert_called_once()

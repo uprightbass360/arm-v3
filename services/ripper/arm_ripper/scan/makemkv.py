@@ -15,7 +15,7 @@ SCAN_TIMEOUT_SECONDS = 300.0
 # MakeMKV emits this when its hard-coded 60-day beta kill-switch has fired.
 # No registration key overrides it; the binary refuses all protected-disc
 # work and the only fix is rebuilding against a fresher upstream tarball.
-# See docs/ops/makemkv.md § Failure modes.
+# See docs/user/MakeMKV-Ripper.md § Failure modes.
 _MAKEMKV_EXPIRED_PREFIX = b"MSG:5021,"
 
 _DURATION_RE = re.compile(r"^(\d+):(\d{1,2}):(\d{1,2})$")
@@ -301,7 +301,7 @@ async def scan_disc(device_path: str) -> ScanResult:
             "binaries carry a 60-day kill-switch from release date that "
             "no registration key overrides; the only fix is rebuilding the "
             "ripper image after upstream ships a fresher tarball. See "
-            "docs/ops/makemkv.md § Failure modes."
+            "docs/user/MakeMKV-Ripper.md § Failure modes."
         )
 
     if proc.returncode != 0:
@@ -313,24 +313,27 @@ async def scan_disc(device_path: str) -> ScanResult:
 
     # MakeMKV's CINFO:1 is the authoritative disc-type signal — works on
     # region-locked discs that the kernel refuses to mount, and on UDF
-    # quirks. The probe's only job is the CRC64 fingerprint (read off the
-    # device, no mount); when CINFO:1 is missing we fall back to a title-size
-    # heuristic rather than any layout probe.
-    probe = await probe_disc(device_path)
+    # quirks; when CINFO:1 is missing we fall back to a title-size heuristic.
+    # Classify before probing so the probe knows whether to bother opening
+    # the disc a third time for the Blu-ray-only BDMT read.
     if mkv_disc_type is not None:
         disc_type = mkv_disc_type
     else:
         disc_type = _classify_from_titles(titles)
+    probe = await probe_disc(device_path, bluray=disc_type == DiscType.BLURAY)
 
     fingerprints: list[DiscFingerprintInput] = []
     if probe.crc64:
         fingerprints.append(DiscFingerprintInput(algo="crc64", value=probe.crc64))
     if probe.thediscdb:
         fingerprints.append(DiscFingerprintInput(algo="thediscdb", value=probe.thediscdb))
+    if probe.matrix256:
+        fingerprints.append(DiscFingerprintInput(algo="matrix256", value=probe.matrix256))
 
     return ScanResult(
         disc_type=disc_type,
         volume_label=volume_label,
         titles=titles,
         fingerprints=fingerprints,
+        bd_meta=probe.bd_meta,
     )

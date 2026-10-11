@@ -20,7 +20,7 @@
 #   --no-compose        Skip docker-compose.yml generation.
 #   --no-udev           Skip host udev rule.
 #
-# See docs/arch/06-deployment.md for the full design.
+# See docs/developers/architecture/06-deployment.md for the full design.
 
 set -euo pipefail
 
@@ -306,7 +306,7 @@ ensure_prefix() {
     log "ensuring install prefix at $PREFIX"
     mkdir -p "$PREFIX"/{certs,raw,media,logs,db}
     chmod 700 "$PREFIX/certs"
-    # 2775 = setgid + group-writable. Per docs/arch/06-deployment.md: lets
+    # 2775 = setgid + group-writable. Per docs/developers/architecture/06-deployment.md: lets
     # ARM-created subdirs inherit the parent group automatically.
     chmod 2775 "$PREFIX/raw" "$PREFIX/media" "$PREFIX/logs"
 }
@@ -1379,6 +1379,9 @@ services:
       # still wins, for independent overrides.
       ARM_TRANSCODE_IMAGE: \${ARM_TRANSCODE_IMAGE:-\${ARM_IMAGE_PREFIX:-${ARM_IMAGE_PREFIX_DEFAULT}}/arm-transcode:\${ARM_IMAGE_TAG:-${ARM_IMAGE_TAG_DEFAULT}}}
       ARM_HOST_RAW_PATH: \${ARM_HOST_RAW_PATH}
+      # Rip from ISO (optional): empty (the default) means the feature
+      # reports "not configured". See ARM_HOST_ISO_LIBRARY_PATH in .env.example.
+      ARM_HOST_ISO_LIBRARY_PATH: \${ARM_HOST_ISO_LIBRARY_PATH:-}
       ARM_HOST_MEDIA_PATH: \${ARM_HOST_MEDIA_PATH}
       ARM_HOST_LOGS_PATH: \${ARM_HOST_LOGS_PATH}
       ARM_HOST_CERTS_PATH: \${ARM_HOST_CERTS_PATH}
@@ -1391,6 +1394,9 @@ services:
       ARM_TRANSCODE_PGID: \${ARM_TRANSCODE_PGID:-}
     volumes:
       - ./raw:/raw
+      # Rip from ISO (optional): read-only; the backend browses it and mounts
+      # only the chosen .iso into each one-shot ripper it spawns.
+      - \${ARM_HOST_ISO_LIBRARY_PATH:-./iso-library}:/ingress:ro
       - ./media:/media
       - ./logs:/logs
       - ./certs/arm-ca.crt:/etc/ssl/arm/arm-ca.crt:ro
@@ -1470,7 +1476,7 @@ build_udev_rule_content() {
 # Managed by install.sh — do not edit by hand.
 # Disables host auto-mount for ARM-managed optical drives so the ripper
 # container can eject after a rip. See:
-#   docs/arch/06-deployment.md#host-side-auto-mount-must-be-disabled
+#   docs/developers/architecture/06-deployment.md#host-side-auto-mount-must-be-disabled
 HEADER
     printf '%s\n' "${rule_lines[@]}"
 }

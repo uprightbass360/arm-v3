@@ -16,7 +16,9 @@ vi.mock('$lib/api/jobs', () => ({
 	resolveJob: vi.fn()
 }));
 import { resolveJob } from '$lib/api/jobs';
+import type { JobStatus } from '$lib/types/api.gen';
 import JobInfoForm from './JobInfoForm.svelte';
+import { actionsFor } from './__fixtures__/job';
 
 const mockResolve = vi.mocked(resolveJob);
 
@@ -26,6 +28,7 @@ function job(overrides: Record<string, unknown> = {}) {
 		drive_id: 'drv_1',
 		disc_type: 'dvd',
 		status: 'awaiting_user_id',
+		actions: actionsFor((overrides.status as JobStatus | undefined) ?? 'awaiting_user_id'),
 		title: 'Star Knight',
 		year: 1985,
 		disc_number: null,
@@ -62,8 +65,7 @@ describe('JobInfoForm', () => {
 			title: 'Star Knight',
 			year: 1986,
 			disc_number: null,
-			disc_total: null,
-			metadata: {}
+			disc_total: null
 		});
 		await waitFor(() => expect(onrefresh).toHaveBeenCalled());
 	});
@@ -73,13 +75,14 @@ describe('JobInfoForm', () => {
 		await fireEvent.input(screen.getByLabelText('Disc number'), { target: { value: '2' } });
 		await fireEvent.input(screen.getByLabelText('Disc total'), { target: { value: '3' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-		await waitFor(() => expect(mockResolve).toHaveBeenCalledWith('job_1', {
-			title: 'Star Knight',
-			year: 1985,
-			disc_number: 2,
-			disc_total: 3,
-			metadata: {}
-		}));
+		await waitFor(() =>
+			expect(mockResolve).toHaveBeenCalledWith('job_1', {
+				title: 'Star Knight',
+				year: 1985,
+				disc_number: 2,
+				disc_total: 3
+			})
+		);
 	});
 
 	it('a save error shows error feedback and keeps the dirty Save bar', async () => {

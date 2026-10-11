@@ -13,9 +13,23 @@ class ConfigFieldMeta(BaseModel):
     tier: str  # "secret" | "operator" | "infra"
     label: str
     help: str
-    type: str  # "string" | "bool" | "int" | "enum" | "string[]"
+    type: str  # "string" | "bool" | "int" | "enum" | "string[]" | "ranked"
     editable: bool
     enum_values: list[str] | None = None
+    # Display names for enum / ranked values (value -> label).
+    enum_labels: dict[str, str] | None = None
+    # Ranked only: value -> the secret config key it needs before it can run.
+    enum_requires: dict[str, str] | None = None
+    # First-run walkthrough: which step renders this field, and in what order
+    # (setup spec 2026-10-01 §7.2). Settings and setup share this one registry.
+    setup_step: str | None = None
+    setup_order: int | None = None
+    # "Get a free key" link for API key fields.
+    signup_url: str | None = None
+    # Custom renderer id for ConfigSchemaField ("makemkv_key", "disc_handling").
+    widget: str | None = None
+    # Key of the field whose widget renders this one; forms skip it on its own.
+    part_of: str | None = None
 
 
 CONFIG_FIELD_META: list[ConfigFieldMeta] = [
@@ -24,11 +38,14 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         key="metadata_provider",
         group="Metadata",
         tier="operator",
-        label="Default metadata provider",
-        help="Provider for title identify (search + detail).",
+        label="Look up titles with",
+        help="The service ARM searches when it identifies a disc.",
         type="enum",
         editable=True,
         enum_values=["tmdb", "omdb"],
+        enum_labels={"tmdb": "TMDb", "omdb": "OMDb"},
+        setup_step="metadata",
+        setup_order=4,
     ),
     ConfigFieldMeta(
         key="tmdb_api_key",
@@ -38,6 +55,9 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         help="The Movie Database API key (free; recommended).",
         type="string",
         editable=True,
+        setup_step="metadata",
+        setup_order=1,
+        signup_url="https://www.themoviedb.org/settings/api",
     ),
     ConfigFieldMeta(
         key="omdb_api_key",
@@ -47,15 +67,21 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         help="Open Movie Database API key (1000 req/day free tier).",
         type="string",
         editable=True,
+        setup_step="metadata",
+        setup_order=2,
+        signup_url="https://www.omdbapi.com/apikey.aspx",
     ),
     ConfigFieldMeta(
         key="tvdb_api_key",
         group="Metadata",
         tier="secret",
         label="TVDb API key",
-        help="TheTVDB v4 API key (used for episode matching).",
+        help="Needed for the TVDB episode source.",
         type="string",
         editable=True,
+        setup_step="metadata",
+        setup_order=3,
+        signup_url="https://thetvdb.com/api-information",
     ),
     ConfigFieldMeta(
         key="makemkv_key",
@@ -65,15 +91,20 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         help="MakeMKV registration key (purchased perma-key or beta key).",
         type="string",
         editable=True,
+        setup_step="makemkv",
+        setup_order=1,
+        widget="makemkv_key",
     ),
     ConfigFieldMeta(
         key="thediscdb_enabled",
         group="Metadata",
         tier="operator",
-        label="TheDiscDB disc matching",
+        label="Match discs against TheDiscDB",
         help="Match discs against the local TheDiscDB snapshot to label titles, pick the main feature, and name extras/episodes.",
         type="bool",
         editable=True,
+        setup_step="metadata",
+        setup_order=5,
     ),
     ConfigFieldMeta(
         key="thediscdb_refresh_days",
@@ -82,6 +113,51 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         label="TheDiscDB refresh interval (days)",
         help="How often the backend refreshes its TheDiscDB snapshot from GitHub.",
         type="int",
+        editable=True,
+    ),
+    ConfigFieldMeta(
+        key="episode_sources",
+        group="Metadata",
+        tier="operator",
+        label="Episode sources",
+        help="Tried top to bottom. ARM stops at the first confident match. TVmaze needs no key.",
+        type="ranked",
+        editable=True,
+        enum_values=["tmdb", "tvmaze", "tvdb"],
+        enum_labels={"tmdb": "TMDb", "tvmaze": "TVmaze", "tvdb": "TVDB"},
+        enum_requires={"tmdb": "tmdb_api_key", "tvdb": "tvdb_api_key"},
+    ),
+    ConfigFieldMeta(
+        key="disc_hint_sources",
+        group="Metadata",
+        tier="operator",
+        label="Read season and disc number from",
+        help="Read from the disc in this order, before ARM identifies it.",
+        type="ranked",
+        editable=True,
+        enum_values=["bd_title", "label"],
+        enum_labels={"bd_title": "Blu-ray disc title", "label": "Disc volume label"},
+    ),
+    ConfigFieldMeta(
+        key="episode_match_tolerance_seconds",
+        group="Metadata",
+        tier="operator",
+        label="Match tolerance (seconds)",
+        help=(
+            "The most a track's runtime may differ from an episode's and still match. "
+            "ARM narrows this to a tenth of the episode's runtime, at least 60 seconds. "
+            "1 to 1800, default 300."
+        ),
+        type="int",
+        editable=True,
+    ),
+    ConfigFieldMeta(
+        key="episode_auto_apply",
+        group="Metadata",
+        tier="operator",
+        label="Apply confident matches",
+        help="When off, every match is kept as a suggestion to review on the job page.",
+        type="bool",
         editable=True,
     ),
     # NOTE: musicbrainz_user_agent is intentionally NOT registered — the column
@@ -98,6 +174,9 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         help="Start ripping automatically when a disc is detected.",
         type="bool",
         editable=True,
+        setup_step="discs",
+        setup_order=1,
+        widget="disc_handling",
     ),
     ConfigFieldMeta(
         key="block_on_miss",
@@ -112,22 +191,24 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         key="community_keydb_enabled",
         group="Ripping",
         tier="operator",
-        label="Community keydb (FindVUK)",
-        help="Auto-download community AACS VUK keys so MakeMKV can decrypt "
-        "Blu-rays its own key server no longer covers.",
+        label="Download community decryption keys (KEYDB)",
+        help="Opens Blu-rays MakeMKV can't decrypt on its own, using keys shared by other users (FindVUK).",
         type="bool",
         editable=True,
+        setup_step="makemkv",
+        setup_order=2,
     ),
     ConfigFieldMeta(
         key="makemkv_sdf_enabled",
         group="Ripping",
         tier="operator",
-        label="MakeMKV SDF refresh",
-        help="Auto-download MakeMKV's SDF decryption data file so protected "
-        "discs scan instead of timing out. A baseline SDF ships in the image; "
-        "this keeps it current.",
+        label="Use MakeMKV's disc format updates (SDF)",
+        help="Keeps MakeMKV able to read disc formats released after this version. "
+        "A baseline ships in the image; this keeps it current.",
         type="bool",
         editable=True,
+        setup_step="makemkv",
+        setup_order=3,
     ),
     ConfigFieldMeta(
         key="ripping_paused",
@@ -148,6 +229,7 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         "auto-starts when the countdown ends (unless rips are paused).",
         type="bool",
         editable=True,
+        part_of="auto_rip_on_insert",
     ),
     ConfigFieldMeta(
         key="manual_wait_seconds",
@@ -158,17 +240,51 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         type="int",
         editable=True,
     ),
+    ConfigFieldMeta(
+        key="max_parallel_iso_rips",
+        group="Ripping",
+        tier="operator",
+        label="Max parallel ISO rips",
+        help="How many ISO files can rip at the same time, 1 to 8. Each runs its own ripper.",
+        type="int",
+        editable=True,
+    ),
     # NOTE: default_retention_policy is intentionally NOT registered — the column
     # + RetentionPolicy enum persist, but no consumer prunes raw rips yet, so the
     # knob is hidden rather than shown-but-inert. Re-add when retention lands.
     # See docs/superpowers/specs/2026-06-18-settings-audit-design.md §1.1.
     # --- Transcoding ---
     ConfigFieldMeta(
+        key="transcode_enabled",
+        group="Transcoding",
+        tier="operator",
+        label="Enable transcoding",
+        help="Master switch for encode work. Off: no new encode tasks are created or "
+        "spawned; queued ones are held and resume when re-enabled. Passthrough "
+        "sessions (plain file moves into the library) keep working either way.",
+        type="bool",
+        editable=True,
+        setup_step="transcoding",
+        setup_order=1,
+    ),
+    ConfigFieldMeta(
+        key="transcode_capable",
+        group="Transcoding",
+        tier="infra",
+        label="Transcode capable",
+        help="Whether this deployment can run transcode containers at all "
+        "(set at install time; a ripper-only install is not capable).",
+        type="bool",
+        editable=False,
+    ),
+    ConfigFieldMeta(
         key="auto_transcode_on_idle",
         group="Transcoding",
         tier="operator",
-        label="Auto-transcode when idle",
-        help="Queue transcodes automatically when the system is idle.",
+        label="Auto-apply default session after rip",
+        help="When a rip completes, automatically apply the drive's default session "
+        "(queue its transcodes). An explicit per-rip session choice always applies, "
+        "and the default session still shapes the rip either way.",
         type="bool",
         editable=True,
     ),
@@ -223,13 +339,35 @@ CONFIG_FIELD_META: list[ConfigFieldMeta] = [
         editable=False,
     ),
     ConfigFieldMeta(
-        key="MAX_PARALLEL_TRANSCODES",
-        group="System",
-        tier="infra",
+        key="max_parallel_transcodes",
+        group="Transcoding",
+        tier="operator",
         label="Max parallel transcodes",
-        help="Concurrent transcode containers (deploy-time; UI-editable later).",
-        type="string",
-        editable=False,
+        help="Concurrent transcode containers. Applies from the next dispatcher tick; the MAX_PARALLEL_TRANSCODES env value only seeds this once.",
+        type="int",
+        editable=True,
+        setup_step="transcoding",
+        setup_order=2,
+    ),
+    # Drive-lifecycle scanner tunables (spec 2026-09-03 §2) — exposed while the
+    # cadence is being dialled in on real hardware.
+    ConfigFieldMeta(
+        key="drive_scan_interval_seconds",
+        group="System",
+        tier="operator",
+        label="Drive scan interval (seconds)",
+        help="How often the backend re-enumerates optical drives from sysfs.",
+        type="int",
+        editable=True,
+    ),
+    ConfigFieldMeta(
+        key="drive_detected_prune_days",
+        group="System",
+        tier="operator",
+        label="Forget unseen drives after (days)",
+        help="Detected-but-never-enrolled drives absent this long are dropped from the list.",
+        type="int",
+        editable=True,
     ),
     ConfigFieldMeta(
         key="ARM_DOCKER_NETWORK",

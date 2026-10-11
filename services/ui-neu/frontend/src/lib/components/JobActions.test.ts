@@ -3,8 +3,8 @@ import { renderComponent, screen, fireEvent, cleanup, waitFor } from '$lib/test-
 import JobActions from './JobActions.svelte';
 import { createJob } from './__fixtures__/job';
 
-// Mock the API module. Fix-permissions has no v3 backend yet, so the component
-// renders a disabled ComingSoon control instead of calling an API.
+// Mock the API module. Fix-permissions has no v3 backend, so the component
+// renders no control for it.
 vi.mock('$lib/api/jobs', () => ({
 	abandonJob: vi.fn(() => Promise.resolve()),
 	deleteJob: vi.fn(() => Promise.resolve())
@@ -15,7 +15,10 @@ const mockAbandon = vi.mocked(abandonJob);
 const mockDelete = vi.mocked(deleteJob);
 
 // Mock window.confirm
-vi.stubGlobal('confirm', vi.fn(() => true));
+vi.stubGlobal(
+	'confirm',
+	vi.fn(() => true)
+);
 
 describe('JobActions', () => {
 	afterEach(() => {
@@ -30,6 +33,11 @@ describe('JobActions', () => {
 				props: { job: createJob({ status: 'ripping' }) }
 			});
 			expect(screen.getByText('Abandon')).toBeInTheDocument();
+		});
+
+		it('offers Abandon on a held review disc', () => {
+			renderComponent(JobActions, { props: { job: createJob({ status: 'awaiting_review' }) } });
+			expect(screen.getByRole('button', { name: /Abandon/ })).toBeInTheDocument();
 		});
 
 		it('shows Delete button for completed jobs', () => {
@@ -98,7 +106,6 @@ describe('JobActions', () => {
 			});
 		});
 
-
 		it('shows success feedback after action', async () => {
 			renderComponent(JobActions, {
 				props: { job: createJob({ status: 'ripping' }) }
@@ -156,7 +163,8 @@ describe('JobActions', () => {
 				props: { job: createJob({ status: 'ripped' }), compact: true }
 			});
 			const deleteBtn = screen.getByText('Delete');
-			expect(deleteBtn).toHaveClass('text-xs');
+			expect(deleteBtn).toHaveClass('job-actions-pill', 'job-actions-pill-danger');
+			expect(deleteBtn).toHaveAttribute('data-compact', 'true');
 		});
 
 		it('renders standard buttons when compact is false', () => {
@@ -164,7 +172,8 @@ describe('JobActions', () => {
 				props: { job: createJob({ status: 'ripped' }), compact: false }
 			});
 			const deleteBtn = screen.getByText('Delete');
-			expect(deleteBtn).toHaveClass('text-xs');
+			expect(deleteBtn).toHaveClass('job-actions-pill', 'job-actions-pill-danger');
+			expect(deleteBtn).toHaveAttribute('data-compact', 'false');
 		});
 	});
 });

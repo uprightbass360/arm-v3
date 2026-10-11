@@ -1,8 +1,10 @@
+import logging
+import os
 from typing import Any
 
 import httpx
 
-from arm_common import Drive, DriveMediaStatus, Job, KeydbState, MakemkvKeyState, MakemkvSdfState
+from arm_common import Drive, DriveMediaStatus, IsoPreparePhase, Job, KeydbState, MakemkvKeyState, MakemkvSdfState
 from arm_common.schemas import (
     HeldJobView,
     IdentifyRequest,
@@ -12,6 +14,7 @@ from arm_common.schemas import (
     MakemkvKeyStatusReport,
     RegisterRequest,
     RipperConfigView,
+    IsoPrepareReport,
     RipperHeartbeatRequest,
     RipStartResponse,
     ScanResult,
@@ -19,6 +22,13 @@ from arm_common.schemas import (
     TrackUpdateRequest,
     TrackView,
 )
+
+logger = logging.getLogger("arm_ripper.backend_client")
+
+
+class RegisterRefused(RuntimeError):
+    """The backend answered register with a non-retriable refusal (404 unknown
+    drive, 409 not enrolled / identity mismatch). Carries the backend's detail."""
 
 
 class BackendClient:
@@ -43,10 +53,22 @@ class BackendClient:
         await self._client.aclose()
 
     async def register(
-        self, *, hostname: str, device_path: str, ripper_version: str, serial: str | None = None
+        self, *, drive_id: str, hostname: str, device_path: str, ripper_version: str, by_id_name: str | None
     ) -> Drive:
-        req = RegisterRequest(hostname=hostname, device_path=device_path, ripper_version=ripper_version, serial=serial)
+        req = RegisterRequest(
+            drive_id=drive_id,
+            hostname=hostname,
+            device_path=device_path,
+            ripper_version=ripper_version,
+            by_id_name=by_id_name,
+        )
         r = await self._client.post("/api/ripper/register", json=req.model_dump())
+        if r.status_code in (404, 409):
+            try:
+                detail = r.json().get("detail", r.text)
+            except ValueError:
+                detail = r.text
+            raise RegisterRefused(str(detail))
         r.raise_for_status()
         return Drive.model_validate(r.json())
 
@@ -54,6 +76,35 @@ class BackendClient:
         req = RipperHeartbeatRequest(drive_id=drive_id, media_status=media_status)
         r = await self._client.post("/api/ripper/heartbeat", json=req.model_dump(mode="json"))
         r.raise_for_status()
+
+    async def report_iso_prepare(
+        self, *, drive_id: str, phase: IsoPreparePhase, progress_pct: int | None, current_file: str | None
+    ) -> None:
+        """An ISO ripper's phase before its job exists (`arm_ripper.prepare`)."""
+        req = IsoPrepareReport(drive_id=drive_id, phase=phase, progress_pct=progress_pct, current_file=current_file)
+        r = await self._client.post("/api/ripper/iso-prepare", json=req.model_dump(mode="json"))
+        r.raise_for_status()
+
+    async def update_device_path(self, *, drive_id: str, device_path: str) -> None:
+        """Tell the backend which node this drive currently occupies. Called
+        by the poll loop when resolution moves (replug under a new srN) so
+        the UI never shows a stale node. 404 is tolerated: the endpoint
+        ships with the backend half of this feature."""
+        r = await self._client.patch(f"/api/ripper/drives/{drive_id}/device-path", json={"device_path": device_path})
+        if r.status_code == 404:
+            logger.info("device-path endpoint absent (404); node %s not reported", device_path)
+            return
+        r.raise_for_status()
+
+    async def get_drive(self, drive_id: str) -> Drive | None:
+        """This ripper's Drive row, or None on 404. Used by port-identity
+        drives to pick up a refreshed device_path while absent."""
+        r = await self._client.get(f"/api/ripper/drives/{drive_id}")
+        if r.status_code == 404:
+            logger.debug("drive %s not found (404); keeping the configured hint", drive_id)
+            return None
+        r.raise_for_status()
+        return Drive.model_validate(r.json())
 
     async def identify(
         self,
@@ -136,7 +187,11 @@ class BackendClient:
         On any HTTP error, callers should fail-open (treat as `auto_rip=True`)
         — a flapping backend should not silently disable ripping.
         """
-        r = await self._client.get("/api/ripper/config")
+        # drive_id lets the backend apply this drive's own auto-rip override
+        # (Drive.drive_mode) over the global default (setup spec 2026-10-01 D1).
+        drive_id = os.environ.get("ARM_DRIVE_ID")
+        params = {"drive_id": drive_id} if drive_id else None
+        r = await self._client.get("/api/ripper/config", params=params)
         r.raise_for_status()
         return RipperConfigView.model_validate(r.json())
 
@@ -149,7 +204,7 @@ class BackendClient:
         return RipStartResponse.model_validate(r.json())
 
     async def report_makemkv_key_status(self, *, state: MakemkvKeyState, detail: str | None = None) -> None:
-        req = MakemkvKeyStatusReport(state=state, detail=detail)
+        req = MakemkvKeyStatusReport(state=state, detail=detail, drive_id=os.environ.get("ARM_DRIVE_ID"))
         r = await self._client.post("/api/ripper/makemkv-key-status", json=req.model_dump(mode="json"))
         r.raise_for_status()
 

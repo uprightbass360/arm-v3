@@ -77,6 +77,204 @@ export type AppriseChannelConfig = {
 };
 
 /**
+ * BashChannelConfig
+ *
+ * A script under the backend's ``/scripts`` mount (bare file name), run as
+ * ``bash <script> "<title>" "<body>"`` with ``ARM_*`` env vars plus one env
+ * var per declared input. ``secret_keys`` is server-written from the script
+ * header so masking does not depend on the file still existing; it is
+ * ignored on input (the field stays on the wire for round-tripping).
+ */
+export type BashChannelConfig = {
+    /**
+     * Type
+     */
+    type?: 'bash';
+    /**
+     * Script
+     */
+    script: string;
+    /**
+     * Timeout Seconds
+     */
+    timeout_seconds?: number;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: string;
+    };
+    /**
+     * Secret Keys
+     */
+    secret_keys?: Array<string>;
+};
+
+/**
+ * BashPreviewRequest
+ *
+ * Resolve (and optionally run) a bash hook for one event with sample context.
+ */
+export type BashPreviewRequest = {
+    config: BashChannelConfig;
+    /**
+     * Event Type
+     */
+    event_type: string;
+    template?: ChannelTemplate | null;
+    /**
+     * Channel Id
+     */
+    channel_id?: string | null;
+    /**
+     * Run
+     */
+    run?: boolean;
+};
+
+/**
+ * BashPreviewResult
+ */
+export type BashPreviewResult = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Body
+     */
+    body: string;
+    /**
+     * Inputs
+     */
+    inputs: {
+        [key: string]: string;
+    };
+    /**
+     * Env
+     */
+    env: {
+        [key: string]: string;
+    };
+    /**
+     * Argv
+     */
+    argv: Array<string>;
+    /**
+     * Error
+     */
+    error?: string | null;
+    result?: BashRunResult | null;
+};
+
+/**
+ * BashRunResult
+ */
+export type BashRunResult = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Exit Code
+     */
+    exit_code: number | null;
+    /**
+     * Duration Ms
+     */
+    duration_ms: number;
+    /**
+     * Stdout
+     */
+    stdout: string;
+    /**
+     * Stderr
+     */
+    stderr: string;
+    /**
+     * Error
+     */
+    error: string | null;
+};
+
+/**
+ * BashScriptInfo
+ */
+export type BashScriptInfo = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Executable
+     */
+    executable: boolean;
+    /**
+     * Description
+     */
+    description?: string;
+    /**
+     * Size Bytes
+     */
+    size_bytes: number;
+    /**
+     * Modified At
+     */
+    modified_at: string;
+    /**
+     * Inputs
+     */
+    inputs: Array<ScriptInput>;
+    /**
+     * Preview
+     */
+    preview: string;
+};
+
+/**
+ * BashScriptSummary
+ */
+export type BashScriptSummary = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Executable
+     */
+    executable: boolean;
+    /**
+     * Description
+     */
+    description?: string;
+};
+
+/**
+ * BdDiscMeta
+ *
+ * Blu-ray disc title from BDMV/META/DL/bdmt_<lang>.xml (studio-authored).
+ * Optional on the wire: older rippers never send it.
+ */
+export type BdDiscMeta = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Set Number
+     */
+    set_number?: number | null;
+    /**
+     * Num Sets
+     */
+    num_sets?: number | null;
+    /**
+     * Language
+     */
+    language?: string | null;
+};
+
+/**
  * Body_upload_theme_api_themes_post
  */
 export type BodyUploadThemeApiThemesPost = {
@@ -210,6 +408,12 @@ export type ChannelTemplate = {
      * Body
      */
     body?: string | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: string;
+    } | null;
 };
 
 /**
@@ -239,6 +443,10 @@ export type CollisionInfo = {
      * Reason
      */
     reason: 'existing_task' | 'on_disk' | 'duplicate_in_request';
+    /**
+     * Existing Job Id
+     */
+    existing_job_id?: string | null;
 };
 
 /**
@@ -333,6 +541,38 @@ export type ConfigFieldMeta = {
      * Enum Values
      */
     enum_values?: Array<string> | null;
+    /**
+     * Enum Labels
+     */
+    enum_labels?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Enum Requires
+     */
+    enum_requires?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Setup Step
+     */
+    setup_step?: string | null;
+    /**
+     * Setup Order
+     */
+    setup_order?: number | null;
+    /**
+     * Signup Url
+     */
+    signup_url?: string | null;
+    /**
+     * Widget
+     */
+    widget?: string | null;
+    /**
+     * Part Of
+     */
+    part_of?: string | null;
 };
 
 /**
@@ -376,6 +616,26 @@ export type ConfigUpdateRequest = {
      */
     community_keydb_enabled?: boolean | null;
     /**
+     * Drive Scan Interval Seconds
+     */
+    drive_scan_interval_seconds?: number | null;
+    /**
+     * Drive Detected Prune Days
+     */
+    drive_detected_prune_days?: number | null;
+    /**
+     * Max Parallel Transcodes
+     */
+    max_parallel_transcodes?: number | null;
+    /**
+     * Max Parallel Iso Rips
+     */
+    max_parallel_iso_rips?: number | null;
+    /**
+     * Transcode Enabled
+     */
+    transcode_enabled?: boolean | null;
+    /**
      * Makemkv Sdf Enabled
      */
     makemkv_sdf_enabled?: boolean | null;
@@ -387,6 +647,22 @@ export type ConfigUpdateRequest = {
      * Thediscdb Refresh Days
      */
     thediscdb_refresh_days?: number | null;
+    /**
+     * Episode Sources
+     */
+    episode_sources?: Array<string> | null;
+    /**
+     * Disc Hint Sources
+     */
+    disc_hint_sources?: Array<string> | null;
+    /**
+     * Episode Match Tolerance Seconds
+     */
+    episode_match_tolerance_seconds?: number | null;
+    /**
+     * Episode Auto Apply
+     */
+    episode_auto_apply?: boolean | null;
     /**
      * Ripping Paused
      */
@@ -452,6 +728,30 @@ export type ConfigView = {
      */
     community_keydb_enabled: boolean;
     /**
+     * Drive Scan Interval Seconds
+     */
+    drive_scan_interval_seconds: number;
+    /**
+     * Drive Detected Prune Days
+     */
+    drive_detected_prune_days: number;
+    /**
+     * Max Parallel Transcodes
+     */
+    max_parallel_transcodes: number;
+    /**
+     * Max Parallel Iso Rips
+     */
+    max_parallel_iso_rips: number;
+    /**
+     * Transcode Enabled
+     */
+    transcode_enabled: boolean;
+    /**
+     * Transcode Capable
+     */
+    transcode_capable: boolean;
+    /**
      * Makemkv Sdf Enabled
      */
     makemkv_sdf_enabled: boolean;
@@ -463,6 +763,22 @@ export type ConfigView = {
      * Thediscdb Refresh Days
      */
     thediscdb_refresh_days: number;
+    /**
+     * Episode Sources
+     */
+    episode_sources: Array<string>;
+    /**
+     * Disc Hint Sources
+     */
+    disc_hint_sources: Array<string>;
+    /**
+     * Episode Match Tolerance Seconds
+     */
+    episode_match_tolerance_seconds: number;
+    /**
+     * Episode Auto Apply
+     */
+    episode_auto_apply: boolean;
     /**
      * Ripping Paused
      */
@@ -501,6 +817,10 @@ export type ConfigView = {
      */
     makemkv_key_checked_at?: string | null;
     /**
+     * Makemkv Key Checked By Drive Id
+     */
+    makemkv_key_checked_by_drive_id?: string | null;
+    /**
      * Updated By User Id
      */
     updated_by_user_id: string | null;
@@ -514,6 +834,26 @@ export type ConfigView = {
  * ContainerFormat
  */
 export type ContainerFormat = 'mkv' | 'mp4' | 'webm' | 'flac' | 'mp3' | 'ogg' | 'iso' | 'none';
+
+/**
+ * DiagnosticDetail
+ *
+ * One sub-check row (e.g. docker socket vs image) under a diagnostics check.
+ */
+export type DiagnosticDetail = {
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Message
+     */
+    message?: string | null;
+};
 
 /**
  * DiagnosticsResponse
@@ -608,6 +948,35 @@ export type DiscFingerprintView = {
 };
 
 /**
+ * DiscRouteSummary
+ *
+ * What one kind of disc gets with no drive default and no per-rip choice.
+ */
+export type DiscRouteSummary = {
+    kind: MediaType;
+    /**
+     * Session Id
+     */
+    session_id?: string | null;
+    /**
+     * Session Name
+     */
+    session_name?: string | null;
+    /**
+     * Rip Summary
+     */
+    rip_summary?: string | null;
+    /**
+     * Transcode Summary
+     */
+    transcode_summary?: string | null;
+    /**
+     * Output Template
+     */
+    output_template?: string | null;
+};
+
+/**
  * DiscType
  */
 export type DiscType = 'dvd' | 'bluray' | 'cd' | 'data' | 'unknown';
@@ -632,6 +1001,38 @@ export type Drive = {
      * Serial
      */
     serial?: string | null;
+    /**
+     * By Id Name
+     */
+    by_id_name?: string | null;
+    /**
+     * Sysfs Port
+     */
+    sysfs_port?: string | null;
+    identity_kind?: DriveIdentityKind | null;
+    lifecycle?: DriveLifecycle;
+    kind?: DriveKind;
+    source_kind?: DriveSourceKind | null;
+    /**
+     * Source Path
+     */
+    source_path?: string | null;
+    /**
+     * Present
+     */
+    present?: boolean;
+    /**
+     * Vendor
+     */
+    vendor?: string | null;
+    /**
+     * Model
+     */
+    model?: string | null;
+    /**
+     * Last Error
+     */
+    last_error?: string | null;
     /**
      * Display Name
      */
@@ -707,18 +1108,53 @@ export type DriveCurrentJobView = {
 };
 
 /**
+ * DriveDevicePathUpdateRequest
+ *
+ * Ripper → backend: the drive now occupies this node (replug under a
+ * new srN). Keeps the UI's node current without a re-register.
+ */
+export type DriveDevicePathUpdateRequest = {
+    /**
+     * Device Path
+     */
+    device_path: string;
+};
+
+/**
  * DriveDiagnosticItem
+ *
+ * One row of GET /api/drives/diagnostic's "Look for issues" panel: the
+ * lifecycle model's own verdict on a drive, not just heartbeat staleness.
  */
 export type DriveDiagnosticItem = {
     /**
      * Id
      */
     id: string;
+    lifecycle: DriveLifecycle;
+    /**
+     * Present
+     */
+    present: boolean;
+    identity_kind: DriveIdentityKind | null;
+    /**
+     * Device Path
+     */
+    device_path: string;
+    status: DriveStatus;
     media_status: DriveMediaStatus | null;
     /**
      * Media Status At
      */
     media_status_at: string | null;
+    /**
+     * Container
+     */
+    container: string | null;
+    /**
+     * Last Error
+     */
+    last_error: string | null;
     /**
      * Healthy
      */
@@ -737,7 +1173,39 @@ export type DriveDiagnosticResponse = {
      * Drives
      */
     drives: Array<DriveDiagnosticItem>;
+    /**
+     * System
+     */
+    system?: Array<string>;
 };
+
+/**
+ * DriveIdentityKind
+ *
+ * What a Drive row's identity is keyed on. BY_ID is the udev
+ * /dev/disk/by-id link name (stable across replug and renumbering); PORT
+ * is the sysfs device path — the degraded fallback for drives that expose
+ * no serial, and the UI says so.
+ */
+export type DriveIdentityKind = 'by_id' | 'port';
+
+/**
+ * DriveKind
+ *
+ * What a Drive row represents. OPTICAL is a physical drive the scanner
+ * found; VIRTUAL is an ephemeral per-ISO-rip drive row (source_kind /
+ * source_path identify the ISO), created enrolled and retired when its one
+ * rip ends.
+ */
+export type DriveKind = 'optical' | 'virtual';
+
+/**
+ * DriveLifecycle
+ *
+ * Operator-owned state of a physical optical drive the backend has seen.
+ * Presence (plugged in right now) is a separate, orthogonal fact.
+ */
+export type DriveLifecycle = 'detected' | 'ignored' | 'enrolled' | 'retired';
 
 /**
  * DriveMediaStatus
@@ -746,7 +1214,7 @@ export type DriveDiagnosticResponse = {
  * on a heartbeat so the backend can fail manual-trigger requests
  * fast when the user clicks Start without loading a disc.
  */
-export type DriveMediaStatus = 'loaded' | 'no_disc' | 'tray_open' | 'not_ready' | 'unavailable' | 'unknown';
+export type DriveMediaStatus = 'loaded' | 'no_disc' | 'tray_open' | 'not_ready' | 'unavailable' | 'unknown' | 'detached';
 
 /**
  * DriveMode
@@ -765,7 +1233,35 @@ export type DriveRescanResponse = {
      * Stale
      */
     stale: number;
+    /**
+     * Detected
+     */
+    detected?: number;
+    /**
+     * Ignored
+     */
+    ignored?: number;
+    /**
+     * Enrolled
+     */
+    enrolled?: number;
+    /**
+     * Absent
+     */
+    absent?: number;
+    /**
+     * Pruned
+     */
+    pruned?: number;
 };
+
+/**
+ * DriveSourceKind
+ *
+ * What a virtual drive's source is: an .iso image, or a disc folder (a
+ * BDMV / VIDEO_TS tree MakeMKV reads directly).
+ */
+export type DriveSourceKind = 'iso' | 'folder';
 
 /**
  * DriveStatus
@@ -884,7 +1380,142 @@ export type DriveView = {
      * Updated At
      */
     updated_at: string | null;
+    lifecycle: DriveLifecycle;
+    /**
+     * Present
+     */
+    present: boolean;
+    identity_kind: DriveIdentityKind | null;
+    /**
+     * Serial
+     */
+    serial: string | null;
+    /**
+     * By Id Name
+     */
+    by_id_name: string | null;
+    /**
+     * Vendor
+     */
+    vendor: string | null;
+    /**
+     * Model
+     */
+    model: string | null;
+    /**
+     * Last Error
+     */
+    last_error: string | null;
     current_job?: DriveCurrentJobView | null;
+    /**
+     * Connection
+     */
+    connection?: 'usb' | 'sata' | 'other' | null;
+    kind?: DriveKind;
+    source_kind?: DriveSourceKind | null;
+    /**
+     * Source Path
+     */
+    source_path?: string | null;
+};
+
+/**
+ * EncoderAvailabilityView
+ *
+ * One `arm_common.encoders.ENCODERS` catalog entry, with availability
+ * computed server-side from the live `gpus` inventory (GET /api/encoders).
+ *
+ * `group` buckets `preset`/`cpu`/`any` kinds by themselves and `gpu` kinds
+ * by vendor, so the transcode preset picker can render sections without
+ * re-deriving the grouping client-side. `available` is always true for
+ * `preset`/`cpu`/`any` (an `any_*` encoder falls back to CPU at dispatch
+ * time); for a vendor-pinned `gpu` encoder it reflects whether any enabled
+ * device's probe currently verifies that vendor/codec. `reason` explains
+ * an unavailable `gpu` entry, or an `any_*` entry that would currently run
+ * on the CPU for lack of a verified GPU; it is `None` otherwise.
+ */
+export type EncoderAvailabilityView = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Group
+     */
+    group: 'preset' | 'cpu' | 'any' | 'qsv' | 'nvenc' | 'vaapi';
+    /**
+     * Engine
+     */
+    engine: string;
+    /**
+     * Kind
+     */
+    kind: string;
+    vendor: GpuVendor | null;
+    /**
+     * Codec
+     */
+    codec: string | null;
+    /**
+     * Available
+     */
+    available: boolean;
+    /**
+     * Reason
+     */
+    reason: string | null;
+};
+
+/**
+ * EpisodeListView
+ *
+ * `GET /api/jobs/{id}/identity/episodes` response.
+ */
+export type EpisodeListView = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Show Id
+     */
+    show_id: string;
+    /**
+     * Season
+     */
+    season: number;
+    /**
+     * Episodes
+     */
+    episodes?: Array<EpisodeSummary>;
+};
+
+/**
+ * EpisodeSummary
+ *
+ * One episode in an `EpisodeListView`.
+ */
+export type EpisodeSummary = {
+    /**
+     * Number
+     */
+    number: number;
+    /**
+     * Name
+     */
+    name?: string | null;
+    /**
+     * Runtime S
+     */
+    runtime_s?: number | null;
+    /**
+     * Special
+     */
+    special?: boolean;
 };
 
 /**
@@ -911,6 +1542,41 @@ export type EventTypeInfo = {
      * Default Body
      */
     default_body: string;
+};
+
+/**
+ * ExternalIds
+ */
+export type ExternalIds = {
+    /**
+     * Imdb
+     */
+    imdb?: string | null;
+    /**
+     * Tmdb
+     */
+    tmdb?: string | null;
+    /**
+     * Tvdb
+     */
+    tvdb?: string | null;
+    /**
+     * Tvmaze
+     */
+    tvmaze?: string | null;
+    /**
+     * Anidb
+     */
+    anidb?: string | null;
+    /**
+     * Musicbrainz Release
+     */
+    musicbrainz_release?: string | null;
+    /**
+     * Tmdb Kind
+     */
+    tmdb_kind?: 'movie' | 'tv' | null;
+    [key: string]: unknown;
 };
 
 /**
@@ -1018,6 +1684,97 @@ export type FixPermsResponse = {
 };
 
 /**
+ * GpuProbeAllScheduled
+ *
+ * 202 body for a re-probe of every enabled, idle row: the ids whose
+ * background probe was scheduled.
+ */
+export type GpuProbeAllScheduled = {
+    /**
+     * Scheduled
+     */
+    scheduled: Array<string>;
+};
+
+/**
+ * GpuProbeScheduled
+ *
+ * 202 body for a single-row re-probe: the probe runs in the background
+ * and the row updates when `gpu.probed` arrives on `transcode.events`.
+ */
+export type GpuProbeScheduled = {
+    /**
+     * Scheduled
+     */
+    scheduled: boolean;
+};
+
+/**
+ * GpuStatus
+ */
+export type GpuStatus = 'available' | 'busy';
+
+/**
+ * GpuUpdateRequest
+ *
+ * PATCH body for a GPU row - the enable/disable switch only. Vendor,
+ * path and encoder kinds describe hardware; they are re-seeded, not edited.
+ */
+export type GpuUpdateRequest = {
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+};
+
+/**
+ * GpuVendor
+ */
+export type GpuVendor = 'vaapi' | 'nvenc' | 'qsv';
+
+/**
+ * GpuView
+ *
+ * One row of the DB-authoritative GPU inventory (Settings > GPUs).
+ */
+export type GpuView = {
+    /**
+     * Id
+     */
+    id: string;
+    vendor: GpuVendor;
+    /**
+     * Device Path
+     */
+    device_path: string;
+    /**
+     * Encoder Kinds
+     */
+    encoder_kinds: Array<string>;
+    status: GpuStatus;
+    /**
+     * Enabled
+     */
+    enabled: boolean;
+    /**
+     * Claimed By Task Id
+     */
+    claimed_by_task_id?: string | null;
+    /**
+     * Last Seen At
+     */
+    last_seen_at?: string | null;
+    /**
+     * Probed At
+     */
+    probed_at?: string | null;
+    /**
+     * Probe Error
+     */
+    probe_error?: string | null;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -1099,11 +1856,6 @@ export type HeldJobView = {
 };
 
 /**
- * HwPreference
- */
-export type HwPreference = 'cpu_only' | 'any';
-
-/**
  * IdentificationMode
  */
 export type IdentificationMode = 'required' | 'skip' | 'deferred_placeholder';
@@ -1124,6 +1876,48 @@ export type IdentifyRequest = {
 };
 
 /**
+ * IdentityClaims
+ */
+export type IdentityClaims = {
+    /**
+     * Sources
+     */
+    sources?: {
+        [key: string]: SourceClaims;
+    };
+    /**
+     * Pin
+     */
+    pin?: {
+        [key: string]: string;
+    };
+};
+
+/**
+ * IdentityView
+ *
+ * `GET /api/jobs/{id}/identity` response.
+ */
+export type IdentityView = {
+    /**
+     * Sources
+     */
+    sources?: {
+        [key: string]: SourceSummary;
+    };
+    /**
+     * Pin
+     */
+    pin?: {
+        [key: string]: string;
+    };
+    /**
+     * Tracks
+     */
+    tracks?: Array<TrackIdentityView>;
+};
+
+/**
  * InAppChannelConfig
  */
 export type InAppChannelConfig = {
@@ -1131,6 +1925,180 @@ export type InAppChannelConfig = {
      * Type
      */
     type?: 'inapp';
+};
+
+/**
+ * IsoFolderEntry
+ *
+ * One disc folder in the library (GET /api/iso/folders).
+ */
+export type IsoFolderEntry = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Parent
+     */
+    parent: string;
+    /**
+     * Disc Type
+     */
+    disc_type: 'bluray' | 'dvd';
+    /**
+     * Ripping
+     */
+    ripping?: boolean;
+};
+
+/**
+ * IsoFolderListing
+ */
+export type IsoFolderListing = {
+    /**
+     * Host Path
+     */
+    host_path: string;
+    /**
+     * Entries
+     */
+    entries: Array<IsoFolderEntry>;
+    /**
+     * Partial
+     */
+    partial?: boolean;
+};
+
+/**
+ * IsoLibraryEntry
+ */
+export type IsoLibraryEntry = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Kind
+     */
+    kind: 'folder' | 'iso';
+    /**
+     * Size Bytes
+     */
+    size_bytes?: number | null;
+    /**
+     * Modified At
+     */
+    modified_at?: string | null;
+    /**
+     * Ripping
+     */
+    ripping?: boolean;
+};
+
+/**
+ * IsoLibraryListing
+ */
+export type IsoLibraryListing = {
+    /**
+     * Host Path
+     */
+    host_path: string;
+    /**
+     * Subpath
+     */
+    subpath: string;
+    /**
+     * Parent Subpath
+     */
+    parent_subpath: string | null;
+    /**
+     * Entries
+     */
+    entries: Array<IsoLibraryEntry>;
+};
+
+/**
+ * IsoPreparePhase
+ *
+ * What an ISO ripper is doing before its job exists: scanning the image
+ * (or its extracted folder) or unpacking it for MakeMKV.
+ */
+export type IsoPreparePhase = 'scanning' | 'extracting';
+
+/**
+ * IsoPrepareReport
+ *
+ * POST /api/ripper/iso-prepare: what an ISO ripper is doing before
+ * identify creates its job. Sent on every phase change, throttled progress
+ * updates, and as a keepalive while a phase runs.
+ */
+export type IsoPrepareReport = {
+    /**
+     * Drive Id
+     */
+    drive_id: string;
+    phase: IsoPreparePhase;
+    /**
+     * Progress Pct
+     */
+    progress_pct?: number | null;
+    /**
+     * Current File
+     */
+    current_file?: string | null;
+};
+
+/**
+ * IsoPrepareView
+ *
+ * GET /api/iso/rips/preparing: one ISO rip that has no job yet.
+ */
+export type IsoPrepareView = {
+    /**
+     * Drive Id
+     */
+    drive_id: string;
+    phase: IsoPreparePhase;
+    /**
+     * Progress Pct
+     */
+    progress_pct?: number | null;
+    /**
+     * Current File
+     */
+    current_file?: string | null;
+    /**
+     * Updated At
+     */
+    updated_at: string;
+};
+
+/**
+ * IsoRipCreated
+ */
+export type IsoRipCreated = {
+    /**
+     * Drive Id
+     */
+    drive_id: string;
+};
+
+/**
+ * IsoRipRequest
+ */
+export type IsoRipRequest = {
+    /**
+     * Path
+     */
+    path: string;
+    /**
+     * Session Id
+     */
+    session_id?: string | null;
 };
 
 /**
@@ -1158,6 +2126,15 @@ export type Job = {
      * Year
      */
     year: number | null;
+    media_type?: MediaType | null;
+    /**
+     * Season
+     */
+    season: number | null;
+    /**
+     * Pending Session Id
+     */
+    pending_session_id?: string | null;
     /**
      * Disc Number
      */
@@ -1166,6 +2143,12 @@ export type Job = {
      * Disc Total
      */
     disc_total: number | null;
+    /**
+     * Identity Provenance
+     */
+    identity_provenance?: {
+        [key: string]: string;
+    } | null;
     /**
      * Poster Url
      */
@@ -1212,6 +2195,56 @@ export type Job = {
 };
 
 /**
+ * JobActions
+ *
+ * Operator actions the backend will accept for a job in its current status.
+ *
+ * Derived from the same status groups the endpoints enforce, so a UI button
+ * gated on these flags cannot offer an action its endpoint rejects. Role
+ * (admin/guest) gating stays in the UI.
+ */
+export type JobActions = {
+    /**
+     * Can Resolve
+     */
+    can_resolve: boolean;
+    /**
+     * Can Apply
+     */
+    can_apply: boolean;
+    /**
+     * Can Abandon
+     */
+    can_abandon: boolean;
+    /**
+     * Can Delete
+     */
+    can_delete: boolean;
+};
+
+/**
+ * JobClaim
+ */
+export type JobClaim = {
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Disc Number
+     */
+    disc_number?: number | null;
+    /**
+     * Disc Total
+     */
+    disc_total?: number | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+};
+
+/**
  * JobCompleteRequest
  *
  * POST /api/ripper/jobs/{job_id}/rip-complete body.
@@ -1236,6 +2269,70 @@ export type JobDetailView = {
      * Fingerprints
      */
     fingerprints?: Array<DiscFingerprintView>;
+};
+
+/**
+ * JobFlags
+ */
+export type JobFlags = {
+    /**
+     * Unidentified
+     */
+    unidentified?: boolean;
+    /**
+     * Dispatch Timeout
+     */
+    dispatch_timeout?: boolean;
+    [key: string]: unknown;
+};
+
+/**
+ * JobIdentity
+ *
+ * What identification concluded. Title/year/media_type/poster live on
+ * the Job row itself — this records where they came from and the ids that
+ * let a UI link out or re-query.
+ */
+export type JobIdentity = {
+    /**
+     * Provider
+     */
+    provider: string;
+    external_ids?: ExternalIds;
+    /**
+     * Overview
+     */
+    overview?: string | null;
+    /**
+     * Identified At
+     */
+    identified_at?: string | null;
+    [key: string]: unknown;
+};
+
+/**
+ * JobMetadata
+ */
+export type JobMetadata = {
+    scan_result?: ScanResult | null;
+    identity?: JobIdentity | null;
+    music?: MusicMeta | null;
+    /**
+     * Identity Claims
+     */
+    identity_claims?: IdentityClaims | {
+        [key: string]: unknown;
+    } | null;
+    flags?: JobFlags;
+    /**
+     * Provider Raw
+     */
+    provider_raw?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    };
+    [key: string]: unknown;
 };
 
 /**
@@ -1306,6 +2403,7 @@ export type JobUpdateRequest = {
      * Disc Total
      */
     disc_total?: number | null;
+    media_type?: MediaType | null;
     /**
      * Tracks
      */
@@ -1338,6 +2436,19 @@ export type JobView = {
      * Year
      */
     year: number | null;
+    media_type?: MediaType | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Pending Session Id
+     */
+    pending_session_id?: string | null;
+    /**
+     * Parked Session Ids
+     */
+    parked_session_ids?: Array<string>;
     /**
      * Disc Number
      */
@@ -1354,12 +2465,7 @@ export type JobView = {
      * Poster Url Manual
      */
     poster_url_manual?: string | null;
-    /**
-     * Metadata Json
-     */
-    metadata_json: {
-        [key: string]: unknown;
-    };
+    metadata_json: JobMetadata;
     /**
      * Resumed From Crash
      */
@@ -1374,6 +2480,22 @@ export type JobView = {
     manual_pause?: boolean;
     rip_progress?: RipProgressSummary | null;
     transcode_progress?: TranscodeProgressSummary | null;
+    readonly actions: JobActions;
+    /**
+     * Looks Episodic
+     *
+     * The stored scan looks like a TV disc (several same-length episode
+     * titles, no feature): the title search defaults to TV (spec 3.3).
+     */
+    readonly looks_episodic: boolean;
+    /**
+     * Has Series
+     *
+     * A TV show is known: a TMDb id of kind tv, a TVDB or TVmaze id, or a
+     * show id some episode source resolved (spec 3.4). False means the
+     * Match Episodes tab asks for the series first.
+     */
+    readonly has_series: boolean;
 };
 
 /**
@@ -1506,6 +2628,10 @@ export type MakemkvKeyStatusReport = {
      * Detail
      */
     detail?: string | null;
+    /**
+     * Drive Id
+     */
+    drive_id?: string | null;
 };
 
 /**
@@ -1528,7 +2654,8 @@ export type MakemkvSdfState = 'updated' | 'fresh_kept' | 'disabled' | 'download_
  * POST /api/jobs/manual — kick off a rip on a drive that already has a
  * disc in the tray. The ripper picks it up via WS command and runs the
  * normal scan→identify→rip flow; the optional `session_id` is stamped on
- * the resulting Job's metadata so `rip-complete` auto-applies it.
+ * the resulting Job's `pending_session_id` column so `rip-complete`
+ * auto-applies it.
  */
 export type ManualTriggerRequest = {
     /**
@@ -1553,6 +2680,122 @@ export type ManualTriggerResponse = {
      * Session Id
      */
     session_id: string | null;
+};
+
+/**
+ * MatchEntryView
+ *
+ * One title's episode match within a `MatchOutcomeView`.
+ */
+export type MatchEntryView = {
+    /**
+     * Source Ref
+     */
+    source_ref: string;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Episode
+     */
+    episode?: number | null;
+    /**
+     * Episode End
+     */
+    episode_end?: number | null;
+    /**
+     * Episode Name
+     */
+    episode_name?: string | null;
+    /**
+     * Confidence
+     */
+    confidence?: number | null;
+};
+
+/**
+ * MatchOutcomeView
+ *
+ * One provider's outcome from a `/identity/match` call.
+ */
+export type MatchOutcomeView = {
+    /**
+     * Source Id
+     */
+    source_id: string;
+    /**
+     * Status
+     */
+    status?: 'ok' | 'miss' | 'skipped' | 'error';
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Suggestion
+     */
+    suggestion?: boolean;
+    /**
+     * Coverage
+     */
+    coverage?: number | null;
+    /**
+     * Score
+     */
+    score?: number | null;
+    /**
+     * Matches
+     */
+    matches?: Array<MatchEntryView>;
+    /**
+     * Alternatives
+     */
+    alternatives?: Array<{
+        [key: string]: unknown;
+    }>;
+};
+
+/**
+ * MatchPreview
+ *
+ * `POST /api/jobs/{id}/identity/match` response, for both
+ * `apply=False` (a preview, nothing written) and `apply=True` (reflects the
+ * stored outcomes).
+ */
+export type MatchPreview = {
+    /**
+     * Outcomes
+     */
+    outcomes?: Array<MatchOutcomeView>;
+};
+
+/**
+ * MatchRequest
+ *
+ * `POST /api/jobs/{id}/identity/match` body.
+ */
+export type MatchRequest = {
+    /**
+     * Source
+     */
+    source?: 'tmdb' | 'tvmaze' | 'tvdb' | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Disc Number
+     */
+    disc_number?: number | null;
+    /**
+     * Tolerance
+     */
+    tolerance?: number | null;
+    /**
+     * Apply
+     */
+    apply?: boolean;
 };
 
 /**
@@ -1626,6 +2869,7 @@ export type MetadataCandidate = {
      * Track Count
      */
     track_count?: number | null;
+    external_ids?: ExternalIds | null;
 };
 
 /**
@@ -1763,6 +3007,48 @@ export type MoveRequest = {
 };
 
 /**
+ * MusicMeta
+ */
+export type MusicMeta = {
+    /**
+     * Artist
+     */
+    artist?: string | null;
+    /**
+     * Album
+     */
+    album?: string | null;
+    /**
+     * Tracks
+     */
+    tracks?: Array<MusicTrackMeta>;
+    [key: string]: unknown;
+};
+
+/**
+ * MusicTrackMeta
+ */
+export type MusicTrackMeta = {
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Position
+     */
+    position?: number | null;
+    /**
+     * Length Ms
+     */
+    length_ms?: number | null;
+    /**
+     * Disc Number
+     */
+    disc_number?: number | null;
+    [key: string]: unknown;
+};
+
+/**
  * NamingPreviewItem
  */
 export type NamingPreviewItem = {
@@ -1877,7 +3163,7 @@ export type NotificationChannelCreateRequest = {
     /**
      * Type
      */
-    type?: 'apprise' | 'inapp';
+    type?: 'apprise' | 'inapp' | 'bash';
     /**
      * Name
      */
@@ -1893,7 +3179,9 @@ export type NotificationChannelCreateRequest = {
         type: 'apprise';
     } & AppriseChannelConfig) | ({
         type: 'inapp';
-    } & InAppChannelConfig);
+    } & InAppChannelConfig) | ({
+        type: 'bash';
+    } & BashChannelConfig);
     /**
      * Subscribed Events
      */
@@ -1943,7 +3231,9 @@ export type NotificationChannelUpdateRequest = {
         type: 'apprise';
     } & AppriseChannelConfig) | ({
         type: 'inapp';
-    } & InAppChannelConfig) | null;
+    } & InAppChannelConfig) | ({
+        type: 'bash';
+    } & BashChannelConfig) | null;
     /**
      * Subscribed Events
      */
@@ -2153,10 +3443,17 @@ export type NotificationInboxView = {
 /**
  * NotificationTestRequest
  *
- * Ad-hoc test of an unsaved apprise config.
+ * Ad-hoc test of an unsaved apprise or bash config.
  */
 export type NotificationTestRequest = {
-    config: AppriseChannelConfig;
+    /**
+     * Config
+     */
+    config: ({
+        type: 'apprise';
+    } & AppriseChannelConfig) | ({
+        type: 'bash';
+    } & BashChannelConfig);
     /**
      * Event Type
      */
@@ -2216,12 +3513,32 @@ export type PathStatus = {
      * Writable
      */
     writable: boolean;
+    /**
+     * Host Path
+     */
+    host_path?: string | null;
+    /**
+     * Uid
+     */
+    uid?: number | null;
+    /**
+     * Gid
+     */
+    gid?: number | null;
 };
 
 /**
  * RegisterRequest
+ *
+ * POST /api/ripper/register. Keyed on the Drive row the backend handed
+ * this container (ARM_DRIVE_ID); `by_id_name` is the udev link the ripper
+ * is bound to (None for a port-identity drive) and must match the row.
  */
 export type RegisterRequest = {
+    /**
+     * Drive Id
+     */
+    drive_id: string;
     /**
      * Hostname
      */
@@ -2241,9 +3558,9 @@ export type RegisterRequest = {
         [key: string]: unknown;
     };
     /**
-     * Serial
+     * By Id Name
      */
-    serial?: string | null;
+    by_id_name?: string | null;
 };
 
 /**
@@ -2313,6 +3630,8 @@ export type RenameRequest = {
  * promoted and `task_count` newly-created transcode tasks are queued.
  * Anything else → the application stays parked in `waiting_identify`
  * and `error_detail` carries the reason for the UI to surface.
+ * `skipped_reason='no_tracks'` is the benign case: the rip has not started
+ * yet (no Track rows exist), so the application fans out at rip-complete.
  */
 export type ResolveFanOutOutcomeView = {
     /**
@@ -2331,7 +3650,7 @@ export type ResolveFanOutOutcomeView = {
     /**
      * Skipped Reason
      */
-    skipped_reason?: 'collisions' | 'template' | 'session_missing' | null;
+    skipped_reason?: 'collisions' | 'template' | 'session_missing' | 'no_tracks' | 'no_outputs' | 'media_mismatch' | 'transcode_disabled' | 'encoder_unavailable' | null;
     /**
      * Error Detail
      */
@@ -2340,6 +3659,27 @@ export type ResolveFanOutOutcomeView = {
 
 /**
  * ResolveRequest
+ *
+ * POST /api/jobs/{id}/resolve body.
+ *
+ * title/year are the full identity statement: every resolve restates them,
+ * so there is no "omitted" case for these two -- whatever value is sent
+ * (including null) is exactly what lands.
+ *
+ * media_type/season/disc_number/disc_total are classifications, not part of
+ * that statement, and follow different semantics: **omitted = keep** the
+ * stored value (a title-only fix -- e.g. picking a title in the identify
+ * dialog after a disc-hint source already filled disc_number/disc_total --
+ * must not wipe them), **explicit null = clear** it (the operator saying
+ * "this isn't a season" / "clear the kind" / "clear the disc position").
+ * The same omitted=keep / explicit-null=clears rule applies per-field
+ * inside `external_ids`: sending `external_ids` at all starts an identity
+ * edit, and each of its member fields (imdb/tmdb/tvdb/musicbrainz_release)
+ * that is explicitly present -- even as `null` -- clears that one id,
+ * while a member field left out of the payload keeps its previously
+ * stored value. Distinguishing "sent null" from "not sent" requires
+ * Pydantic's `model_fields_set`, not an `is not None` check, since both
+ * collapse to the same `None` once parsed.
  */
 export type ResolveRequest = {
     /**
@@ -2358,12 +3698,13 @@ export type ResolveRequest = {
      * Disc Total
      */
     disc_total?: number | null;
+    media_type?: MediaType | null;
     /**
-     * Metadata
+     * Season
      */
-    metadata?: {
-        [key: string]: unknown;
-    };
+    season?: number | null;
+    music?: MusicMeta | null;
+    external_ids?: ExternalIds | null;
 };
 
 /**
@@ -2598,6 +3939,7 @@ export type ScanResult = {
      * Fingerprints
      */
     fingerprints?: Array<DiscFingerprintInput>;
+    bd_meta?: BdDiscMeta | null;
     /**
      * Raw
      */
@@ -2630,6 +3972,36 @@ export type ScanTitle = {
      * Source File
      */
     source_file?: string | null;
+};
+
+/**
+ * ScriptInput
+ */
+export type ScriptInput = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Required
+     */
+    required?: boolean;
+    /**
+     * Secret
+     */
+    secret?: boolean;
+    /**
+     * Default
+     */
+    default?: string;
+    /**
+     * Values
+     */
+    values?: Array<string> | null;
 };
 
 /**
@@ -2747,6 +4119,42 @@ export type SessionCreateRequest = {
 };
 
 /**
+ * SessionRouteUpsert
+ */
+export type SessionRouteUpsert = {
+    media_type: MediaType;
+    disc_type?: DiscType | null;
+    /**
+     * Session Id
+     */
+    session_id: string;
+};
+
+/**
+ * SessionRouteView
+ */
+export type SessionRouteView = {
+    /**
+     * Id
+     */
+    id: string;
+    media_type: MediaType;
+    disc_type: DiscType | null;
+    /**
+     * Session Id
+     */
+    session_id: string;
+    /**
+     * Created At
+     */
+    created_at: string | null;
+    /**
+     * Updated At
+     */
+    updated_at: string | null;
+};
+
+/**
  * SessionUpdateRequest
  */
 export type SessionUpdateRequest = {
@@ -2854,6 +4262,172 @@ export type SettingsSchemaResponse = {
 };
 
 /**
+ * SetupStatusPublic
+ *
+ * Unauthenticated: the login page and the first-run guard read it.
+ */
+export type SetupStatusPublic = {
+    /**
+     * First Run
+     */
+    first_run: boolean;
+    /**
+     * Arm Version
+     */
+    arm_version: string;
+};
+
+/**
+ * SetupStep
+ *
+ * First-run setup walkthrough steps, in walkthrough order (setup spec 2026-10-01).
+ *
+ * Stored as VARCHAR keys inside Config.setup_progress JSON, validated in the app.
+ */
+export type SetupStep = 'account' | 'system' | 'drives' | 'makemkv' | 'metadata' | 'discs' | 'transcoding' | 'notifications' | 'finish';
+
+/**
+ * SetupStepProgress
+ */
+export type SetupStepProgress = {
+    state: SetupStepState;
+    /**
+     * At
+     */
+    at?: string | null;
+};
+
+/**
+ * SetupStepState
+ */
+export type SetupStepState = 'done' | 'skipped' | 'attention';
+
+/**
+ * SetupStepUpdate
+ */
+export type SetupStepUpdate = {
+    state: SetupStepState;
+};
+
+/**
+ * SetupView
+ */
+export type SetupView = {
+    /**
+     * Completed At
+     */
+    completed_at: string | null;
+    /**
+     * Progress
+     */
+    progress: {
+        [key: string]: SetupStepProgress;
+    };
+    current_step: SetupStep;
+    /**
+     * Admin Default Password
+     */
+    admin_default_password: boolean;
+    /**
+     * Checklist Dismissed
+     */
+    checklist_dismissed: boolean;
+    /**
+     * Deferred
+     */
+    deferred?: boolean;
+};
+
+/**
+ * SourceClaims
+ */
+export type SourceClaims = {
+    /**
+     * Run At
+     */
+    run_at?: string | null;
+    /**
+     * Status
+     */
+    status?: 'ok' | 'miss' | 'skipped' | 'error';
+    /**
+     * Suggestion
+     */
+    suggestion?: boolean;
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: unknown;
+    };
+    job?: JobClaim;
+    /**
+     * Tracks
+     */
+    tracks?: {
+        [key: string]: TrackClaim;
+    };
+    /**
+     * Alternatives
+     */
+    alternatives?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Extra
+     */
+    extra?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
+ * SourceSummary
+ *
+ * One source's claims for a job, display-shaped.
+ */
+export type SourceSummary = {
+    /**
+     * Status
+     */
+    status?: 'ok' | 'miss' | 'skipped' | 'error';
+    /**
+     * Detail
+     */
+    detail?: string | null;
+    /**
+     * Run At
+     */
+    run_at?: string | null;
+    /**
+     * Suggestion
+     */
+    suggestion?: boolean;
+    /**
+     * Inputs
+     */
+    inputs?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Alternatives
+     */
+    alternatives?: Array<{
+        [key: string]: unknown;
+    }>;
+    /**
+     * Extra
+     */
+    extra?: {
+        [key: string]: unknown;
+    };
+};
+
+/**
  * StatsResponse
  */
 export type StatsResponse = {
@@ -2923,6 +4497,18 @@ export type SystemDiagnosticCheck = {
      * Detail
      */
     detail?: string | null;
+    /**
+     * Details
+     */
+    details?: Array<DiagnosticDetail>;
+    /**
+     * Location
+     */
+    location?: string | null;
+    /**
+     * Remote Host
+     */
+    remote_host?: string | null;
 };
 
 /**
@@ -2995,6 +4581,49 @@ export type TemplatePreviewResponse = {
      * Expansion
      */
     expansion: string;
+    /**
+     * Expansion Without Optional
+     */
+    expansion_without_optional?: string | null;
+};
+
+/**
+ * TrackClaim
+ */
+export type TrackClaim = {
+    role?: TrackRole | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Episode
+     */
+    episode?: number | null;
+    /**
+     * Episode End
+     */
+    episode_end?: number | null;
+    /**
+     * Episode Name
+     */
+    episode_name?: string | null;
+    /**
+     * Filename
+     */
+    filename?: string | null;
+    /**
+     * Selected
+     */
+    selected?: boolean | null;
+    /**
+     * Confidence
+     */
+    confidence?: number | null;
 };
 
 /**
@@ -3002,6 +4631,9 @@ export type TemplatePreviewResponse = {
  *
  * One entry in JobUpdateRequest.tracks. `track_id` selects the row; every
  * other field is an optional operator edit (omitted=untouched, null=clear).
+ * Identity fields become `manual` identity proposals; `revert_fields` drops
+ * the operator's value for those fields and hands them back to the
+ * automatic sources.
  */
 export type TrackEditRequest = {
     /**
@@ -3024,14 +4656,19 @@ export type TrackEditRequest = {
      * Poster Url
      */
     poster_url?: string | null;
+    role?: TrackRole | null;
     /**
-     * Video Type
+     * Season
      */
-    video_type?: string | null;
+    season?: number | null;
     /**
      * Episode Number
      */
     episode_number?: number | null;
+    /**
+     * Episode Number End
+     */
+    episode_number_end?: number | null;
     /**
      * Episode Name
      */
@@ -3044,12 +4681,83 @@ export type TrackEditRequest = {
      * Custom Filename
      */
     custom_filename?: string | null;
+    /**
+     * Revert Fields
+     */
+    revert_fields?: Array<'role' | 'title' | 'season' | 'episode_number' | 'episode_number_end' | 'episode_name' | 'custom_filename' | 'excluded'>;
+};
+
+/**
+ * TrackIdentityView
+ *
+ * One track's currently-resolved identity values plus every source's
+ * competing proposal for it (`proposals`, keyed by source id).
+ */
+export type TrackIdentityView = {
+    /**
+     * Track Id
+     */
+    track_id: string;
+    /**
+     * Source Ref
+     */
+    source_ref: string;
+    role?: TrackRole | null;
+    /**
+     * Title
+     */
+    title?: string | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Episode Number
+     */
+    episode_number?: number | null;
+    /**
+     * Episode Number End
+     */
+    episode_number_end?: number | null;
+    /**
+     * Episode Name
+     */
+    episode_name?: string | null;
+    /**
+     * Custom Filename
+     */
+    custom_filename?: string | null;
+    /**
+     * Excluded
+     */
+    excluded?: boolean;
+    /**
+     * Identity Provenance
+     */
+    identity_provenance?: {
+        [key: string]: string;
+    } | null;
+    /**
+     * Proposals
+     */
+    proposals?: {
+        [key: string]: TrackClaim;
+    };
 };
 
 /**
  * TrackKind
  */
 export type TrackKind = 'video_title' | 'audio_track' | 'data_dump';
+
+/**
+ * TrackRole
+ *
+ * What one title on a disc is. Set by identity sources via the resolver
+ * (arm_backend.identity) or by the operator; replaces the old free-text
+ * role and the per-track video_type.
+ */
+export type TrackRole = 'main' | 'episode' | 'extra' | 'trailer' | 'other';
 
 /**
  * TrackSelection
@@ -3148,10 +4856,7 @@ export type TrackView = {
      * Label
      */
     label?: string | null;
-    /**
-     * Role
-     */
-    role?: string | null;
+    role?: TrackRole | null;
     /**
      * Edition
      */
@@ -3173,10 +4878,6 @@ export type TrackView = {
      */
     poster_url?: string | null;
     /**
-     * Video Type
-     */
-    video_type?: string | null;
-    /**
      * Episode Number
      */
     episode_number?: number | null;
@@ -3185,6 +4886,14 @@ export type TrackView = {
      */
     episode_name?: string | null;
     /**
+     * Episode Number End
+     */
+    episode_number_end?: number | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
      * Excluded
      */
     excluded?: boolean;
@@ -3192,6 +4901,12 @@ export type TrackView = {
      * Custom Filename
      */
     custom_filename?: string | null;
+    /**
+     * Identity Provenance
+     */
+    identity_provenance?: {
+        [key: string]: string;
+    } | null;
 };
 
 /**
@@ -3215,8 +4930,10 @@ export type TranscodePresetCreateRequest = {
         [key: string]: unknown;
     } | null;
     container: ContainerFormat;
-    codec?: VideoCodec | null;
-    hw_preference?: HwPreference | null;
+    /**
+     * Encoder
+     */
+    encoder?: string;
     /**
      * Extra Args
      */
@@ -3243,8 +4960,10 @@ export type TranscodePresetUpdateRequest = {
         [key: string]: unknown;
     } | null;
     container?: ContainerFormat | null;
-    codec?: VideoCodec | null;
-    hw_preference?: HwPreference | null;
+    /**
+     * Encoder
+     */
+    encoder?: string | null;
     /**
      * Extra Args
      */
@@ -3280,8 +4999,10 @@ export type TranscodePresetView = {
         [key: string]: unknown;
     } | null;
     container: ContainerFormat;
-    codec: VideoCodec | null;
-    hw_preference: HwPreference | null;
+    /**
+     * Encoder
+     */
+    encoder: string;
     /**
      * Extra Args
      */
@@ -3548,9 +5269,137 @@ export type ValidationError = {
 };
 
 /**
- * VideoCodec
+ * HeldJobView
+ *
+ * Boot-probe payload for a disc held in AWAITING_REVIEW (timed review gate).
+ *
+ * `paused` is true when the held disc should survive a ripper reboot as a hold
+ * (global `ripping_paused` on — or, once it lands, a per-job pause). The ripper
+ * uses it to choose re-park (paused) vs. abandon-and-self-heal (counting down)
+ * on restart. See the timed-review-gate spec §6.3.
  */
-export type VideoCodec = 'h264' | 'h265' | 'av1';
+export type HeldJobViewWritable = {
+    job: JobViewWritable;
+    /**
+     * Paused
+     */
+    paused: boolean;
+};
+
+/**
+ * JobCompleteRequest
+ *
+ * POST /api/ripper/jobs/{job_id}/rip-complete body.
+ *
+ * Empty for now; backend computes the final job status from the track
+ * outcomes. Reserved for future flags (e.g. user-initiated abort).
+ */
+export type JobCompleteRequestWritable = {
+    [key: string]: unknown;
+};
+
+/**
+ * JobDetailView
+ */
+export type JobDetailViewWritable = {
+    job: JobViewWritable;
+    /**
+     * Tracks
+     */
+    tracks: Array<TrackView>;
+    /**
+     * Fingerprints
+     */
+    fingerprints?: Array<DiscFingerprintView>;
+};
+
+/**
+ * JobView
+ */
+export type JobViewWritable = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Drive Id
+     */
+    drive_id: string | null;
+    /**
+     * Drive Serial
+     */
+    drive_serial?: string | null;
+    disc_type: DiscType;
+    status: JobStatus;
+    /**
+     * Title
+     */
+    title: string | null;
+    /**
+     * Year
+     */
+    year: number | null;
+    media_type?: MediaType | null;
+    /**
+     * Season
+     */
+    season?: number | null;
+    /**
+     * Pending Session Id
+     */
+    pending_session_id?: string | null;
+    /**
+     * Parked Session Ids
+     */
+    parked_session_ids?: Array<string>;
+    /**
+     * Disc Number
+     */
+    disc_number?: number | null;
+    /**
+     * Disc Total
+     */
+    disc_total?: number | null;
+    /**
+     * Poster Url
+     */
+    poster_url?: string | null;
+    /**
+     * Poster Url Manual
+     */
+    poster_url_manual?: string | null;
+    metadata_json: JobMetadata;
+    /**
+     * Resumed From Crash
+     */
+    resumed_from_crash: boolean;
+    /**
+     * Wait Start Time
+     */
+    wait_start_time?: string | null;
+    /**
+     * Manual Pause
+     */
+    manual_pause?: boolean;
+    rip_progress?: RipProgressSummary | null;
+    transcode_progress?: TranscodeProgressSummary | null;
+};
+
+/**
+ * ResolveResponse
+ *
+ * POST /api/jobs/{id}/resolve response. The job always reflects the
+ * just-applied identity (status flipped to `identified`); `fan_out` lists
+ * the per-application outcomes from the parked-applications promotion
+ * pass — empty when no session was applied to the job before resolve.
+ */
+export type ResolveResponseWritable = {
+    job: JobViewWritable;
+    /**
+     * Fan Out
+     */
+    fan_out: Array<ResolveFanOutOutcomeView>;
+};
 
 export type HealthApiHealthGetData = {
     body?: never;
@@ -3657,7 +5506,12 @@ export type GetRipperConfigApiRipperConfigGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Drive Id
+         */
+        drive_id?: string | null;
+    };
     url: '/api/ripper/config';
 };
 
@@ -3709,6 +5563,109 @@ export type HeartbeatApiRipperHeartbeatPostResponses = {
 };
 
 export type HeartbeatApiRipperHeartbeatPostResponse = HeartbeatApiRipperHeartbeatPostResponses[keyof HeartbeatApiRipperHeartbeatPostResponses];
+
+export type IsoPrepareReportApiRipperIsoPreparePostData = {
+    body: IsoPrepareReport;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/ripper/iso-prepare';
+};
+
+export type IsoPrepareReportApiRipperIsoPreparePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IsoPrepareReportApiRipperIsoPreparePostError = IsoPrepareReportApiRipperIsoPreparePostErrors[keyof IsoPrepareReportApiRipperIsoPreparePostErrors];
+
+export type IsoPrepareReportApiRipperIsoPreparePostResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type IsoPrepareReportApiRipperIsoPreparePostResponse = IsoPrepareReportApiRipperIsoPreparePostResponses[keyof IsoPrepareReportApiRipperIsoPreparePostResponses];
+
+export type GetDriveApiRipperDrivesDriveIdGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/ripper/drives/{drive_id}';
+};
+
+export type GetDriveApiRipperDrivesDriveIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetDriveApiRipperDrivesDriveIdGetError = GetDriveApiRipperDrivesDriveIdGetErrors[keyof GetDriveApiRipperDrivesDriveIdGetErrors];
+
+export type GetDriveApiRipperDrivesDriveIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: Drive;
+};
+
+export type GetDriveApiRipperDrivesDriveIdGetResponse = GetDriveApiRipperDrivesDriveIdGetResponses[keyof GetDriveApiRipperDrivesDriveIdGetResponses];
+
+export type UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchData = {
+    body: DriveDevicePathUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/ripper/drives/{drive_id}/device-path';
+};
+
+export type UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchError = UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchErrors[keyof UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchErrors];
+
+export type UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchResponse = UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchResponses[keyof UpdateDevicePathApiRipperDrivesDriveIdDevicePathPatchResponses];
 
 export type MakemkvKeyStatusApiRipperMakemkvKeyStatusPostData = {
     body: MakemkvKeyStatusReport;
@@ -4166,7 +6123,7 @@ export type UpdateTrackApiRipperTracksTrackIdPatchResponses = {
 export type UpdateTrackApiRipperTracksTrackIdPatchResponse = UpdateTrackApiRipperTracksTrackIdPatchResponses[keyof UpdateTrackApiRipperTracksTrackIdPatchResponses];
 
 export type RipCompleteApiRipperJobsJobIdRipCompletePostData = {
-    body: JobCompleteRequest;
+    body: JobCompleteRequestWritable;
     headers?: {
         /**
          * X-Arm-Hostname
@@ -4657,6 +6614,159 @@ export type ApplySessionApiJobsJobIdTranscodePostResponses = {
 
 export type ApplySessionApiJobsJobIdTranscodePostResponse = ApplySessionApiJobsJobIdTranscodePostResponses[keyof ApplySessionApiJobsJobIdTranscodePostResponses];
 
+export type GetIdentityApiJobsJobIdIdentityGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/jobs/{job_id}/identity';
+};
+
+export type GetIdentityApiJobsJobIdIdentityGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetIdentityApiJobsJobIdIdentityGetError = GetIdentityApiJobsJobIdIdentityGetErrors[keyof GetIdentityApiJobsJobIdIdentityGetErrors];
+
+export type GetIdentityApiJobsJobIdIdentityGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IdentityView;
+};
+
+export type GetIdentityApiJobsJobIdIdentityGetResponse = GetIdentityApiJobsJobIdIdentityGetResponses[keyof GetIdentityApiJobsJobIdIdentityGetResponses];
+
+export type MatchIdentityApiJobsJobIdIdentityMatchPostData = {
+    body: MatchRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/jobs/{job_id}/identity/match';
+};
+
+export type MatchIdentityApiJobsJobIdIdentityMatchPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MatchIdentityApiJobsJobIdIdentityMatchPostError = MatchIdentityApiJobsJobIdIdentityMatchPostErrors[keyof MatchIdentityApiJobsJobIdIdentityMatchPostErrors];
+
+export type MatchIdentityApiJobsJobIdIdentityMatchPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: MatchPreview;
+};
+
+export type MatchIdentityApiJobsJobIdIdentityMatchPostResponse = MatchIdentityApiJobsJobIdIdentityMatchPostResponses[keyof MatchIdentityApiJobsJobIdIdentityMatchPostResponses];
+
+export type ClearIdentityPinApiJobsJobIdIdentityPinDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/jobs/{job_id}/identity/pin';
+};
+
+export type ClearIdentityPinApiJobsJobIdIdentityPinDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClearIdentityPinApiJobsJobIdIdentityPinDeleteError = ClearIdentityPinApiJobsJobIdIdentityPinDeleteErrors[keyof ClearIdentityPinApiJobsJobIdIdentityPinDeleteErrors];
+
+export type ClearIdentityPinApiJobsJobIdIdentityPinDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: IdentityView;
+};
+
+export type ClearIdentityPinApiJobsJobIdIdentityPinDeleteResponse = ClearIdentityPinApiJobsJobIdIdentityPinDeleteResponses[keyof ClearIdentityPinApiJobsJobIdIdentityPinDeleteResponses];
+
+export type BrowseEpisodesApiJobsJobIdIdentityEpisodesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query: {
+        /**
+         * Source
+         */
+        source: 'tmdb' | 'tvmaze' | 'tvdb';
+        /**
+         * Season
+         */
+        season: number;
+    };
+    url: '/api/jobs/{job_id}/identity/episodes';
+};
+
+export type BrowseEpisodesApiJobsJobIdIdentityEpisodesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type BrowseEpisodesApiJobsJobIdIdentityEpisodesGetError = BrowseEpisodesApiJobsJobIdIdentityEpisodesGetErrors[keyof BrowseEpisodesApiJobsJobIdIdentityEpisodesGetErrors];
+
+export type BrowseEpisodesApiJobsJobIdIdentityEpisodesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EpisodeListView;
+};
+
+export type BrowseEpisodesApiJobsJobIdIdentityEpisodesGetResponse = BrowseEpisodesApiJobsJobIdIdentityEpisodesGetResponses[keyof BrowseEpisodesApiJobsJobIdIdentityEpisodesGetResponses];
+
 export type ListDrivesApiDrivesGetData = {
     body?: never;
     headers?: {
@@ -4666,7 +6776,14 @@ export type ListDrivesApiDrivesGetData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Include Retired
+         *
+         * Include retired (one-shot ISO rip) drive rows.
+         */
+        include_retired?: boolean;
+    };
     url: '/api/drives';
 };
 
@@ -4730,7 +6847,14 @@ export type RescanDrivesApiDrivesRescanPostData = {
         authorization?: string | null;
     };
     path?: never;
-    query?: never;
+    query?: {
+        /**
+         * Force
+         *
+         * Prune detected drives that are not present right now (admin only).
+         */
+        force?: boolean;
+    };
     url: '/api/drives/rescan';
 };
 
@@ -4823,6 +6947,321 @@ export type UpdateDriveApiDrivesDriveIdPatchResponses = {
 };
 
 export type UpdateDriveApiDrivesDriveIdPatchResponse = UpdateDriveApiDrivesDriveIdPatchResponses[keyof UpdateDriveApiDrivesDriveIdPatchResponses];
+
+export type EnrollDriveApiDrivesDriveIdEnrollPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/drives/{drive_id}/enroll';
+};
+
+export type EnrollDriveApiDrivesDriveIdEnrollPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type EnrollDriveApiDrivesDriveIdEnrollPostError = EnrollDriveApiDrivesDriveIdEnrollPostErrors[keyof EnrollDriveApiDrivesDriveIdEnrollPostErrors];
+
+export type EnrollDriveApiDrivesDriveIdEnrollPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DriveView;
+};
+
+export type EnrollDriveApiDrivesDriveIdEnrollPostResponse = EnrollDriveApiDrivesDriveIdEnrollPostResponses[keyof EnrollDriveApiDrivesDriveIdEnrollPostResponses];
+
+export type IgnoreDriveApiDrivesDriveIdIgnorePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/drives/{drive_id}/ignore';
+};
+
+export type IgnoreDriveApiDrivesDriveIdIgnorePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IgnoreDriveApiDrivesDriveIdIgnorePostError = IgnoreDriveApiDrivesDriveIdIgnorePostErrors[keyof IgnoreDriveApiDrivesDriveIdIgnorePostErrors];
+
+export type IgnoreDriveApiDrivesDriveIdIgnorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DriveView;
+};
+
+export type IgnoreDriveApiDrivesDriveIdIgnorePostResponse = IgnoreDriveApiDrivesDriveIdIgnorePostResponses[keyof IgnoreDriveApiDrivesDriveIdIgnorePostResponses];
+
+export type UnignoreDriveApiDrivesDriveIdUnignorePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/drives/{drive_id}/unignore';
+};
+
+export type UnignoreDriveApiDrivesDriveIdUnignorePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnignoreDriveApiDrivesDriveIdUnignorePostError = UnignoreDriveApiDrivesDriveIdUnignorePostErrors[keyof UnignoreDriveApiDrivesDriveIdUnignorePostErrors];
+
+export type UnignoreDriveApiDrivesDriveIdUnignorePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DriveView;
+};
+
+export type UnignoreDriveApiDrivesDriveIdUnignorePostResponse = UnignoreDriveApiDrivesDriveIdUnignorePostResponses[keyof UnignoreDriveApiDrivesDriveIdUnignorePostResponses];
+
+export type UnenrollDriveApiDrivesDriveIdUnenrollPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/drives/{drive_id}/unenroll';
+};
+
+export type UnenrollDriveApiDrivesDriveIdUnenrollPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UnenrollDriveApiDrivesDriveIdUnenrollPostError = UnenrollDriveApiDrivesDriveIdUnenrollPostErrors[keyof UnenrollDriveApiDrivesDriveIdUnenrollPostErrors];
+
+export type UnenrollDriveApiDrivesDriveIdUnenrollPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: DriveView;
+    /**
+     * Drive row deleted (detected-origin drive)
+     */
+    204: void;
+};
+
+export type UnenrollDriveApiDrivesDriveIdUnenrollPostResponse = UnenrollDriveApiDrivesDriveIdUnenrollPostResponses[keyof UnenrollDriveApiDrivesDriveIdUnenrollPostResponses];
+
+export type LibraryApiIsoLibraryGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: {
+        /**
+         * Subpath
+         */
+        subpath?: string;
+    };
+    url: '/api/iso/library';
+};
+
+export type LibraryApiIsoLibraryGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type LibraryApiIsoLibraryGetError = LibraryApiIsoLibraryGetErrors[keyof LibraryApiIsoLibraryGetErrors];
+
+export type LibraryApiIsoLibraryGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IsoLibraryListing;
+};
+
+export type LibraryApiIsoLibraryGetResponse = LibraryApiIsoLibraryGetResponses[keyof LibraryApiIsoLibraryGetResponses];
+
+export type FoldersApiIsoFoldersGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/iso/folders';
+};
+
+export type FoldersApiIsoFoldersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type FoldersApiIsoFoldersGetError = FoldersApiIsoFoldersGetErrors[keyof FoldersApiIsoFoldersGetErrors];
+
+export type FoldersApiIsoFoldersGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: IsoFolderListing;
+};
+
+export type FoldersApiIsoFoldersGetResponse = FoldersApiIsoFoldersGetResponses[keyof FoldersApiIsoFoldersGetResponses];
+
+export type PreparingApiIsoRipsPreparingGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/iso/rips/preparing';
+};
+
+export type PreparingApiIsoRipsPreparingGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreparingApiIsoRipsPreparingGetError = PreparingApiIsoRipsPreparingGetErrors[keyof PreparingApiIsoRipsPreparingGetErrors];
+
+export type PreparingApiIsoRipsPreparingGetResponses = {
+    /**
+     * Response Preparing Api Iso Rips Preparing Get
+     *
+     * Successful Response
+     */
+    200: Array<IsoPrepareView>;
+};
+
+export type PreparingApiIsoRipsPreparingGetResponse = PreparingApiIsoRipsPreparingGetResponses[keyof PreparingApiIsoRipsPreparingGetResponses];
+
+export type CreateRipApiIsoRipsPostData = {
+    body: IsoRipRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/iso/rips';
+};
+
+export type CreateRipApiIsoRipsPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateRipApiIsoRipsPostError = CreateRipApiIsoRipsPostErrors[keyof CreateRipApiIsoRipsPostErrors];
+
+export type CreateRipApiIsoRipsPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: IsoRipCreated;
+};
+
+export type CreateRipApiIsoRipsPostResponse = CreateRipApiIsoRipsPostResponses[keyof CreateRipApiIsoRipsPostResponses];
+
+export type CancelRipApiIsoRipsDriveIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Drive Id
+         */
+        drive_id: string;
+    };
+    query?: never;
+    url: '/api/iso/rips/{drive_id}';
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteError = CancelRipApiIsoRipsDriveIdDeleteErrors[keyof CancelRipApiIsoRipsDriveIdDeleteErrors];
+
+export type CancelRipApiIsoRipsDriveIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type CancelRipApiIsoRipsDriveIdDeleteResponse = CancelRipApiIsoRipsDriveIdDeleteResponses[keyof CancelRipApiIsoRipsDriveIdDeleteResponses];
 
 export type ListSessionsApiSessionsGetData = {
     body?: never;
@@ -5062,6 +7501,106 @@ export type PreviewTemplateApiSessionsPreviewPostResponses = {
 };
 
 export type PreviewTemplateApiSessionsPreviewPostResponse = PreviewTemplateApiSessionsPreviewPostResponses[keyof PreviewTemplateApiSessionsPreviewPostResponses];
+
+export type ListSessionRoutesApiSessionRoutesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/session-routes';
+};
+
+export type ListSessionRoutesApiSessionRoutesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListSessionRoutesApiSessionRoutesGetError = ListSessionRoutesApiSessionRoutesGetErrors[keyof ListSessionRoutesApiSessionRoutesGetErrors];
+
+export type ListSessionRoutesApiSessionRoutesGetResponses = {
+    /**
+     * Response List Session Routes Api Session Routes Get
+     *
+     * Successful Response
+     */
+    200: Array<SessionRouteView>;
+};
+
+export type ListSessionRoutesApiSessionRoutesGetResponse = ListSessionRoutesApiSessionRoutesGetResponses[keyof ListSessionRoutesApiSessionRoutesGetResponses];
+
+export type UpsertSessionRouteApiSessionRoutesPutData = {
+    body: SessionRouteUpsert;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/session-routes';
+};
+
+export type UpsertSessionRouteApiSessionRoutesPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpsertSessionRouteApiSessionRoutesPutError = UpsertSessionRouteApiSessionRoutesPutErrors[keyof UpsertSessionRouteApiSessionRoutesPutErrors];
+
+export type UpsertSessionRouteApiSessionRoutesPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SessionRouteView;
+};
+
+export type UpsertSessionRouteApiSessionRoutesPutResponse = UpsertSessionRouteApiSessionRoutesPutResponses[keyof UpsertSessionRouteApiSessionRoutesPutResponses];
+
+export type DeleteSessionRouteApiSessionRoutesRouteIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Route Id
+         */
+        route_id: string;
+    };
+    query?: never;
+    url: '/api/session-routes/{route_id}';
+};
+
+export type DeleteSessionRouteApiSessionRoutesRouteIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteSessionRouteApiSessionRoutesRouteIdDeleteError = DeleteSessionRouteApiSessionRoutesRouteIdDeleteErrors[keyof DeleteSessionRouteApiSessionRoutesRouteIdDeleteErrors];
+
+export type DeleteSessionRouteApiSessionRoutesRouteIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteSessionRouteApiSessionRoutesRouteIdDeleteResponse = DeleteSessionRouteApiSessionRoutesRouteIdDeleteResponses[keyof DeleteSessionRouteApiSessionRoutesRouteIdDeleteResponses];
 
 export type ListRipPresetsApiRipPresetsGetData = {
     body?: never;
@@ -5859,6 +8398,211 @@ export type DeleteTranscodeApiTranscodesTaskIdDeleteResponses = {
 
 export type DeleteTranscodeApiTranscodesTaskIdDeleteResponse = DeleteTranscodeApiTranscodesTaskIdDeleteResponses[keyof DeleteTranscodeApiTranscodesTaskIdDeleteResponses];
 
+export type ListGpusApiGpusGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/gpus';
+};
+
+export type ListGpusApiGpusGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListGpusApiGpusGetError = ListGpusApiGpusGetErrors[keyof ListGpusApiGpusGetErrors];
+
+export type ListGpusApiGpusGetResponses = {
+    /**
+     * Response List Gpus Api Gpus Get
+     *
+     * Successful Response
+     */
+    200: Array<GpuView>;
+};
+
+export type ListGpusApiGpusGetResponse = ListGpusApiGpusGetResponses[keyof ListGpusApiGpusGetResponses];
+
+export type DeleteGpuApiGpusGpuIdDeleteData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Gpu Id
+         */
+        gpu_id: string;
+    };
+    query?: never;
+    url: '/api/gpus/{gpu_id}';
+};
+
+export type DeleteGpuApiGpusGpuIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteGpuApiGpusGpuIdDeleteError = DeleteGpuApiGpusGpuIdDeleteErrors[keyof DeleteGpuApiGpusGpuIdDeleteErrors];
+
+export type DeleteGpuApiGpusGpuIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteGpuApiGpusGpuIdDeleteResponse = DeleteGpuApiGpusGpuIdDeleteResponses[keyof DeleteGpuApiGpusGpuIdDeleteResponses];
+
+export type UpdateGpuApiGpusGpuIdPatchData = {
+    body: GpuUpdateRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Gpu Id
+         */
+        gpu_id: string;
+    };
+    query?: never;
+    url: '/api/gpus/{gpu_id}';
+};
+
+export type UpdateGpuApiGpusGpuIdPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateGpuApiGpusGpuIdPatchError = UpdateGpuApiGpusGpuIdPatchErrors[keyof UpdateGpuApiGpusGpuIdPatchErrors];
+
+export type UpdateGpuApiGpusGpuIdPatchResponses = {
+    /**
+     * Successful Response
+     */
+    200: GpuView;
+};
+
+export type UpdateGpuApiGpusGpuIdPatchResponse = UpdateGpuApiGpusGpuIdPatchResponses[keyof UpdateGpuApiGpusGpuIdPatchResponses];
+
+export type ProbeAllGpusApiGpusProbePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/gpus/probe';
+};
+
+export type ProbeAllGpusApiGpusProbePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProbeAllGpusApiGpusProbePostError = ProbeAllGpusApiGpusProbePostErrors[keyof ProbeAllGpusApiGpusProbePostErrors];
+
+export type ProbeAllGpusApiGpusProbePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: GpuProbeAllScheduled;
+};
+
+export type ProbeAllGpusApiGpusProbePostResponse = ProbeAllGpusApiGpusProbePostResponses[keyof ProbeAllGpusApiGpusProbePostResponses];
+
+export type ProbeGpuApiGpusGpuIdProbePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Gpu Id
+         */
+        gpu_id: string;
+    };
+    query?: never;
+    url: '/api/gpus/{gpu_id}/probe';
+};
+
+export type ProbeGpuApiGpusGpuIdProbePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ProbeGpuApiGpusGpuIdProbePostError = ProbeGpuApiGpusGpuIdProbePostErrors[keyof ProbeGpuApiGpusGpuIdProbePostErrors];
+
+export type ProbeGpuApiGpusGpuIdProbePostResponses = {
+    /**
+     * Successful Response
+     */
+    202: GpuProbeScheduled;
+};
+
+export type ProbeGpuApiGpusGpuIdProbePostResponse = ProbeGpuApiGpusGpuIdProbePostResponses[keyof ProbeGpuApiGpusGpuIdProbePostResponses];
+
+export type ListEncodersApiEncodersGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/encoders';
+};
+
+export type ListEncodersApiEncodersGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListEncodersApiEncodersGetError = ListEncodersApiEncodersGetErrors[keyof ListEncodersApiEncodersGetErrors];
+
+export type ListEncodersApiEncodersGetResponses = {
+    /**
+     * Response List Encoders Api Encoders Get
+     *
+     * Successful Response
+     */
+    200: Array<EncoderAvailabilityView>;
+};
+
+export type ListEncodersApiEncodersGetResponse = ListEncodersApiEncodersGetResponses[keyof ListEncodersApiEncodersGetResponses];
+
 export type GetConfigApiConfigGetData = {
     body?: never;
     headers?: {
@@ -6511,6 +9255,106 @@ export type GetServicesApiNotificationsServicesGetResponses = {
 };
 
 export type GetServicesApiNotificationsServicesGetResponse = GetServicesApiNotificationsServicesGetResponses[keyof GetServicesApiNotificationsServicesGetResponses];
+
+export type GetScriptsApiNotificationsScriptsGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/notifications/scripts';
+};
+
+export type GetScriptsApiNotificationsScriptsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetScriptsApiNotificationsScriptsGetError = GetScriptsApiNotificationsScriptsGetErrors[keyof GetScriptsApiNotificationsScriptsGetErrors];
+
+export type GetScriptsApiNotificationsScriptsGetResponses = {
+    /**
+     * Response Get Scripts Api Notifications Scripts Get
+     *
+     * Successful Response
+     */
+    200: Array<BashScriptSummary>;
+};
+
+export type GetScriptsApiNotificationsScriptsGetResponse = GetScriptsApiNotificationsScriptsGetResponses[keyof GetScriptsApiNotificationsScriptsGetResponses];
+
+export type PreviewScriptApiNotificationsScriptsPreviewPostData = {
+    body: BashPreviewRequest;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/notifications/scripts/preview';
+};
+
+export type PreviewScriptApiNotificationsScriptsPreviewPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewScriptApiNotificationsScriptsPreviewPostError = PreviewScriptApiNotificationsScriptsPreviewPostErrors[keyof PreviewScriptApiNotificationsScriptsPreviewPostErrors];
+
+export type PreviewScriptApiNotificationsScriptsPreviewPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: BashPreviewResult;
+};
+
+export type PreviewScriptApiNotificationsScriptsPreviewPostResponse = PreviewScriptApiNotificationsScriptsPreviewPostResponses[keyof PreviewScriptApiNotificationsScriptsPreviewPostResponses];
+
+export type GetScriptApiNotificationsScriptsNameGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/notifications/scripts/{name}';
+};
+
+export type GetScriptApiNotificationsScriptsNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetScriptApiNotificationsScriptsNameGetError = GetScriptApiNotificationsScriptsNameGetErrors[keyof GetScriptApiNotificationsScriptsNameGetErrors];
+
+export type GetScriptApiNotificationsScriptsNameGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BashScriptInfo;
+};
+
+export type GetScriptApiNotificationsScriptsNameGetResponse = GetScriptApiNotificationsScriptsNameGetResponses[keyof GetScriptApiNotificationsScriptsNameGetResponses];
 
 export type ComposeUrlApiNotificationsServicesServiceIdComposeUrlPostData = {
     body: ComposeUrlRequest;
@@ -7460,6 +10304,246 @@ export type ThediscdbRefreshNowApiSystemThediscdbRefreshPostResponses = {
 };
 
 export type ThediscdbRefreshNowApiSystemThediscdbRefreshPostResponse = ThediscdbRefreshNowApiSystemThediscdbRefreshPostResponses[keyof ThediscdbRefreshNowApiSystemThediscdbRefreshPostResponses];
+
+export type SetupStatusApiSetupStatusGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/setup/status';
+};
+
+export type SetupStatusApiSetupStatusGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupStatusPublic;
+};
+
+export type SetupStatusApiSetupStatusGetResponse = SetupStatusApiSetupStatusGetResponses[keyof SetupStatusApiSetupStatusGetResponses];
+
+export type GetSetupApiSetupGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup';
+};
+
+export type GetSetupApiSetupGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetSetupApiSetupGetError = GetSetupApiSetupGetErrors[keyof GetSetupApiSetupGetErrors];
+
+export type GetSetupApiSetupGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type GetSetupApiSetupGetResponse = GetSetupApiSetupGetResponses[keyof GetSetupApiSetupGetResponses];
+
+export type PutStepApiSetupStepsStepPutData = {
+    body: SetupStepUpdate;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path: {
+        /**
+         * Step
+         */
+        step: string;
+    };
+    query?: never;
+    url: '/api/setup/steps/{step}';
+};
+
+export type PutStepApiSetupStepsStepPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutStepApiSetupStepsStepPutError = PutStepApiSetupStepsStepPutErrors[keyof PutStepApiSetupStepsStepPutErrors];
+
+export type PutStepApiSetupStepsStepPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type PutStepApiSetupStepsStepPutResponse = PutStepApiSetupStepsStepPutResponses[keyof PutStepApiSetupStepsStepPutResponses];
+
+export type CompleteSetupApiSetupCompletePostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup/complete';
+};
+
+export type CompleteSetupApiSetupCompletePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CompleteSetupApiSetupCompletePostError = CompleteSetupApiSetupCompletePostErrors[keyof CompleteSetupApiSetupCompletePostErrors];
+
+export type CompleteSetupApiSetupCompletePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type CompleteSetupApiSetupCompletePostResponse = CompleteSetupApiSetupCompletePostResponses[keyof CompleteSetupApiSetupCompletePostResponses];
+
+export type RestartSetupApiSetupRestartPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup/restart';
+};
+
+export type RestartSetupApiSetupRestartPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RestartSetupApiSetupRestartPostError = RestartSetupApiSetupRestartPostErrors[keyof RestartSetupApiSetupRestartPostErrors];
+
+export type RestartSetupApiSetupRestartPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type RestartSetupApiSetupRestartPostResponse = RestartSetupApiSetupRestartPostResponses[keyof RestartSetupApiSetupRestartPostResponses];
+
+export type DeferSetupApiSetupDeferPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup/defer';
+};
+
+export type DeferSetupApiSetupDeferPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeferSetupApiSetupDeferPostError = DeferSetupApiSetupDeferPostErrors[keyof DeferSetupApiSetupDeferPostErrors];
+
+export type DeferSetupApiSetupDeferPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type DeferSetupApiSetupDeferPostResponse = DeferSetupApiSetupDeferPostResponses[keyof DeferSetupApiSetupDeferPostResponses];
+
+export type DismissChecklistApiSetupChecklistDismissPostData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup/checklist/dismiss';
+};
+
+export type DismissChecklistApiSetupChecklistDismissPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DismissChecklistApiSetupChecklistDismissPostError = DismissChecklistApiSetupChecklistDismissPostErrors[keyof DismissChecklistApiSetupChecklistDismissPostErrors];
+
+export type DismissChecklistApiSetupChecklistDismissPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: SetupView;
+};
+
+export type DismissChecklistApiSetupChecklistDismissPostResponse = DismissChecklistApiSetupChecklistDismissPostResponses[keyof DismissChecklistApiSetupChecklistDismissPostResponses];
+
+export type DiscRoutesApiSetupDiscRoutesGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * Authorization
+         */
+        authorization?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/setup/disc-routes';
+};
+
+export type DiscRoutesApiSetupDiscRoutesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DiscRoutesApiSetupDiscRoutesGetError = DiscRoutesApiSetupDiscRoutesGetErrors[keyof DiscRoutesApiSetupDiscRoutesGetErrors];
+
+export type DiscRoutesApiSetupDiscRoutesGetResponses = {
+    /**
+     * Response Disc Routes Api Setup Disc Routes Get
+     *
+     * Successful Response
+     */
+    200: Array<DiscRouteSummary>;
+};
+
+export type DiscRoutesApiSetupDiscRoutesGetResponse = DiscRoutesApiSetupDiscRoutesGetResponses[keyof DiscRoutesApiSetupDiscRoutesGetResponses];
 
 export type RootsApiFilesRootsGetData = {
     body?: never;

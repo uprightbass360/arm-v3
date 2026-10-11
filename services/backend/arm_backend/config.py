@@ -26,9 +26,13 @@ class Settings(BaseSettings):
     # owning drive's ripper was offline).
     RAW_ROOT: str = "/raw"
 
-    # Sandbox root for ISO-import scanning (kept for the diagnostics path
-    # check; the iso-scan endpoint itself was dropped upstream in favor of
-    # the ephemeral-worker design).
+    # Bash hook scripts. Bind-mounted read-only from ./arm/scripts; a bash
+    # channel stores a file name inside this directory, never a path.
+    ARM_SCRIPTS_ROOT: str = "/scripts"
+
+    # The ISO library: the backend's read-only mount of ARM_HOST_ISO_LIBRARY_PATH.
+    # The ISO picker browses it (file root "ISO", read-only) and "Rip from ISO"
+    # stores each chosen ISO's path relative to it. Also checked by diagnostics.
     ISO_INGRESS_ROOT: str = "/ingress"
 
     # Disk cache for the image-proxy router (GET /api/images/proxy). Posters
@@ -78,6 +82,19 @@ class Settings(BaseSettings):
     # default only applies in tests.
     ARM_TRANSCODE_IMAGE: str = "arm-transcode:latest"
 
+    # Per-vendor image overrides (the transcode image split: a slimmer image
+    # per GPU vendor instead of one fat multi-vendor build). Empty (default):
+    # the dispatcher derives "<ARM_TRANSCODE_IMAGE>-intel" / "-amd" from the
+    # base image's tag for a QSV/VAAPI claim and uses it when that image
+    # exists on the docker host, else falls back to the base image; NVENC
+    # and CPU spawns always use the base image. Set one of these to pin an
+    # exact image instead of deriving it (a differently-tagged or
+    # differently-named build, or a registry reference the derivation can't
+    # express, such as a digest).
+    ARM_TRANSCODE_IMAGE_QSV: str = ""
+    ARM_TRANSCODE_IMAGE_VAAPI: str = ""
+    ARM_TRANSCODE_IMAGE_NVENC: str = ""
+
     # Stale-claim sweep tunables. 90 s = 3× heartbeat interval (the
     # transcoder POSTs heartbeat every 30 s). After MAX_ATTEMPTS stale resets
     # the task is hard-failed with `last_error="exceeded retry limit ..."`.
@@ -108,6 +125,16 @@ class Settings(BaseSettings):
     ARM_HOST_MEDIA_PATH: str = ""
     ARM_HOST_LOGS_PATH: str = ""
     ARM_HOST_CERTS_PATH: str = ""
+    # Host path of the ISO library (mounted read-only at ISO_INGRESS_ROOT).
+    # A virtual ripper bind-mounts `<this>/<relative ISO path>`; empty means
+    # "Rip from ISO" is not configured.
+    ARM_HOST_ISO_LIBRARY_PATH: str = ""
+
+    # Drive scanner roots (spec §2). /sys is the container's own sysfs mount
+    # (host-wide); /host-disk is the read-only bind of the host's /dev/disk —
+    # symlink directories only, never device nodes.
+    ARM_SYSFS_ROOT: str = "/sys"
+    ARM_HOST_DISK_ROOT: str = "/host-disk"
 
     # Docker network the spawned transcoder joins so it can reach
     # `https://arm-backend:8443`. Compose default project network is
@@ -132,6 +159,42 @@ class Settings(BaseSettings):
     # default uid every run, which can revert externally-set ownership.
     ARM_TRANSCODE_PUID: str = ""
     ARM_TRANSCODE_PGID: str = ""
+
+    # Deployment capability: can this backend get a transcode container run
+    # somewhere (the local daemon, or ARM_TRANSCODE_DOCKER_HOST)? setup-dev's
+    # ripper-only profile writes false: the arm-transcode image is not built
+    # and encode work is impossible by construction. Runtime enable/disable
+    # is config.transcode_enabled (DB); this is the deployment fact that
+    # gates whether that toggle may be switched on at all.
+    ARM_TRANSCODE_CAPABLE: bool = True
+
+    # --- Drive lifecycle Plan 3: ripper manager (spec §3) --------------------
+    # Image for the durable per-drive ripper containers the backend creates on
+    # enroll. Defaults like ARM_TRANSCODE_IMAGE: built locally by compose (the
+    # arm-ripper service is deploy.replicas:0 — built, never run).
+    ARM_RIPPER_IMAGE: str = "arm-ripper:latest"
+    # The uid/gid the rippers drop to and the host cdrom group they need to
+    # open the optical nodes. Compose passes the same PUID/PGID/CDROM_GID it
+    # gives every service; empty = leave the ripper entrypoint's defaults.
+    PUID: str = ""
+    PGID: str = ""
+    CDROM_GID: str = ""
+
+    # Optional ripper tunables forwarded verbatim into every ripper container
+    # the manager creates (empty = the ripper's own default). Named with the
+    # ARM_RIPPER_ prefix here so they cannot collide with backend settings;
+    # container_spec maps them to the ripper's env names.
+    ARM_RIPPER_POLL_INTERVAL_SECONDS: str = ""
+    ARM_RIPPER_MIN_LENGTH_SECONDS: str = ""
+    ARM_RIPPER_MAKEMKV_KEYCHECK_INTERVAL_SECONDS: str = ""
+    ARM_RIPPER_NOT_READY_REARM_POLLS: str = ""
+    ARM_RIPPER_OPTICAL_SR_MAX: str = ""
+    ARM_RIPPER_OPTICAL_SG_MAX: str = ""
+    # Host path of the certs dir the rippers' CA mount comes from. Rippers run
+    # on the LOCAL daemon, so on a remote-transcode install (ARM_TRANSCODE_
+    # DOCKER_HOST set) ARM_HOST_CERTS_PATH points at the transcode host's certs
+    # and this must name the local one. Empty = same as ARM_HOST_CERTS_PATH.
+    ARM_RIPPER_CERTS_PATH: str = ""
 
     # --- Phase 7b: GPU inventory --------------------------------------------
     # JSON array of GPUs detected host-side at install time (install.sh /
@@ -158,6 +221,7 @@ class Settings(BaseSettings):
     ARM_TMDB_BASE_URL: str = "https://api.themoviedb.org/3"
     ARM_OMDB_BASE_URL: str = "https://www.omdbapi.com/"
     ARM_TVDB_BASE_URL: str = "https://api4.thetvdb.com/v4"
+    ARM_TVMAZE_BASE_URL: str = "https://api.tvmaze.com"
     ARM_MUSICBRAINZ_BASE_URL: str = "https://musicbrainz.org/ws/2"
     ARM_ARMSERVER_BASE_URL: str = "https://1337server.pythonanywhere.com/api/v1/"
 
@@ -187,6 +251,13 @@ class Settings(BaseSettings):
     ARM_LOG_PER_FILE_HARD_CAP: int = 10_000
     ARM_LOG_ZIP_PER_ENTRY_LINE_CAP: int = 5000
     ARM_LOG_ZIP_PER_ENTRY_BYTE_CAP: int = 5 * 1024 * 1024  # 5 MB
+
+
+def effective_transcode_capable(s: Settings) -> bool:
+    """A configured remote docker host implies capability regardless of the
+    flag (you cannot be incapable of something you have wired a host for);
+    main.py warns about the contradictory combo at startup."""
+    return s.ARM_TRANSCODE_CAPABLE or bool(s.ARM_TRANSCODE_DOCKER_HOST)
 
 
 settings = Settings()  # type: ignore[call-arg]  # fields loaded from env by pydantic-settings

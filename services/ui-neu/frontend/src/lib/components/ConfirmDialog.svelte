@@ -9,21 +9,9 @@
 		oncancel: () => void;
 	}
 
-	let {
-		open,
-		title,
-		message,
-		confirmLabel = 'Confirm',
-		variant = 'primary',
-		onconfirm,
-		oncancel
-	}: Props = $props();
+	let { open, title, message, confirmLabel = 'Confirm', variant = 'primary', onconfirm, oncancel }: Props = $props();
 
-	let confirmClasses = $derived(
-		variant === 'danger'
-			? 'confirm-btn-danger'
-			: 'confirm-btn-primary'
-	);
+	let confirmClasses = $derived(variant === 'danger' ? 'btn-danger' : 'btn-primary');
 
 	$effect(() => {
 		if (!open) return;
@@ -38,35 +26,40 @@
 </script>
 
 {#if open}
-	<div class="fixed inset-0 z-50 flex items-center justify-center">
+	<div class="modal">
 		<!-- Backdrop -->
-		<button
-			type="button"
-			class="absolute inset-0 bg-black/50"
-			aria-label="Close dialog"
-			onclick={oncancel}
+		<button type="button" class="confirm-dialog-scrim absolute inset-0" aria-label="Close dialog" onclick={oncancel}
 		></button>
 
 		<!-- Dialog -->
-		<div class="relative z-10 w-full max-w-md rounded-lg bg-surface p-6 shadow-xl dark:bg-surface-dark" data-dialog role="dialog" aria-modal="true" aria-labelledby="dialog-title">
-			<h3 id="dialog-title" class="text-lg font-semibold text-gray-900 dark:text-white">{title}</h3>
-			<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{message}</p>
-			<div class="mt-4 flex justify-end gap-3">
-				<button
-					type="button"
-					onclick={oncancel}
-					class="rounded-lg px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={onconfirm}
-					class="rounded-lg px-4 py-2 text-sm font-medium {confirmClasses}"
-				>
+		<div
+			class="modal-panel confirm-dialog-panel relative"
+			data-dialog
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="dialog-title"
+		>
+			<h3 id="dialog-title" class="modal-title">{title}</h3>
+			<p class="modal-body">{message}</p>
+			<div class="modal-actions">
+				<button type="button" onclick={oncancel} class="btn btn-ghost"> Cancel </button>
+				<button type="button" onclick={onconfirm} class="btn {confirmClasses}">
 					{confirmLabel}
 				</button>
 			</div>
 		</div>
 	</div>
 {/if}
+
+<style>
+	/* modal.css's .modal is the backdrop+centring layer already; the scrim
+	   button just needs to sit above it and below the panel (z-index: 0 is
+	   the modal's own stacking context, so 'relative' on both is enough - no
+	   extra z-index needed). */
+	.confirm-dialog-scrim {
+		z-index: 0;
+	}
+	.confirm-dialog-panel {
+		z-index: 1;
+	}
+</style>

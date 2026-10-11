@@ -148,6 +148,20 @@ def test_origin_not_allowed_closes(monkeypatch: pytest.MonkeyPatch) -> None:
                 ws.receive_json()
 
 
+def test_same_origin_accepted_without_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+    """G-28: an Origin matching the host the socket was opened against passes
+    the gate with an empty allowlist (TestClient connects as ws://testserver)."""
+    settings.ARM_ALLOWED_ORIGINS = []
+    db = FakeSession()
+    db.rows["users"] = [_guest_user()]
+    app = _make_app(db, _Hub(), monkeypatch)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws", headers={"origin": "http://testserver"}) as ws:
+            ws.send_json({"op": "auth", "token": ""})
+            ack = ws.receive_json()
+            assert ack["op"] == "ack"
+
+
 # --- auth handshake failures -------------------------------------------------
 
 
@@ -160,6 +174,25 @@ def test_auth_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
             assert err["op"] == "error"
             assert err["code"] == ws_router.CLOSE_UNAUTHORIZED
             assert "timeout" in err["reason"]
+
+
+def test_client_closing_before_auth_is_quiet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A browser that navigates away mid-handshake closes the socket before its
+    auth message: the server must not try to answer it (that raised on the
+    closed socket and logged a full traceback per page navigation)."""
+    from arm_backend.ws import router as ws_router
+
+    sent: list[tuple[int, str]] = []
+
+    async def _record(_ws, code: int, reason: str) -> None:  # type: ignore[no-untyped-def]
+        sent.append((code, reason))
+
+    monkeypatch.setattr(ws_router, "_send_error", _record)
+    app = _make_app(FakeSession(), _Hub(), monkeypatch)
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            ws.close()
+    assert sent == []
 
 
 def test_auth_non_json_first_message(monkeypatch: pytest.MonkeyPatch) -> None:

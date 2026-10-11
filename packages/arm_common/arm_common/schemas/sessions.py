@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from arm_common.enums import (
     ContainerFormat,
-    HwPreference,
     IdentificationMode,
     MediaType,
     OutputMode,
@@ -21,7 +20,6 @@ from arm_common.enums import (
     TrackSelection,
     TranscodeTaskStatus,
     TranscodeTool,
-    VideoCodec,
 )
 
 
@@ -88,8 +86,7 @@ class TranscodePresetView(BaseModel):
     preset_ref: str | None
     preset_json: dict[str, Any] | None
     container: ContainerFormat
-    codec: VideoCodec | None
-    hw_preference: HwPreference | None
+    encoder: str
     extra_args: str | None
     created_by_user_id: str | None
     created_at: datetime | None
@@ -103,8 +100,7 @@ class TranscodePresetCreateRequest(BaseModel):
     preset_ref: str | None = None
     preset_json: dict[str, Any] | None = None
     container: ContainerFormat
-    codec: VideoCodec | None = None
-    hw_preference: HwPreference | None = None
+    encoder: str = Field(default="preset", min_length=1)
     extra_args: str | None = None
 
 
@@ -114,8 +110,7 @@ class TranscodePresetUpdateRequest(BaseModel):
     preset_ref: str | None = None
     preset_json: dict[str, Any] | None = None
     container: ContainerFormat | None = None
-    codec: VideoCodec | None = None
-    hw_preference: HwPreference | None = None
+    encoder: str | None = Field(default=None, min_length=1)
     extra_args: str | None = None
 
 
@@ -213,6 +208,10 @@ class CollisionInfo(BaseModel):
     # file on disk under MEDIA_ROOT, or two tracks in the same apply request
     # resolving to the same path (template missing `{track}` for a multi-track rip).
     reason: Literal["existing_task", "on_disk", "duplicate_in_request"]
+    # The job that owns the colliding task (via task -> session_application ->
+    # job_id), populated only for reason="existing_task". Lets the UI say
+    # "this path is claimed by job <X>" instead of a bare path string.
+    existing_job_id: str | None = None
 
 
 class ApplySessionResponse(BaseModel):
@@ -233,3 +232,6 @@ class TemplatePreviewRequest(BaseModel):
 
 class TemplatePreviewResponse(BaseModel):
     expansion: str
+    # The same synthetic expansion with every optional ({token?}) token empty;
+    # None when the template has no optional tokens.
+    expansion_without_optional: str | None = None
