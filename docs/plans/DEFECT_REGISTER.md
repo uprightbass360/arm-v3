@@ -170,6 +170,7 @@ Hygiene checks requested up front (no defect rows):
 | D-116 | [#118](https://github.com/uprightbass360/arm-v3/issues/118) | S4 | open | docs | #103 | — | `docs/ops/makemkv.md` "What the install scripts do" still says the script "Scrapes the current MakeMKV version" after this PR makes a pinned version the default. |
 | D-117 | [#119](https://github.com/uprightbass360/arm-v3/issues/119) | S3 | open | ci | stack | — | The integration tip carries 30 commits that are in no open PR; merging the 27 PRs does not reproduce the tested tip. |
 | D-118 | [#120](https://github.com/uprightbass360/arm-v3/issues/120) | S4 | open | ci | stack | — | `wolfy/v3-improvments` (upstream only) carries 89 commits of v2-era UI/model work that exist nowhere in the stack; keep-or-kill decision needed. |
+| D-120 | [#135](https://github.com/uprightbass360/arm-v3/issues/135) | S4 | open | ui-neu | main | — | With guest access disabled, an unauthenticated visit fires the whole dashboard load before the 401 redirect and keeps polling on `/login` (20 x 401 per visit). |
 
 ## Detail
 
@@ -2714,6 +2715,24 @@ $ git log --oneline --no-merges origin/main..upstream/wolfy/v3-improvments | wc 
 **Verification.** Inventory only; no code review performed (by instruction).
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/120
+
+### D-120  S4  open  ui-neu  origin: main (anonymous-guest design, pre-stack)
+
+**Title.** With guest access disabled, an unauthenticated visit fires the whole dashboard load before the 401 redirect, and the pollers keep running on `/login`: 20 `401` responses and 20 console errors per cold visit.
+
+**Where.** `services/ui-neu/frontend/src/routes/+layout.svelte` (stores start on mount for every page; the 401 handler only de-duplicates the `goto('/login')`), `src/routes/+layout.ts:25-28` (`hydrateConfig()` before the auth check), `src/lib/api/client.ts:58-68`, at `577d8019`.
+
+**What.** Tokenless is treated as a guest and the backend decides (`auth.py:80-88`). With guest access off (the installed default) every unauthenticated load starts config, jobs, drives, transcodes, transcode stats, ISO prepares, inbox count, version, resources and themes; each 401s and logs a console error; the stores are not stopped by the redirect, so the same calls run again on `/login`. A direct cold load of `/login` still makes three 401 calls. No functional breakage.
+
+**Repro / evidence.** Fresh install from the published `latest` images (2026-10-11), Playwright response log at `networkidle`: cold `/` = 22 API calls, 20 x 401; cold `/login` = 4 calls, 3 x 401; cold `/jobs` = 14 calls, 13 x 401. Full list in the issue.
+
+**Tip check.** Present at `577d8019`; predates the stack (anonymous-guest spec 2026-07-12), unchanged on the integration tip.
+
+**Suggested fix location.** `+layout.svelte`: gate the store starts on `!isAuthPage` and stop them when the 401 handler fires; `+layout.ts`: skip `hydrateConfig()` on the auth pages or make `/api/config` public; one public probe (`/api/setup/status`) can decide guest-or-login before the dashboard loads.
+
+**Verification.** Reproduced on a fresh install (confirmed).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/135
 
 ## Tip-only commits (in no open PR)
 
