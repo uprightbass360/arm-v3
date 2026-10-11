@@ -170,7 +170,6 @@ Hygiene checks requested up front (no defect rows):
 | D-116 | [#118](https://github.com/uprightbass360/arm-v3/issues/118) | S4 | open | docs | #103 | — | `docs/ops/makemkv.md` "What the install scripts do" still says the script "Scrapes the current MakeMKV version" after this PR makes a pinned version the default. |
 | D-117 | [#119](https://github.com/uprightbass360/arm-v3/issues/119) | S3 | open | ci | stack | — | The integration tip carries 30 commits that are in no open PR; merging the 27 PRs does not reproduce the tested tip. |
 | D-118 | [#120](https://github.com/uprightbass360/arm-v3/issues/120) | S4 | open | ci | stack | — | `wolfy/v3-improvments` (upstream only) carries 89 commits of v2-era UI/model work that exist nowhere in the stack; keep-or-kill decision needed. |
-| D-119 | [#134](https://github.com/uprightbass360/arm-v3/issues/134) | S3 | open | devtools | #119 | — | `armctl install` creates `iso-library/` but never writes `ARM_HOST_ISO_LIBRARY_PATH`; a fresh install reports the ISO library as not configured (503). |
 
 ## Detail
 
@@ -2432,6 +2431,8 @@ uv run coverage run -m pytest -q && uv run coverage report --include='services/b
 
 **Verification.** read of both files at head and tip.
 
+**Installer gap (2026-10-11, same defect).** A fresh `armctl install` (#119) creates `<arm>/iso-library` but never writes `ARM_HOST_ISO_LIBRARY_PATH`, so the key stays at the commented template default and the backend reports the same 503 on every install. Filed as #134, closed as a duplicate of this row. Fix branch `fix/installer-iso-library-path`: `write_env` sets the key to `<arm>/iso-library` (absolute) when unset, keeps a user-set value, and the doc cell now asks for a full path; verified 200 on a fresh install from the published images.
+
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/107
 
 ### D-106  S4  open  ui-neu  origin #101
@@ -2713,24 +2714,6 @@ $ git log --oneline --no-merges origin/main..upstream/wolfy/v3-improvments | wc 
 **Verification.** Inventory only; no code review performed (by instruction).
 
 **Issue.** https://github.com/uprightbass360/arm-v3/issues/120
-
-### D-119  S3  open  devtools  origin #119
-
-**Title.** `armctl install` creates `iso-library/` but never writes `ARM_HOST_ISO_LIBRARY_PATH`; a fresh install reports the ISO library as not configured (503).
-
-**Where.** `deploy/install/config.sh` `write_env` and `deploy/install/flow.sh:39` at `577d8019` (main after #119-#122).
-
-**What.** The installer makes the folder Rip from ISO browses, but the only setting the backend checks (`library_configured()` needs a non-empty absolute `ARM_HOST_ISO_LIBRARY_PATH`) stays at the commented `.env.example` default. The backend starts with an empty path and no `/ingress` mount; `/api/iso/library` returns 503. The dev stack's `.env` carries the path, so the gap is installer-only.
-
-**Repro / evidence.** Fresh install from the published `latest` images (2026-10-11), `grep ISO_LIBRARY ~/arm/.armctl/.env` shows only the commented line; `docker exec armv3-backend env | grep ISO` prints `ARM_HOST_ISO_LIBRARY_PATH=`; `GET /api/iso/library` is 503 `the ISO library is not configured`.
-
-**Tip check.** Present at `577d8019`; the integration tip predates #119 and ships the legacy `install.sh`, which has the same gap.
-
-**Suggested fix location.** `write_env`: default the key to `${ARM_DIR}/iso-library`, keep a user-set value; assert in `deploy/tests/test-armctl.sh`. Fix branch `fix/installer-iso-library-path`.
-
-**Verification.** Reproduced on a fresh install (confirmed); fix verified on the same install (200 after re-run).
-
-**Issue.** https://github.com/uprightbass360/arm-v3/issues/134
 
 ## Tip-only commits (in no open PR)
 
