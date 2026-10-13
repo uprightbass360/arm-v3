@@ -478,6 +478,8 @@ Key realizations from this graph:
 
 ---
 
+- **Defect register:** [DEFECT_REGISTER.md](DEFECT_REGISTER.md) — sweep 1 reviewed the PR stack #61..#103 against `integration/all-prs-3`; sweep 2 is a fresh as-built review of `main` at `2625b3e7`. Rows are `D-xxx`; issues live on the tracking repo until migrated.
+
 ## Open risks to this plan
 
 - **OQ-1 (queue mechanism) stays deferred.** The plan assumes DB-as-queue throughout. If a bottleneck appears during Phase 7 testing, the state machine is designed to swap in Redis/RQ/NATS without reshaping services — but a pivot would still insert a Phase 7.5.
