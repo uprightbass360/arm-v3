@@ -2741,3 +2741,2075 @@ b7afa298 | fix(devtools): seed-test-data writes per-job logs as the service user
 cea3e01e | fix(metadata): bound the TMDb external_ids lookup by the provider timeout
 ```
 
+---
+
+# Sweep 2 — fresh review of `main`
+
+Date: 2026-10-13. Scope: a fresh as-built review of `main` at `2625b3e7` (all 27 stack PRs plus #104-#122 and the fix sweeps #259-#264 have merged), split into ten service slices reviewed by independent readers against the same rules as sweep 1. No tip check applies (main is the tip). Rows that re-find a CLOSED sweep-1 defect still present on main carry `Regression of D-xxx`. Defects already open upstream (D-118, D-122, D-124, D-126, D-128, D-130, D-131, D-135, D-136, D-137) are not re-recorded; re-confirmations are listed below.
+
+Totals: 91 rows — severity S1 1, S2 4, S3 41, S4 45; status open 75, untested-needs-hardware 16; regressions of closed rows: 4.
+
+Baseline on `main` @ `2625b3e7`: `uv run pytest` 3854 passed / 6 skipped; `ruff check` clean; `svelte-check` 0 errors; `vitest` 1996 passed; OpenAPI snapshot regen + TS codegen leave no diff.
+
+
+## Slices
+
+| Slice | Scope | Rows |
+|---|---|---|
+| B1 | backend job/session pipeline: routers/jobs, auto_session, transcode_apply, path_template, sessions, session_routes, naming, seeders | 9 |
+| B2 | backend drives/ripper-facing routes, ripper_manager, drive_scanner, ISO rips/library/folders, setup, main/lifespan, config | 4 |
+| B3 | backend transcode: dispatcher, passthrough executor, GPU probe runner, transcoder/transcodes/gpus/presets routers, encoders | 4 |
+| B4 | backend identity + metadata: identity/*, metadata/*, routers/identity, metadata, images | 6 |
+| B5 | backend auth/users/config/system/logs, notifications (apprise + bash hooks), WS hub | 9 |
+| R1 | ripper service + transcode service + shared entrypoint | 9 |
+| C1 | arm_common schemas/models/enums + Alembic chain 0001..0044 + OpenAPI snapshot and TS codegen | 12 |
+| U1 | ui-neu routes (every page) + lib/api client layer | 16 |
+| U2 | ui-neu lib/components, stores, utils, styles | 9 |
+| D1 | installer rewrite (deploy/**, install.sh), compose templates, devtools, Dockerfiles, nginx, CI workflows, docs claims | 13 |
+
+## Already-open rows re-confirmed on main
+
+- D-122 (upstream #245) — seen by slice D1
+- D-122 (upstream #245) — seen by slice B3
+- D-124 (upstream #247) — seen by slice U1
+- D-126 (upstream #249) — seen by slice D1
+- D-128 (upstream #251) — seen by slice B3
+- D-128 (upstream #251) — seen by slice R1
+- D-130 (upstream #253) — seen by slice U2
+- D-130 (upstream #253) — seen by slice B3
+- D-130 (upstream #253) — seen by slice U1
+- D-131 (upstream #254) — seen by slice R1
+- D-135 (upstream #260) — seen by slice R1
+- D-135 (upstream #260) — seen by slice B4
+- D-136 (upstream #265) — seen by slice U1
+- D-136 (upstream #265) — seen by slice U2
+- D-137 (upstream #266) — seen by slice U1
+
+## Summary
+
+| ID | Issue | Sev | Status | Area | Slice | Regression of | Title |
+|---|---|---|---|---|---|---|---|
+| D-138 | [#136](https://github.com/uprightbass360/arm-v3/issues/136) | S1 | open | backend | B5 | — | `GET /api/config` returns the legacy `notification_apprise_urls` list verbatim (credentials embedded) to every JWT holder and to the anonymous guest, while the channel view redacts the very same URLs. |
+| D-139 | [#137](https://github.com/uprightbass360/arm-v3/issues/137) | S2 | open | backend | B1 | — | Output-path templates are never contained to MEDIA_ROOT: `validate_template` accepts a leading `/` and `..`, `expand_template` strips a leading `/` only when an optional token drops, and every consumer joins `media_root / output_path` so an absolute template writes, previews and deletes outside the media root. |
+| D-140 | [#138](https://github.com/uprightbass360/arm-v3/issues/138) | S3 | open | backend | B1 | — | The Blu-ray-backup (FOLDER) session guard only exists on the direct apply path; a FOLDER session parked pre-rip (apply on `awaiting_review`/`identified`, resolve fan-out, or redrain) fans out at rip-complete and files a title `.mkv` as an extension-less `Title (Year)` file. |
+| D-141 | [#139](https://github.com/uprightbass360/arm-v3/issues/139) | S3 | open | backend | B1 | — | Pre-rip manual apply is not idempotent: two clicks park two `waiting_identify` rows for the same session, the second stays parked with `collisions` forever after rip-complete, nothing can cancel it, and the duplicate also breaks the auto-apply idempotency lookup (`scalar_one_or_none` -> `MultipleResultsFound`). |
+| D-142 | [#140](https://github.com/uprightbass360/arm-v3/issues/140) | S3 | open | backend | B1 | D-081 | Residual D-081: an unidentified `ripped_partial` job with a parked application still rolls up as `state=transcoding tasks_total=0`, and the UI folds `ripped_partial` + transcoding into "Transcoding 0/0" with live polling while the job actually needs identification. |
+| D-143 | [#141](https://github.com/uprightbass360/arm-v3/issues/141) | S3 | untested-needs-hardware | backend | B1 | — | `DELETE /api/jobs/{id}` and `DELETE /api/jobs` accept a `ripped` job whose transcode tasks are `in_progress`: the cascade deletes the task under the running transcoder, its `/complete`/`/fail` 404s, the GPU row stays BUSY with a NULL claim until the next backend restart, and `delete_raw=true` rmtrees the encoder's input mid-run. |
+| D-144 | [#142](https://github.com/uprightbass360/arm-v3/issues/142) | S3 | open | backend | B1 | — | `DELETE /api/sessions/{id}` 500s for any session that has ever been applied to a job: `session_applications.session_id` is `ON DELETE RESTRICT` and the handler has no `IntegrityError` mapping. |
+| D-145 | [#143](https://github.com/uprightbass360/arm-v3/issues/143) | S3 | open | backend | B1 | — | The lenient episode-token render expands the template segment by segment, so a segment made only of an optional token (`{year?}`) raises "output path is empty once optional tokens ... are dropped" for a bonus/extra title when the year is unknown, failing an apply that validates and that renders fine for the episode titles. |
+| D-146 | [#144](https://github.com/uprightbass360/arm-v3/issues/144) | S4 | open | backend | B1 | — | Renaming a built-in session/preset is allowed and tested at the API, but the seeder re-syncs `name` on every boot, so the rename silently reverts at the next backend restart; two tests enshrine the contradiction. |
+| D-147 | [#145](https://github.com/uprightbass360/arm-v3/issues/145) | S4 | open | backend | B1 | — | Four 4xx detail strings call `.value` on a status that `_StrEnumString` may have loaded as a raw `str`, turning the intended 409 into a 500; sibling handlers already use `enum_value_str` for this. |
+| D-148 | [#146](https://github.com/uprightbass360/arm-v3/issues/146) | S3 | open | backend | B2 | — | `POST /api/ripper/jobs/{id}/recovery-abandon` never commits: the abandon is rolled back when the request session closes, so the ripper's reboot recovery announces `rip.abandoned` for a job that stays `awaiting_review`. |
+| D-149 | [#147](https://github.com/uprightbass360/arm-v3/issues/147) | S4 | open | backend | B2 | — | System diagnostics' `drives` check and `/api/system/stats.drives_online` count every `status == online` row, and scanner-created DETECTED rows (plus virtual ISO rows) are `online` by server default, so "no online drives registered" never fires once a drive is merely plugged in. |
+| D-150 | [#148](https://github.com/uprightbass360/arm-v3/issues/148) | S4 | open | backend | B2 | — | `/api/iso` resolves the ripper manager without the `host_paths_set()` gate `/api/drives` applies, so on a docker-but-no-`ARM_HOST_*_PATH` stack `POST /api/iso/rips` commits a virtual drive, fails inside docker, retires it and answers 500 instead of the 503 "ripper manager disabled" the drives router gives. |
+| D-151 | [#149](https://github.com/uprightbass360/arm-v3/issues/149) | S4 | open | common | B2 | — | `DriveStatus.RIPPING` is a dead enum value: nothing in the backend or ripper ever writes it, and the drive diagnostic has no branch for it. |
+| D-152 | [#150](https://github.com/uprightbass360/arm-v3/issues/150) | S3 | untested-needs-hardware | backend | B3 | — | Remote docker-over-SSH: an idle transport death is swallowed by the spawn-gating probe ("docker host unreachable") before `_spawn_container` runs, so the transport-rebuild path never fires and encode spawns stay held until the backend restarts. |
+| D-153 | [#151](https://github.com/uprightbass360/arm-v3/issues/151) | S3 | untested-needs-hardware | backend | B3 | — | Stale-claim sweep assumes the transcoder is dead: a backend outage longer than `ARM_TRANSCODE_STALE_THRESHOLD_SECONDS` (90 s) re-queues a task whose container is still encoding, releases its GPU mid-encode, and the re-spawn collides on the fixed container name until the task is terminally FAILED two ticks later. |
+| D-154 | [#152](https://github.com/uprightbass360/arm-v3/issues/152) | S3 | open | backend | B3 | — | `PATCH /api/transcode-presets/{id}` with an explicit `"tool": null` or `"container": null` (both nullable in the OpenAPI schema) returns 500 instead of 422. |
+| D-155 | [#153](https://github.com/uprightbass360/arm-v3/issues/153) | S3 | open | backend | B3 | — | `POST /api/transcodes/{id}/retry` re-queues the task but leaves its session application terminal (FAILED/DONE_PARTIAL, `completed_at` set), so the job's transcode summary reads "done" (0/1) while the retried encode is queued or running. |
+| D-156 | [#154](https://github.com/uprightbass360/arm-v3/issues/154) | S3 | open | backend | B4 | — | A 200 response with a non-JSON body from OMDb, 1337server or MusicBrainz escapes the dispatcher as `JSONDecodeError`, so identify returns 500 and the ripper retries it forever instead of falling through to the next provider / `block_on_miss`. |
+| D-157 | [#155](https://github.com/uprightbass360/arm-v3/issues/155) | S3 | open | backend | B4 | — | `_normalize_volume_label` takes the first 4-digit run anywhere in the label as the release year, so titles that contain a year (`BLADE_RUNNER_2049`, `WONDER_WOMAN_1984`, `2001_A_SPACE_ODYSSEY`, `1917`) are searched with a wrong year filter and never retried without it; the fallback then lands on TMDb's TV search. |
+| D-158 | [#156](https://github.com/uprightbass360/arm-v3/issues/156) | S3 | open | backend | B4 | — | The `metadata_provider` setting ("Look up titles with — the service ARM searches when it identifies a disc") is never read by the identify pipeline: with both keys set and OMDb selected, every disc is still identified by TMDb first. |
+| D-159 | [#157](https://github.com/uprightbass360/arm-v3/issues/157) | S3 | open | backend | B4 | — | Two overlapping TheDiscDB refreshes (the daily loop and `POST /api/system/thediscdb/refresh`, or two clicks) share the same `index.sqlite.new` path, so one build fails with `disk I/O error` and, depending on timing, a partial index can be moved live. |
+| D-160 | [#158](https://github.com/uprightbass360/arm-v3/issues/158) | S3 | open | backend | B4 | — | The unauthenticated image proxy's negative cache is an unbounded module-level dict that is never pruned, so any anonymous client can grow backend memory one entry per distinct allowlisted-host URL. |
+| D-161 | [#159](https://github.com/uprightbass360/arm-v3/issues/159) | S4 | open | backend | B4 | D-094 | Operator-supplied external ids are still interpolated unescaped into provider URL paths at every site except the two D-094 anchored. |
+| D-162 | [#160](https://github.com/uprightbass360/arm-v3/issues/160) | S2 | open | backend | B5 | — | The WS Origin gate is skipped whenever the client merely *requests* the `arm-service-token` subprotocol, which any browser page can do, so a cross-origin page bypasses the only cross-site protection the WS endpoint has. |
+| D-163 | [#161](https://github.com/uprightbass360/arm-v3/issues/161) | S3 | open | backend | B5 | — | WS handshake verifies only the JWT signature: a disabled user, a deleted user, or an admin still under `password_must_change` can open `/ws` and subscribe to every UI topic. |
+| D-164 | [#162](https://github.com/uprightbass360/arm-v3/issues/162) | S3 | open | backend | B5 | — | `PATCH /api/config` with `null` for any NOT NULL boolean setting still ends in an unhandled IntegrityError (HTTP 500); the D-096 fix covered the int fields only. |
+| D-165 | [#163](https://github.com/uprightbass360/arm-v3/issues/163) | S3 | untested-needs-hardware | backend | B5 | — | `GET /api/logs/{job_id}.zip` is an `async def` that reads up to 5 MB per log file with blocking file I/O on the event loop; on the network-share `/logs` the project itself plans for, one download stalls every REST/WS consumer in the backend. |
+| D-166 | [#164](https://github.com/uprightbass360/arm-v3/issues/164) | S4 | open | backend | B5 | — | `GET /api/logs/{job_id}?limit=0` is accepted (`ge=0`) but returns one line, because the cap is checked only after a line has been yielded. |
+| D-167 | [#165](https://github.com/uprightbass360/arm-v3/issues/165) | S4 | open | backend | B5 | — | After auth, a non-JSON (or binary) WS frame escapes `_serve_loop` as an unhandled `JSONDecodeError`/`KeyError`, so the connection dies with a server traceback and 1011 instead of the `{"op":"error",...}` frame the pre-auth path sends for the same input. |
+| D-168 | [#166](https://github.com/uprightbass360/arm-v3/issues/166) | S4 | open | backend | B5 | — | The notification dispatcher, `/api/system/stats` and the inbox endpoints load whole tables into Python and filter there, explicitly to suit the in-memory `FakeSession`; the dispatcher does it every 5 s against an events table nothing ever prunes. |
+| D-169 | [#167](https://github.com/uprightbass360/arm-v3/issues/167) | S4 | open | docs | B5 | — | `05-cross-cutting.md` describes an authentication model the code does not implement: argon2 parameters, "random generated password", a config-redacting logging helper, and claim-checked transcoder subscriptions. |
+| D-170 | [#168](https://github.com/uprightbass360/arm-v3/issues/168) | S2 | untested-needs-hardware | ripper | R1 | — | `pickup` / `resume_inflight_job` / `recover_held_job` claim the caller's long-lived task as `_active_task`: a re-acquired rip runs inside the heartbeat loop (no heartbeats for hours) and `job.abandoned` cancels the heartbeat loop (or `amain`/`poll_loop`) for good. |
+| D-171 | [#169](https://github.com/uprightbass360/arm-v3/issues/169) | S2 | untested-needs-hardware | ripper | R1 | — | `_tNN.mkv` files are paired with eligible titles by list position, so one title that produces no file shifts every later title onto the wrong file (track A credited with title B's mkv, B marked FAILED). |
+| D-172 | [#170](https://github.com/uprightbass360/arm-v3/issues/170) | S3 | open | ripper | R1 | — | `_run_makemkvcon` cancels the streamer in `finally` before the "drain" await, so robot lines still in the pipe at exit are dropped: MSG:5003 per-title fail reasons and MSG:1002/5037 diagnostics go missing from the error text. |
+| D-173 | [#171](https://github.com/uprightbass360/arm-v3/issues/171) | S3 | untested-needs-hardware | transcode | R1 | — | WS `task.cancel` never stops the encoder: `CancelRequested` raised from the progress callback is swallowed by the engines' `except Exception`, so every cancel falls through to the backend's 10 s grace + docker-stop and the "cancelled by user" `/fail` is never sent. |
+| D-174 | [#172](https://github.com/uprightbass360/arm-v3/issues/172) | S3 | untested-needs-hardware | ripper | R1 | — | `rip_cd` kills only the `abcde` shell script on abandon/timeout; its `cdparanoia`/`flac` children keep reading the drive and writing into the (already rmtree'd) raw dir. |
+| D-175 | [#173](https://github.com/uprightbass360/arm-v3/issues/173) | S4 | untested-needs-hardware | ripper | R1 | — | Multi-GB raw-dir `shutil.rmtree` runs synchronously on the event loop in the WS abandon handler, the boot probe and the backup rip (same class as closed D-108, which fixed only `_scan_extracted`). |
+| D-176 | [#174](https://github.com/uprightbass360/arm-v3/issues/174) | S4 | open | docs | R1 | — | Protocol doc says there is no ripper heartbeat and no timeout-based liveness, while the ripper posts `/api/ripper/heartbeat` every 30 s and the backend derives ONLINE/OFFLINE and "stale" notes from it. |
+| D-177 | [#175](https://github.com/uprightbass360/arm-v3/issues/175) | S4 | open | ripper | R1 | — | makemkvcon and dd failure excerpts keep the first 400 chars of stderr, not the tail, unlike every other engine (and the transcoder's own `_clip_error` rationale). |
+| D-178 | [#176](https://github.com/uprightbass360/arm-v3/issues/176) | S4 | open | transcode | R1 | — | `ffmpeg_audio.py` comment points at a module that does not exist (`ffmpeg_video.py`). |
+| D-179 | [#177](https://github.com/uprightbass360/arm-v3/issues/177) | S3 | untested-needs-hardware | common | C1 | — | `atomic_output` never fsyncs the output and fsyncs the directory *before* the rename, so the documented "write, fsync, rename" durability does not exist. |
+| D-180 | [#178](https://github.com/uprightbass360/arm-v3/issues/178) | S3 | open | migrations | C1 | — | `jobs.metadata_json` and `drives.rip_params_json` are JSONB in the database but `JSON` in the models; 0031's comment states the opposite of what 0001 created. |
+| D-181 | [#179](https://github.com/uprightbass360/arm-v3/issues/179) | S3 | untested-needs-hardware | common | C1 | — | `IdentificationMode` is written by the rip-preset API and seeders but read by nothing; the UI offers "Deferred placeholder" (and Required/Skip) as a rip-preset setting that has no effect. |
+| D-182 | [#180](https://github.com/uprightbass360/arm-v3/issues/180) | S3 | open | common | C1 | — | `move_tree` (DISC_BACKUP passthrough) copies straight into the final folder with no staging: a copy error or a backend crash mid-copy leaves a partial `/media/<Title>` tree, and the helper's own `dst.exists()` guard then refuses every retry. |
+| D-183 | [#181](https://github.com/uprightbass360/arm-v3/issues/181) | S4 | open | common | C1 | — | The OpenAPI wire contract declares no `securitySchemes` and no `security` on any operation, so the snapshot/TS types describe every endpoint (including `/api/ripper/*`, `/api/transcoder/*`, config, users) as unauthenticated. |
+| D-184 | [#182](https://github.com/uprightbass360/arm-v3/issues/182) | S4 | open | common | C1 | — | `CONFIG_FIELD_META` hard-codes the member lists of `PreviouslyRippedAction` and the `metadata_provider` set with no guard that they track the enums. |
+| D-185 | [#183](https://github.com/uprightbass360/arm-v3/issues/183) | S4 | untested-needs-hardware | migrations | C1 | — | `disc_fingerprints.created_at` is nullable with no default in the schema, NOT NULL `now()` in the model, so every fingerprint row on Postgres has `created_at = NULL`. |
+| D-186 | [#184](https://github.com/uprightbass360/arm-v3/issues/184) | S4 | open | migrations | C1 | — | Index inventory drifts between the live schema and the models: three DB-only indexes, one model-only index, and the `uq_transcode_tasks_output_path_live` partial unique index exists only in 0001, so the e2e harness never enforces it. |
+| D-187 | [#185](https://github.com/uprightbass360/arm-v3/issues/185) | S4 | open | common | C1 | — | "Enums are validated at write time in the SQLModel/Pydantic layer" is claimed in three places but nothing validates: `_StrEnumString.process_bind_param` stringifies any value and SQLModel table models skip validation. |
+| D-188 | [#186](https://github.com/uprightbass360/arm-v3/issues/186) | S4 | open | common | C1 | — | `_StrEnumString` sets `cache_ok = True` without exposing `enum_cls` to the cache key, so every enum column type shares one SQL-compilation cache key. |
+| D-189 | [#187](https://github.com/uprightbass360/arm-v3/issues/187) | S4 | open | migrations | C1 | — | Offline rendering (`alembic upgrade --sql`, the mode `env.py` and the migration tests use) crashes in 0032/0033 with `TypeError: 'NoneType' object is not iterable`; the chain test's comment says only 0011 blocks a full-range render. |
+| D-190 | [#188](https://github.com/uprightbass360/arm-v3/issues/188) | S4 | open | backend | C1 | — | Backend statement coverage is 99% (32 missed statements in 9 files) against the documented 100%-statement policy; PR #110 brought it to 100% and the later fix sweeps regressed it. |
+| D-191 | [#189](https://github.com/uprightbass360/arm-v3/issues/189) | S3 | open | ui-neu | U1 | — | A wrong "current password" on /change-password (and Settings > Users, setup step 1) logs the operator out and bounces to /login; the API client treats every 401 as session expiry and discards the backend detail. |
+| D-192 | [#190](https://github.com/uprightbass360/arm-v3/issues/190) | S3 | open | ui-neu | U1 | — | Job detail "redirect to dashboard on 404" never fires: it string-matches `'404'` in a message the API client has replaced with the backend `detail` ("unknown job_id: ..."); both tests pass only because they throw their own `new Error('404 Not Found')`. |
+| D-193 | [#191](https://github.com/uprightbass360/arm-v3/issues/191) | S3 | open | ui-neu | U1 | — | Notifications "Show dismissed" shows nothing after a reload: dismiss sets `cleared=true`, the inbox list omits cleared rows by default and the UI never asks for them. |
+| D-194 | [#192](https://github.com/uprightbass360/arm-v3/issues/192) | S3 | untested-needs-hardware | ui-neu | U1 | — | Transcoder page task list goes stale when the last in-progress task finishes: the jobs poll is stopped by the stats tick without a final reload, and WS events only reload the GPU rows. |
+| D-195 | [#193](https://github.com/uprightbass360/arm-v3/issues/193) | S3 | open | ui-neu | U1 | — | Transcoder Retry/Delete swallow failures: no try/catch, and the `actionFeedback` banner state is declared but never set. |
+| D-196 | [#194](https://github.com/uprightbass360/arm-v3/issues/194) | S3 | open | ui-neu | U1 | — | Per-drive prescan/enumeration settings are dead: Settings feeds DriveCard hard-coded "global defaults" (1 / 300 / 3 / 60) from `arm_config.PRESCAN_*` keys that never exist in the v3 ConfigView, and no ripper or backend code reads `prescan_cache_mb` / `prescan_timeout` / `prescan_retries` / `disc_enum_timeout`. |
+| D-197 | [#195](https://github.com/uprightbass360/arm-v3/issues/195) | S3 | open | ui-neu | U1 | — | `dashboard-page.test.ts` "Dashboard job grouping logic" tests a private re-implementation of the grouping, not the page, and that copy disagrees with the page (`identified` is a review card on the page, "finishing" in the test). |
+| D-198 | [#196](https://github.com/uprightbass360/arm-v3/issues/196) | S4 | open | ui-neu | U1 | — | Three destructive actions still use the native `confirm()` dialog where the shared `ConfirmDialog` exists (same pattern as closed D-026, different sites). |
+| D-199 | [#197](https://github.com/uprightbass360/arm-v3/issues/197) | S4 | open | ui-neu | U1 | — | One-off markup where shared components exist: `&times;` close buttons instead of `CloseButton`, and inline SVGs whose paths are byte-identical to `Glyph` entries (chevron-right, lock, refresh, gear, sun, moon). |
+| D-200 | [#198](https://github.com/uprightbass360/arm-v3/issues/198) | S4 | open | ui-neu | U1 | — | Settings > Themes renders `themeFeedback` twice (once at the top of the section, again inside the User Themes panel) whenever a user theme exists. |
+| D-201 | [#199](https://github.com/uprightbass360/arm-v3/issues/199) | S4 | open | ui-neu | U1 | — | Settings starts a 10 s `/api/drives` poller for every tab (not just Drives) on top of the layout's 5 s dashboard fan-out that already fetches `/api/drives`, and POSTs `/api/drives/rescan` on every visit. |
+| D-202 | [#200](https://github.com/uprightbass360/arm-v3/issues/200) | S4 | open | ui-neu | U1 | — | Transcoder card "Took Xh Ym" is `updated_at - created_at`, so queue wait counts as encode time (sibling of open D-130 on another surface); the task view carries no claimed/started timestamp to compute it correctly. |
+| D-203 | [#201](https://github.com/uprightbass360/arm-v3/issues/201) | S4 | open | ui-neu | U1 | — | Job detail track Title cell is a clickable `<td onclick>` with no role, tabindex or key handler: the inline title editor is mouse-only and invisible to assistive tech. |
+| D-204 | [#202](https://github.com/uprightbass360/arm-v3/issues/202) | S4 | open | ui-neu | U1 | — | Two write actions surface no error: excluding a track (`toggleExcluded`) re-throws into the void and "Run setup again" has no catch. |
+| D-205 | [#203](https://github.com/uprightbass360/arm-v3/issues/203) | S4 | open | ui-neu | U1 | — | `fetchDashboard` throws away `TranscodeStatsView`, so the header's "N queued" badge and the `worker_running` branch of the Transcode health dot are dead code. |
+| D-206 | [#204](https://github.com/uprightbass360/arm-v3/issues/204) | S4 | open | ui-neu | U1 | — | Em-dash and unicode-symbol glyphs in UI copy via HTML entities (`&mdash;`, `&middot;`, `&rarr;`, `&rsaquo;`, `&times;`), which the `[^\x00-\x7F]` pre-commit grep cannot see. |
+| D-207 | [#205](https://github.com/uprightbass360/arm-v3/issues/205) | S3 | open | ui-neu | U2 | — | ApplySessionDialog's session filter disagrees with the backend compatibility rule: it offers TV sessions to CD and data jobs (backend 422s) and hides ISO/data sessions the backend accepts for video jobs; the test pins the wrong filter. |
+| D-208 | [#206](https://github.com/uprightbass360/arm-v3/issues/206) | S3 | untested-needs-hardware | ui-neu | U2 | — | DriveCard "Start rip" is enabled in every drive state: while the drive is already ripping (backend 409), while the tray is reported empty/open (backend 400) and on a detached drive (backend 202, nothing ever starts, no feedback). |
+| D-209 | [#207](https://github.com/uprightbass360/arm-v3/issues/207) | S4 | open | ui-neu | U2 | — | JobActions still uses the native `confirm()` for Abandon and Delete where the shared `ConfirmDialog` exists (same class as closed D-026 / U1 C10, different sites); its test stubs `confirm` globally. |
+| D-210 | [#208](https://github.com/uprightbass360/arm-v3/issues/208) | S4 | open | ui-neu | U2 | — | Banned copy characters (em-dash, `·`, `…`, `▾`, `›`, `○`, gear/triangle numeric entities, `&middot;`, `&rarr;`, `&times;`) rendered from components, stores and utils; the pre-commit config has no non-ASCII/entity check so the memory rule is unenforced. |
+| D-211 | [#209](https://github.com/uprightbass360/arm-v3/issues/209) | S4 | open | ui-neu | U2 | — | Shared-component violations inside components: 15 inline SVGs byte-identical to `Glyph` paths, three notifications components importing lucide `ChevronRight` where `Glyph chevron-right` exists, a pause icon implemented twice (inline SVG and lucide), and a `&times;` close button where `CloseButton` exists. |
+| D-212 | [#210](https://github.com/uprightbass360/arm-v3/issues/210) | S4 | open | ui-neu | U2 | — | MakemkvKeyField runs its own 5 s poller of `/api/config` and `/api/drives` for as long as Settings > Metadata or the setup MakeMKV step is mounted, duplicating the layout's dashboard poll of the same two endpoints (sibling of open D-136 / U1 C13). |
+| D-213 | [#211](https://github.com/uprightbass360/arm-v3/issues/211) | S4 | open | ui-neu | U2 | — | ARIA attributes on role-less elements and mouse-only interactive cells (sibling of closed D-049 and U1 C15, different sites). |
+| D-214 | [#212](https://github.com/uprightbass360/arm-v3/issues/212) | S4 | open | ui-neu | U2 | — | Review card offers "Start rip" ("Save the metadata and start ripping this disc") on a `ripped_awaiting_identify` placeholder whose disc is already ripped; the action only resolves identity (promotes to `ripped`), no rip starts, and the status bar reads "Awaiting Review". |
+| D-215 | [#213](https://github.com/uprightbass360/arm-v3/issues/213) | S4 | open | ui-neu | U2 | — | `colorScheme.ts` built-in schemes still carry the removed legacy alias tokens (`--color-primary-dark`, `--color-primary-light-bg`, `--color-primary-border`, and the `-dark` twins) and `applyTokens` writes them onto `<html>` "for components that still use `dark:bg-surface-dark`"; no component or stylesheet reads them any more (sibling of closed D-047). |
+| D-216 | [#214](https://github.com/uprightbass360/arm-v3/issues/214) | S3 | untested-needs-hardware | devtools | D1 | — | Leaf TLS keys are group-owned by the installer's gid, not `.env`'s `PGID`; the documented "edit PUID/PGID to match your media server" leaves the backend unable to read `tls.key`. |
+| D-217 | [#215](https://github.com/uprightbass360/arm-v3/issues/215) | S3 | untested-needs-hardware | devtools | D1 | — | The UI leaf certificate has no LAN-IP SAN, so trusting `arm-ca.crt` does not silence the warning for the `https://<host-ip>:8081` access path the docs advertise. |
+| D-218 | [#216](https://github.com/uprightbass360/arm-v3/issues/216) | S3 | open | docs | D1 | — | `MAKEMKV_KEY` in `~/arm/.armctl/.env` is documented as a working key source in three places, but no container ever receives it. |
+| D-219 | [#217](https://github.com/uprightbass360/arm-v3/issues/217) | S3 | open | ci | D1 | — | `publish-wiki.yml` syncs `docs/user` to the live GitHub wiki on every `pull_request_review`, i.e. from the PR's unmerged merge commit; its one action is pinned with `# main`, and the `gollum` trigger is dead. |
+| D-220 | [#218](https://github.com/uprightbass360/arm-v3/issues/218) | S3 | open | devtools | D1 | — | `setup-dev.sh` creates `arm/iso-library/` and the template mounts it at `/ingress`, but `.env` never gets `ARM_HOST_ISO_LIBRARY_PATH`, so a dev stack reports "Rip from ISO" as not configured (dev sibling of D-119). |
+| D-221 | [#219](https://github.com/uprightbass360/arm-v3/issues/219) | S3 | open | ci | D1 | — | `weekly-rebuild.yml` refreshes `arm-transcode:<tag>` but not the `:<tag>-nvidia` alias `release.yml` published; the two tags documented as "the same image" diverge after the first weekly run. |
+| D-222 | [#220](https://github.com/uprightbass360/arm-v3/issues/220) | S4 | open | docs | D1 | — | Hardware-Transcoding says NVIDIA needs "driver >= 418.81" while the installer skips NVENC entirely below driver 530. |
+| D-223 | [#221](https://github.com/uprightbass360/arm-v3/issues/221) | S4 | open | docs | D1 | — | Three user pages link to `README.md#local-development`, a heading the README does not have. |
+| D-224 | [#222](https://github.com/uprightbass360/arm-v3/issues/222) | S4 | open | devtools | D1 | — | Stale descriptions of removed behaviour: devtools/README.md says iso-smoke "borrows an enrolled drive"; the compose template says "install.sh adds that volume automatically"; `.env.example` says armctl writes `./ssh`. |
+| D-225 | [#223](https://github.com/uprightbass360/arm-v3/issues/223) | S4 | open | ci | D1 | — | `stale.yml` runs with no `permissions:` block, and CI builds/tests the UI on Node 24 while `.nvmrc`, the ui-neu Dockerfile and `setup-dev.sh` require Node 26. |
+| D-226 | [#224](https://github.com/uprightbass360/arm-v3/issues/224) | S4 | open | docs | D1 | D-019 | User docs still describe the per-drive `armv3-ripper-srN` compose model: container names, "devices passed in / paired by the scanner", a per-drive `ID_PATH` udev rule, and `docker compose exec ripper`. |
+| D-227 | [#225](https://github.com/uprightbass360/arm-v3/issues/225) | S4 | open | docs | D1 | D-056 | Bare `docker compose up -d` is still the instruction in eight developer-facing places, contrary to CLAUDE.md / CONTRIBUTING.md ("never a bare docker compose"). |
+| D-228 | [#226](https://github.com/uprightbass360/arm-v3/issues/226) | S4 | open | docs | D1 | — | Deployment docs describe the optical-access and first-boot mechanisms the code does not use: `group_add`, `CDROM_GID` via `stat -c %g /dev/sr0`, compose `devices:`, and a "random" first-boot admin password. |
+
+## Detail
+
+### D-138  S1  open  backend  slice B5
+
+**Title.** `GET /api/config` returns the legacy `notification_apprise_urls` list verbatim (credentials embedded) to every JWT holder and to the anonymous guest, while the channel view redacts the very same URLs.
+
+**Where.** `services/backend/arm_backend/routers/config.py:110` at `2625b3e7` (`notification_apprise_urls=list(cfg.notification_apprise_urls or [])`), `:64` (`_SECRET_KEYS` is derived from registry secret-tier keys, and the field is deliberately unregistered, `arm_common/config_metadata.py:315-317`), `:126-134` (`get_config` is `require_jwt`, so guests read it). Compare `services/backend/arm_backend/notifications/field_map.py:683-688` ("url-only config (e.g. migration-imported): the url IS the secret" -> redacted). Migration `services/backend/migrations/versions/0015_notification_channels.py:95-115` copies the list into channels and never clears the column.
+
+**What.** Apprise URLs carry the destination's credential (Discord webhook token, SMTP password, Pushover key). Any deployment that saved URLs before migration 0015 still has them in `config.notification_apprise_urls`; 0015 copied them into `notification_channels` (where reads are redacted) but left the originals, and `_to_view` ships them in clear on `GET /api/config`, which is `require_jwt` and therefore readable by the anonymous guest when guest access is on. `ConfigUpdateRequest` no longer accepts the field, so an operator cannot even blank it through the API. The reviewer rated this S2 because only installs predating 0015 are populated; the coordinator raised it to S1 because it is a plain credential disclosure on a guest-readable route (the brief's S1 definition names secret leakage), independent of how many installs carry data. The router docstring (`config.py:3-4`) only promises the URLs never appear in logs.
+
+**Repro / evidence.** Code hunk `config.py:110` + `:120-122` (masking loop covers `tmdb_api_key, omdb_api_key, tvdb_api_key, makemkv_key` only; `notification_apprise_urls` is not in `_SECRET_KEYS` because `config_metadata.py` has no entry for it). `services/backend/tests/test_config_apprise_validation.py:1-9` documents the field as "readable on GET" by design.
+
+**Suggested fix location.** `services/backend/arm_backend/routers/config.py::_to_view` — return `[redact_apprise_url(u) for u in ...]` (helper already exists in `notifications/url_composer.py`) or drop the field from `ConfigView` (OpenAPI regen); optionally a migration that empties the column now that 0015's import is long applied.
+
+**Verification.** code read; masking set confirmed by `uv run python -c "from arm_backend.routers.config import _SECRET_KEYS; print(_SECRET_KEYS)"` -> `{tmdb_api_key, omdb_api_key, tvdb_api_key, makemkv_key}`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/136
+
+### D-139  S2  open  backend  slice B1
+
+**Title.** Output-path templates are never contained to MEDIA_ROOT: `validate_template` accepts a leading `/` and `..`, `expand_template` strips a leading `/` only when an optional token drops, and every consumer joins `media_root / output_path` so an absolute template writes, previews and deletes outside the media root.
+
+**Where.** `services/backend/arm_backend/path_template.py:161-185` (no `/` or `..` check), `:126-130` (collapse only when `dropped`), `services/backend/arm_backend/transcode_apply.py:243,302`, `services/backend/arm_backend/routers/jobs.py:474,715,810` (`path.unlink()` with no `is_within`; only the folder branch at :789 checks), `services/transcode/arm_transcode/main.py:221,247`, `services/backend/arm_backend/passthrough_executor.py:222` at `2625b3e7`.
+
+**What.** `POST /api/sessions` with `output_path_template="/{title} ({year?})/{title}.{ext}"` is accepted (synthetic expansion `/Iron Man (2008)/Iron Man.mkv` is non-empty) and `/api/sessions/preview` shows it as fine. At apply time `Path(media_root) / "/Iron Man (2008)/..."` is the absolute path, so the transcoder writes outside `/media` and then `final_output.relative_to(media_root)` (main.py:247) raises `ValueError` after the file is written, outside the try, so the task is neither completed nor failed and sits until the stale-claim sweep. The same job with no year yields `Iron Man/Iron Man.mkv` (relative, inside the root) because the optional-token collapse drops the empty leading segment, so one template roots its output in two different places depending on disc data. `_delete_job_files` later `unlink`s whatever absolute `output_path` a DONE task recorded without a containment check (folders are checked, files are not). Templates are admin-authored, hence S2 rather than S1; but the validator, preview and `/api/naming/validate` all accept it and `fileops.safe_join` exists for exactly this.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B1/tpl.py
+validate '/{title}.{ext}' -> '/Iron Man.mkv'
+validate '../{title}.{ext}' -> '../Iron Man.mkv'
+validate '/etc/{title}.{ext}' -> '/etc/Iron Man.mkv'
+validate '{title}/../../{title}.{ext}' -> 'Iron Man/../../Iron Man.mkv'
+year present: '/Iron Man (2008)/Iron Man.mkv'      joined (present): /Iron Man (2008)/Iron Man.mkv
+year empty:   'Iron Man/Iron Man.mkv'              joined (empty):   /media/Iron Man/Iron Man.mkv
+```
+
+**Suggested fix location.** `path_template.validate_template` (reject a template whose synthetic expansion starts with `/` or has a `..` segment, and normalise `expand_template` so the collapse is not data-dependent) plus `safe_join(media_root, output_path)` at the three join sites (`compute_outputs`/`find_collisions`, `_delete_job_files`, transcoder/passthrough).
+
+**Verification.** Scratch script above (real `path_template`/`compute_outputs` code); transcoder join read at main.py:221,247; not run against the stack (would need `devtools/iso-smoke.sh` with a `/`-prefixed clone template).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/137
+
+### D-140  S3  open  backend  slice B1
+
+**Title.** The Blu-ray-backup (FOLDER) session guard only exists on the direct apply path; a FOLDER session parked pre-rip (apply on `awaiting_review`/`identified`, resolve fan-out, or redrain) fans out at rip-complete and files a title `.mkv` as an extension-less `Title (Year)` file.
+
+**Where.** `services/backend/arm_backend/auto_session.py:352-374` (guard in `_apply_session_internal` only) vs `:687-852` (`fan_out_waiting_identify_applications` -> `_fan_out_tasks_for_application` at `:429-659`, no FOLDER/backup-track check) at `2625b3e7`.
+
+**What.** Pre-rip, `_apply_session_internal` skips the guard ("Only once ripped") and parks the application as `no_tracks`. The rip then runs with the ROUTED preset (title-based for a DVD or a non-backup Blu-ray route), and `drain_parked_applications_after_rip` promotes the parked row through `_fan_out_tasks_for_application`, which has no backup-track check: `compute_outputs` matches `VIDEO_TITLE` tracks for the ISO-typed session and renders `{title} ({year?})` as the task's `output_path`. One title -> a passthrough task that `transcode_none`s `title_t01.mkv` to `media/Iron Man (2008)` (a file, no extension, exactly what the guard's comment says it prevents). Two or more titles -> `duplicate_in_request` collision, parked forever. The manual post-rip apply of the same session on the same job correctly 422s.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B1/folder_drain.py   # FakeSession, RIPPED DVD job, one VIDEO_TITLE track
+manual post-rip apply -> media_mismatch | the Blu-ray decrypted backup session files a disc backup; this job has no backup track
+drain -> queued skipped_reason= None tasks= [('trk_1', 'Iron Man (2008)')]
+```
+
+**Suggested fix location.** `auto_session._fan_out_tasks_for_application` (move the FOLDER/no-backup-track check there, next to the media-mismatch gate, so apply, resolve fan-out and redrain share it) - the check needs `rip_preset`, so load it in `fan_out_waiting_identify_applications` like `transcode_preset`.
+
+**Verification.** Scratch FakeSession script above against the real `auto_session` code.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/138
+
+### D-141  S3  open  backend  slice B1
+
+**Title.** Pre-rip manual apply is not idempotent: two clicks park two `waiting_identify` rows for the same session, the second stays parked with `collisions` forever after rip-complete, nothing can cancel it, and the duplicate also breaks the auto-apply idempotency lookup (`scalar_one_or_none` -> `MultipleResultsFound`).
+
+**Where.** `services/backend/arm_backend/auto_session.py:312-329` and `:510-527` (new `SessionApplication` per call, no existing-row check for `source="manual"`), `:229-235` (`scalar_one_or_none()` on `(session_id, job_id)`), `services/backend/arm_backend/routers/jobs.py:196-201` (`parked_session_ids`) at `2625b3e7`; no router exposes a cancel/delete for a `SessionApplication` (grep `session_applications?/\{` in `routers/` -> none).
+
+**What.** Post-rip, a second apply of the same session gets 409 `collisions` (visible, correct). Pre-rip (`identified`, `awaiting_review`, `awaiting_user_id`, `ripped_awaiting_identify`) every click returns 200 and inserts another parked row. At rip-complete the drain promotes the first and parks the second with `collisions` (same job's own task). `_parked_apps_are_settled` hides it from the progress rollup, but `parked_session_ids` keeps listing the session as "waiting" on a job that is transcoding/complete, with no way to clear it short of deleting the job. If the drive default or `pending_session_id` names the same session and the drain's outcomes are all skips, `maybe_auto_apply_session`'s `scalar_one_or_none()` raises `MultipleResultsFound`, swallowed by the blanket `except Exception` as "auto-apply unexpected error". The API is documented as "non-idempotent on purpose" for the post-rip case, where the collision flow makes it safe; nothing makes the pre-rip case safe.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B1/double_apply.py   # FakeSession, IDENTIFIED job, apply twice, then after_rip
+pre-rip apply #1 -> status=waiting_identify skipped=no_tracks idempotent=False
+pre-rip apply #2 -> status=waiting_identify skipped=no_tracks idempotent=False
+parked rows after two clicks: 2
+after_rip -> sap_...GCMMN queued skipped= None
+after_rip -> sap_...DFK91 waiting_identify skipped= collisions detail= output path collisions: 1 path(s) already claimed
+rollup: state='transcoding' tasks_total=1 ...   parked_session_ids: ['ses_x']
+```
+
+**Suggested fix location.** `auto_session._apply_session_internal` - return the existing `WAITING_IDENTIFY` row for the same `(session_id, job_id)` as `idempotent=True` on the park paths (and use `.scalars().first()` in the auto lookup); optionally a `DELETE /api/jobs/{id}/transcode/{application_id}` for parked rows.
+
+**Verification.** Scratch FakeSession script above against the real `auto_session`/`routers.jobs` code.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/139
+
+### D-142  S3  open  backend  slice B1  regression of D-081
+
+**Title.** Residual D-081: an unidentified `ripped_partial` job with a parked application still rolls up as `state=transcoding tasks_total=0`, and the UI folds `ripped_partial` + transcoding into "Transcoding 0/0" with live polling while the job actually needs identification.
+
+**Where.** `services/backend/arm_backend/routers/jobs.py:213-214` (`_parked_apps_are_settled` -> False for RIPPED_PARTIAL+unidentified), `:240-249` (the row then counts as in flight), `services/ui-neu/frontend/src/lib/utils/job-status.ts:5,17-20` (`POST_RIP` includes `ripped_partial`; `transcoding` wins) at `2625b3e7`.
+
+**What.** The #259 fix filters parked rows only once the drain has settled, and deliberately leaves the RIPPED_PARTIAL+`flags.unidentified` case unsettled because resolve will drain it. But a parked row with zero tasks is then fed to `_session_app_is_terminal`, which treats WAITING_IDENTIFY as non-terminal, so `transcode_progress` is `transcoding / 0 of 0 / 100%`. For `ripped_awaiting_identify` the UI does not fold (not in `POST_RIP`) so the status stays honest; for `ripped_partial` it does, so the dashboard/detail show "Transcoding 0/0", the lifecycle stepper sits on the transcode stage and the page polls, when the operator action is "identify this disc". The parked-session line says "waiting" on the same page.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B1/partial_rollup.py
+settled: False
+summary: state='transcoding' tasks_total=0 tasks_done=0 tasks_failed=0 percent=100.0
+```
+Flow: identify with `block_on_miss=false` (sets `flags.unidentified`), apply a session pre-rip (parks), rip-complete with one failed track -> RIPPED_PARTIAL, `after_rip` skipped (ripper.py:1380-1387), `GET /api/jobs/{id}` -> `transcode_progress.state == "transcoding"`.
+
+**Suggested fix location.** `routers/jobs._summarize_transcode_progress` - exclude zero-task WAITING_IDENTIFY rows from the rollup whenever the job is post-rip (they are never "in flight"; `parked_session_ids` already carries them), or have `_parked_apps_are_settled` return True and let the UI's parked line say "waiting for identify".
+
+**Verification.** Scratch call of the real summary function above; UI fold read at job-status.ts:14-33.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/140
+
+### D-143  S3  untested-needs-hardware  backend  slice B1
+
+**Title.** `DELETE /api/jobs/{id}` and `DELETE /api/jobs` accept a `ripped` job whose transcode tasks are `in_progress`: the cascade deletes the task under the running transcoder, its `/complete`/`/fail` 404s, the GPU row stays BUSY with a NULL claim until the next backend restart, and `delete_raw=true` rmtrees the encoder's input mid-run.
+
+**Where.** `services/backend/arm_backend/routers/jobs.py:863-867,879` and `:935-948` (terminal check only; `TERMINAL_JOB_STATUSES` includes RIPPED/RIPPED_PARTIAL), `packages/arm_common/arm_common/schemas/jobs.py:198` (`can_delete=status in TERMINAL_JOB_STATUSES`, which the UI's Delete button follows: `JobActions.svelte:18,111`) at `2625b3e7`. Contrast `routers/transcodes.py:226-236` (an IN_PROGRESS task delete goes through `cancel_running`).
+
+**What.** A transcode runs only on a terminal job, so Delete is offered exactly while the transcoder is working. On delete, `session_applications`/`transcode_tasks` cascade (FK), `gpus.claimed_by_task_id` is SET NULL but `status` stays BUSY; `sweep_stale_claims` only scans IN_PROGRESS tasks (gone) and `_release_orphaned_gpu_claims` (main.py:95-116) runs at boot only, so a single-GPU host stops dispatching GPU encodes until the backend restarts. The container keeps encoding into `/media` (output lands untracked, `.arm-inprogress` swept later) and its final PATCH 404s (`routers/transcoder.py:62-64`, `api_client.py:99/108 raise_for_status`). With `delete_raw=true`, `/raw/<job>/` is removed while HandBrake reads it. Workaround: cancel the job's tasks via `/api/transcodes/{id}` first.
+
+**Repro / evidence.** Code trace: `delete_job` has no task-status check; `TERMINAL_JOB_STATUSES` (`enums.py:118-126`); `release_gpu_for_task` callers (`transcode_dispatcher.py:152-162`; transcoder.py:244,305; dispatcher :395,1440; transcodes.py:248) - none reachable from a job delete.
+
+**Suggested fix location.** `routers/jobs.delete_job` / `delete_all_jobs` (409 while any of the job's tasks is IN_PROGRESS, or route them through `cancel_running` and `release_gpu_for_task` first) and `job_actions_for` so `can_delete` reflects it.
+
+**Verification.** Code trace only; untested-needs-hardware for the GPU hold (`devtools/iso-smoke.sh` with a GPU preset, then `DELETE /api/jobs/{id}` mid-encode and `GET /api/gpus`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/141
+
+### D-144  S3  open  backend  slice B1
+
+**Title.** `DELETE /api/sessions/{id}` 500s for any session that has ever been applied to a job: `session_applications.session_id` is `ON DELETE RESTRICT` and the handler has no `IntegrityError` mapping.
+
+**Where.** `services/backend/arm_backend/routers/sessions.py:198-209` (only built-in and drive-default checks, then `db.delete` + `commit`), `packages/arm_common/arm_common/models/session_application.py:21-23` and `services/backend/migrations/versions/0001_initial.py:264` (`ondelete="RESTRICT"`) at `2625b3e7`.
+
+**What.** The UI enables Delete on every non-builtin session (`SessionCard.svelte:105`), but once a session has an application row (every applied or auto-applied rip) Postgres refuses the delete and the unhandled `IntegrityError` becomes a 500 with no explanation; `session_routes.py:84-109` handles the same class for routes. The fake-session tier cannot see FK violations (`test_delete_non_builtin_204` passes with a job history absent). Workaround: delete the jobs that used the session first (their applications cascade).
+
+**Repro / evidence.** Needs a real Postgres (`tests/e2e` harness): create a session, apply it to a ripped job, `DELETE /api/sessions/{id}` -> 500 `IntegrityError ... session_applications_session_id_fkey`. `test_fk_ondelete.py` does not list `session_applications.session_id`, so the RESTRICT is also unaudited.
+
+**Suggested fix location.** `routers/sessions.delete_session` - pre-check `SessionApplication` rows and 409 with the job count (mirrors the drive-default check), or catch `IntegrityError` -> 409; add the FK to `test_fk_ondelete._EXPECTED`.
+
+**Verification.** Code trace (model + migration + handler); not executed (no Postgres in the sandbox).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/142
+
+### D-145  S3  open  backend  slice B1
+
+**Title.** The lenient episode-token render expands the template segment by segment, so a segment made only of an optional token (`{year?}`) raises "output path is empty once optional tokens ... are dropped" for a bonus/extra title when the year is unknown, failing an apply that validates and that renders fine for the episode titles.
+
+**Where.** `services/backend/arm_backend/transcode_apply.py:173-184` (`_render_with_empty_episode`: `expand_template(seg_template, ctx)` per `/`-segment) vs `path_template.py:126-130` (whole-template collapse drops empty segments) at `2625b3e7`.
+
+**What.** `compute_outputs` takes the per-segment branch only when an episode token is allowed empty (an `extra`/`trailer`/`other` track on a TV disc). `expand_template` on the lone segment `{year?}` collapses to the empty string and raises, whereas the whole-template path for an episode track collapses the same segment away. Result: a TV disc with one extra and no year -> manual apply 422 "output path is empty once optional tokens with no value are dropped" (misleading: the path is not empty), drain/redrain park the application with reason `template`. Workaround: exclude the extra or move `{year?}` into a bracketed segment.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B1/episode.py   # tpl "{show}/{year?}/Season {season}/{show} - S{season}E{episode} - {episode_title?}.{ext}", job.year=None
+validate: Battlestar Galactica/2004/Season 01/Battlestar Galactica - S01E01 - Pilot.mkv
+episode only : [ResolvedTask(track_id='trk_1', output_path='Show/Season 01/Show - S01E01 - Pilot.mkv')]
+episode+extra RAISED: TemplateValidationError output path is empty once optional tokens with no value are dropped
+```
+
+**Suggested fix location.** `transcode_apply._render_with_empty_episode` - expand the whole template once, then tidy only the segments that referenced an empty episode token (split after expansion), or let `expand_template` take an `allow_empty` flag for the per-segment calls.
+
+**Verification.** Scratch script above against the real `compute_outputs`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/143
+
+### D-146  S4  open  backend  slice B1
+
+**Title.** Renaming a built-in session/preset is allowed and tested at the API, but the seeder re-syncs `name` on every boot, so the rename silently reverts at the next backend restart; two tests enshrine the contradiction.
+
+**Where.** `services/backend/arm_backend/routers/sessions.py:3-5,135` ("can be renamed (so users can disambiguate ...)"), `routers/rip_presets.py:108-111`, `routers/transcode_presets.py:102-105` vs `services/backend/arm_backend/seeders.py:493-516` (`sync_fields=("name", ...)` overwrites a differing name) at `2625b3e7`; `tests/test_sessions_router.py:218` (`test_patch_builtin_only_name_allowed`, 200 "Renamed") vs `tests/test_seeders_full.py:131` (`test_run_seeders_corrects_builtin_names`).
+
+**What.** `PATCH /api/sessions/ses_builtin_movie_plex_1080p {"name": "Plex 1080p (legacy)"}` returns 200 and persists; `run_seeders` on the next start sets it back to "Movie to Plex 1080p H.265". The UI only offers View for built-ins (`SessionCard.svelte:103`), so this is API/docstring-level, but the docstring promise and the test are false.
+
+**Repro / evidence.** `grep -n 'sync_fields' seeders.py` -> `("name",)` default, Sessions `("name", "output_path_template")`; the two tests above.
+
+**Suggested fix location.** Either drop `name` from `sync_fields` (keep the one-off cleanup as a migration) or make the routers refuse `name` on built-ins and fix the three docstrings.
+
+**Verification.** Code read + both tests present in the 383-test subset run.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/144
+
+### D-147  S4  open  backend  slice B1
+
+**Title.** Four 4xx detail strings call `.value` on a status that `_StrEnumString` may have loaded as a raw `str`, turning the intended 409 into a 500; sibling handlers already use `enum_value_str` for this.
+
+**Where.** `services/backend/arm_backend/routers/jobs.py:513` (abandon), `:866` (delete), `:1140` (resolve), `services/backend/arm_backend/auto_session.py:336` (apply) at `2625b3e7`; cf. `:546,607,671` using `enum_value_str`, and `packages/arm_common/arm_common/models/_columns.py:60-71` documenting the hazard.
+
+**What.** A job row written by a newer build with an unknown status loads as `str` (forward-compat, `_columns.py:43-57`); it is not in any status set, so these branches run and `str.value` raises `AttributeError` -> 500 where a 409 was intended.
+
+**Repro / evidence.** `grep -n 'status.value' services/backend/arm_backend/routers/jobs.py services/backend/arm_backend/auto_session.py`.
+
+**Suggested fix location.** The four lines - use `enum_value_str(job.status)`.
+
+**Verification.** Code read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/145
+
+### D-148  S3  open  backend  slice B2
+
+**Title.** `POST /api/ripper/jobs/{id}/recovery-abandon` never commits: the abandon is rolled back when the request session closes, so the ripper's reboot recovery announces `rip.abandoned` for a job that stays `awaiting_review`.
+
+**Where.** `services/backend/arm_backend/routers/ripper.py:1204-1215` at `2625b3e7` (`job.status = ABANDONED; session.add(job); await cancel_parked_applications(...); await session.flush(); await hub.emit(..., session=session); return job`), with `WSHub.emit` only `session.add(Event)` + `flush()` (`arm_backend/ws/hub.py:88-100`) and `db.get_session` closing the session without a commit (`arm_backend/db.py:44-46`).
+
+**What.** Every other mutating route in this file commits (`heartbeat :363`, `register :534`, `identify :823`, `update_track :1264`, `rip_complete :1339`); this one stops at `flush()`. On Postgres the UPDATE and the `rip.abandoned` Event INSERT are rolled back at session close, while the WS broadcast has already gone out and the 200 body says `abandoned`. The ripper's boot probe (`services/ripper/arm_ripper/recovery.py:124-129`) treats the 200 as "disc re-enters review fresh", lets the InsertDetector re-fire, and the next `identify` finds the same still-`awaiting_review` job through `find_reusable_job_for_disc` (PRE_RIP -> `reuse`, `disc_dedupe.py:88`) with its original `wait_start_time`, so the held disc keeps a countdown anchor from before the restart instead of the fresh one the design promises; the dashboard that saw `rip.abandoned` contradicts `GET /api/jobs` until the next poll. The tier-1 tests (`test_ripper_router.py:1309-1347`) pass because `FakeSession` keeps in-memory mutations without a commit (a test passing for the wrong reason); no e2e test covers the route.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B2/recovery_abandon_commit.py
+handler returned status: abandoned
+persisted status after the request session closed: awaiting_review
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/ripper.py` `recovery_abandon` — `await session.commit()` after the emit (then `refresh(job)` is unnecessary since `JobView` carries no `updated_at`), and add a real-DB e2e test for the route.
+
+**Verification.** Reproduced zero-infra with a real SQLite `AsyncSession` (script above); code read of `get_session`/`WSHub.emit`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/146
+
+### D-149  S4  open  backend  slice B2
+
+**Title.** System diagnostics' `drives` check and `/api/system/stats.drives_online` count every `status == online` row, and scanner-created DETECTED rows (plus virtual ISO rows) are `online` by server default, so "no online drives registered" never fires once a drive is merely plugged in.
+
+**Where.** `services/backend/arm_backend/routers/system.py:142-149` and `:278-280` at `2625b3e7`; the rows come from `services/backend/arm_backend/drive_scanner.py:218-224` (`Drive(id=..., hostname=..., device_path=..., lifecycle=DETECTED, present=True)` sets no `status`, and `models/drive.py` gives the column `server_default='online'`) and `iso_rips.py:358` (`status=DriveStatus.ONLINE` for virtual drives).
+
+**What.** The check is meant to tell a fresh install "no ripper serves a drive yet" (docstring at `system.py:5-9`: "no rippers registered yet"). After the first scanner tick on a host with an optical drive there is a DETECTED row with `status=online`, so the check reads `ok` although nothing is enrolled; an ignored drive keeps it `ok` forever, and a running ISO rip flips a drive-less host to `ok`. `stats.drives_online` has the same shape. The sibling counters were already fixed to filter on lifecycle/kind (`drives.py:255-265`, D-010), these two were not.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B2/drive_status_default.py
+in-memory status before insert: None
+status after insert (server default): online | lifecycle: detected
+rows matched by status==ONLINE (system diagnostics 'drives' check): ['drv_scan1']
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/system.py` — filter `Drive.kind == OPTICAL` and `Drive.lifecycle == ENROLLED` (or count `present` enrolled rows) in both places; or have the scanner set `status=OFFLINE` on rows it creates.
+
+**Verification.** Scratch script above (real SQLite session); code read of both counters.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/147
+
+### D-150  S4  open  backend  slice B2
+
+**Title.** `/api/iso` resolves the ripper manager without the `host_paths_set()` gate `/api/drives` applies, so on a docker-but-no-`ARM_HOST_*_PATH` stack `POST /api/iso/rips` commits a virtual drive, fails inside docker, retires it and answers 500 instead of the 503 "ripper manager disabled" the drives router gives.
+
+**Where.** `services/backend/arm_backend/routers/iso.py:51-58` (`_manager`: `is None` check only) vs `services/backend/arm_backend/routers/drives.py:377-389` (`_manager`: `is None` -> 503, `not host_paths_set()` -> 503) at `2625b3e7`; `main.py:333-340` keeps a disabled manager on `app.state` on purpose.
+
+**What.** `main.py` deliberately stores the manager even when `ARM_HOST_RAW_PATH`/`ARM_HOST_LOGS_PATH`/certs are unset (diagnostics distinguishes the two cases). `create_iso_rip` then reaches `ensure_running` with `volumes={"": {...}}` (`ripper_manager.py:141-146`), docker rejects it, `retire_virtual_drive` runs and the client gets `500 could not start the ISO ripper: APIError ...` plus a RETIRED drive row for a rip that could never start. Realistic only when `ARM_HOST_ISO_LIBRARY_PATH` is set while the other host paths are not (`library_configured()` gates on it alone), so it is an inconsistency more than a hazard.
+
+**Repro / evidence.**
+
+```
+# routers/iso.py:51-58 has no `manager.host_paths_set()` branch; routers/drives.py:384-388 does.
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/iso.py` `_manager` — reuse `routers.drives._manager` (or add the same 503 branch).
+
+**Verification.** Code read; no runtime test (needs a docker socket).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/148
+
+### D-151  S4  open  common  slice B2
+
+**Title.** `DriveStatus.RIPPING` is a dead enum value: nothing in the backend or ripper ever writes it, and the drive diagnostic has no branch for it.
+
+**Where.** `packages/arm_common/arm_common/enums.py:15` at `2625b3e7`; heartbeat/register/diagnostic handle only ONLINE/OFFLINE/ERROR (`routers/ripper.py:354-361`, `routers/drives.py:153-156`).
+
+**What.** `grep -rn "DriveStatus.RIPPING" services/ packages/ --include=*.py | grep -v tests` returns nothing. The wire type (`DriveView.status`) therefore advertises a state the UI can never receive; a drive's rip state is derived from `current_job` instead. Dead code in the shared contract.
+
+**Repro / evidence.**
+
+```
+$ grep -rn "DriveStatus.RIPPING" services/ packages/ --include=*.py | grep -v tests   # (no output)
+```
+
+**Suggested fix location.** `packages/arm_common/arm_common/enums.py` — drop the member (regen OpenAPI snapshot + TS types), or document it as reserved.
+
+**Verification.** grep at `2625b3e7`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/149
+
+### D-152  S3  untested-needs-hardware  backend  slice B3
+
+**Title.** Remote docker-over-SSH: an idle transport death is swallowed by the spawn-gating probe ("docker host unreachable") before `_spawn_container` runs, so the transport-rebuild path never fires and encode spawns stay held until the backend restarts.
+
+**Where.** `services/backend/arm_backend/transcode_dispatcher.py:711-717` (probe gate `continue`s before any spawn), `:1119-1129` (`_probe_pulling_base_image`), `:1234-1236` (the only call to `_is_transport_death` / `_docker_factory`), `docker_probe.py:119-131` (`probe_docker` catches every exception as "unreachable") at `2625b3e7`.
+
+**What.** The rebuild machinery (`_TRANSPORT_DEAD_ERRORS`, `_docker_factory`) exists for "an idle paramiko connection reset by the remote end" (`:92-99`). But a dead paramiko transport fails every docker-py call, `client.ping()` included, and `spawn_pending` consults `probe()` first: `probe_docker` returns `(False, "docker host unreachable: EOF")`, the task is held (`held_encode += 1; continue`) and `_spawn_container` is never reached, so the client is never rebuilt. The TtlProbe re-pings the same dead client every 30 s forever; `/api/system/diagnostics` reports the GPU host as unreachable although it is up. The only recovery is a backend restart. Side effect: `_probe_pulling_base_image` misreads the dead transport as "base image missing" and spends a `_pull_image` attempt (`:1127`), recording a 600 s pull cooldown for the base image. The existing test `test_spawn_rebuilds_docker_client_on_dead_ssh_transport` (`services/backend/tests/test_transcode_dispatcher.py:534-563`) passes only because its "dead" MagicMock still answers `ping()` and `images.get()` successfully, a shape a dead transport never produces.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B3/repro_transport_death.py   # dead.ping/images.get raise EOFError, containers.run raises SSHException, factory returns a fresh client
+WARNING arm_backend.transcode_dispatcher: could not pull base image arm-transcode:latest (EOF); encode tasks stay held, next pull attempt in 600 s
+WARNING arm_backend.transcode_dispatcher: transcode spawns held: docker host unreachable: EOF
+tick 0: spawned=0 factory_calls=0 docker_is_dead=True probe=(False, 'docker host unreachable: EOF')
+tick 1: spawned=0 factory_calls=0 docker_is_dead=True probe=(False, 'docker host unreachable: EOF')
+tick 2: spawned=0 factory_calls=0 docker_is_dead=True probe=(False, 'docker host unreachable: EOF')
+containers.run called on dead client: 0
+fresh client ever used: 0
+```
+
+**Suggested fix location.** `services/backend/arm_backend/transcode_dispatcher.py` — in `probe()`/`_probe_pulling_base_image` (or inside `TtlProbe`'s callable), when `probe_docker` fails with `_is_transport_death(exc)` and a factory exists, rebuild the client and re-probe once (the same logic `_spawn_container` has), and have `probe_docker` return the exception so the caller can classify it; fix the dead-client fixture in `test_transcode_dispatcher.py:542` to raise on `ping()` too. The GPU probe runner (`gpu_probe_runner.py:398`) and `cancel_running` (`:1416`) share the client and also never rebuild.
+
+**Verification.** Scratch repro above (zero-infra). Live confirmation untested-needs-hardware: on a remote-offload install (`ARM_TRANSCODE_DOCKER_HOST=ssh://...`), let the backend idle until sshd drops the connection (or `ssh host 'sudo ss -K dport = :22'` from the GPU host), queue an encode, watch `transcode spawns held: docker host unreachable` repeat with no `rebuilding client` line.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/150
+
+### D-153  S3  untested-needs-hardware  backend  slice B3
+
+**Title.** Stale-claim sweep assumes the transcoder is dead: a backend outage longer than `ARM_TRANSCODE_STALE_THRESHOLD_SECONDS` (90 s) re-queues a task whose container is still encoding, releases its GPU mid-encode, and the re-spawn collides on the fixed container name until the task is terminally FAILED two ticks later.
+
+**Where.** `services/backend/arm_backend/transcode_dispatcher.py:393-395,433-435` (release + reset with the comment "a stale claim cannot be holding a real container any more"), `:1218-1224` (`name=hostname` derived from the task id), `:840-857` (`_count_failed_spawn` counts the name conflict as an attempt; attempts was already 1 from the claim), `services/transcode/arm_transcode/heartbeat.py:80-81` (a 403/409 heartbeat is logged and the encode continues) at `2625b3e7`.
+
+**What.** The transcoder heartbeats every 30 s and keeps encoding when a heartbeat fails. If the backend is unreachable to it for > 90 s (slow redeploy with image rebuild, DB outage, network blip to a remote GPU host, backend host reboot while the GPU host keeps running), the first tick after recovery resets the task to QUEUED with `claimed_by=None` and flips its GPU AVAILABLE while the device is still in use (another task can now claim it). The next tick re-spawns with the same `name=arm-transcode-<id[-12:]>`; docker refuses the duplicate name, `_count_failed_spawn` takes attempts 1->2->3 and `_fail_queued_task` marks the task FAILED ("transcode container could not start ... Conflict") about 10 s after the sweep. The original encode then finishes, renames its output into `/media`, and its `/complete` gets 403 (`claimed_by=None`), so the job shows a FAILED transcode while the file exists; a Retry re-encodes from scratch over it. The sweep should check for a live container by label (as `cancel_running` does at `:1416`) and either keep the claim or stop the survivor before re-queueing, and the transcoder should abort on a 403/409 heartbeat instead of carrying on.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B3/repro_stale_alive.py   # IN_PROGRESS task, heartbeat 95 s old, GPU BUSY; docker.run raises the 409 name-conflict APIError
+WARNING ... transcode task reset to queued after stale claim task_id=txt_1 attempts=1
+after sweep: touched=1 status=queued claimed_by=None attempts=1 gpu=available claim=None
+ERROR ... transcode spawn failed task_id=txt_1: Conflict. The container name "/arm-transcode-txt_1" is already in use by container "abc"
+tick 0: status=queued attempts=2 last_error=None
+ERROR ... transcode task failed before spawn task_id=txt_1: transcode container could not start (attempts=3): APIError: Conflict. ...
+tick 1: status=failed attempts=3 last_error='transcode container could not start (attempts=3): APIError: Conflict. The container name "/arm-transcode-txt_1" is already in use ...'
+```
+
+**Suggested fix location.** `services/backend/arm_backend/transcode_dispatcher.py` `sweep_stale_claims` — before resetting, `containers.list(filters={"label": f"{_DOCKER_LABEL_KEY}={task.id}"})`; if a container is running, refresh `claim_heartbeat_at` (or stop it first) instead of releasing the GPU and re-queueing; `services/transcode/arm_transcode/heartbeat.py` — treat a 403/409 heartbeat as "task lost" and cancel the encode.
+
+**Verification.** Scratch repro above for the sweep + attempts arithmetic; live drill untested-needs-hardware: start a GPU encode, `docker pause arm-backend` for 100 s, `docker unpause`, then `SELECT status,attempts,last_error FROM transcode_tasks` and `SELECT status,claimed_by_task_id FROM gpus` within 15 s; watch the transcoder log for `heartbeat REST failed` then a 403 on `/complete`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/151
+
+### D-154  S3  open  backend  slice B3
+
+**Title.** `PATCH /api/transcode-presets/{id}` with an explicit `"tool": null` or `"container": null` (both nullable in the OpenAPI schema) returns 500 instead of 422.
+
+**Where.** `services/backend/arm_backend/routers/transcode_presets.py:101` (only `encoder` is filtered out of the null-valued fields), `:117-118` (`setattr(row, key, None)` on NOT NULL columns), `packages/arm_common/arm_common/schemas/sessions.py:109,112` (`tool: TranscodeTool | None`, `container: ContainerFormat | None`) at `2625b3e7`.
+
+**What.** The update schema advertises `tool` and `container` as nullable, so a client that round-trips the form state sends `null` for an untouched field. `fields = model_dump(exclude_unset=True)` keeps `{"tool": None}`, the route writes `None` onto a NOT NULL VARCHAR column and commits: against Postgres the commit raises IntegrityError (500, row unchanged); against the response model `TranscodePresetView.tool: TranscodeTool` it is a ResponseValidationError (500) even before the DB. `encoder` already gets the "explicit null means leave it" treatment one line above; `tool`/`container` need the same, or a 422. Noted as "found on the way" in `.claude/memory/project_encoder_first_presets.md` but never filed.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B3/repro_preset_null.py   # FastAPI TestClient over the router with FakeSession
+{'tool': None} -> 500 Internal Server Error | stored tool= None container= mkv
+{'container': None} -> 500 Internal Server Error | stored tool= None container= None
+{'name': 'ok', 'container': None} -> 500 Internal Server Error | stored tool= None container= None
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/transcode_presets.py:101` — drop `tool`/`container` from `fields` when `None` (same as `encoder`), or make `TranscodePresetUpdateRequest` reject null for the NOT NULL columns and regenerate the OpenAPI snapshot + TS types.
+
+**Verification.** Scratch repro above; `test_transcode_presets_router.py::test_patch_null_encoder_leaves_it_unchanged` covers only `encoder`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/152
+
+### D-155  S3  open  backend  slice B3
+
+**Title.** `POST /api/transcodes/{id}/retry` re-queues the task but leaves its session application terminal (FAILED/DONE_PARTIAL, `completed_at` set), so the job's transcode summary reads "done" (0/1) while the retried encode is queued or running.
+
+**Where.** `services/backend/arm_backend/routers/transcodes.py:146-153` (status/progress/claim reset only, no application update, no WS event), consumer at `services/backend/arm_backend/routers/jobs.py:190-193` (`_session_app_is_terminal` trusts the application status) and `:249-265` (all-terminal + no failed tasks -> `"done"`) at `2625b3e7`.
+
+**What.** When the last task of an application fails, `aggregate_session_application` moves the application to FAILED with `completed_at`. Retry flips only the task row. `_summarize_transcode_progress` then sees a terminal application, `tasks_failed=0`, and reports `state="done", percent=0.0, tasks_done=0/1` for a job whose only transcode is QUEUED/IN_PROGRESS; the Transcoder page (polling `/api/transcodes`) shows it in progress at the same time. The application is only corrected when the retried task completes (aggregate FAILED->DONE); if the retry fails again the aggregate is a no-op (`application.status == target`) so no `session.failed` fires either. Retry should set the application back to RUNNING (and clear `completed_at`) in the same commit, and emit a `transcode.events` event so the UI refreshes.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B3/repro_retry_summary.py
+app=FAILED task=queued -> summary state='done' percent=0.0 done=0/1
+app=FAILED task=in_progress -> summary state='done' percent=0.0 done=0/1
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/transcodes.py` `retry_transcode` — reload the `SessionApplication`, set `status=RUNNING`, `completed_at=None`, emit `session.started`/`task.queued`; `test_transcodes_router.py::test_retry_failed_requeues_and_resets` should assert the application transition.
+
+**Verification.** Scratch call of `_summarize_transcode_progress` above; code trace of the retry route and aggregate idempotency (`transcode_apply.py:475-477`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/153
+
+### D-156  S3  open  backend  slice B4
+
+**Title.** A 200 response with a non-JSON body from OMDb, 1337server or MusicBrainz escapes the dispatcher as `JSONDecodeError`, so identify returns 500 and the ripper retries it forever instead of falling through to the next provider / `block_on_miss`.
+
+**Where.** `services/backend/arm_backend/metadata/omdb.py:56`, `metadata/arm_server.py:62`, `metadata/musicbrainz.py:76` (`r.json()` with no guard) at `2625b3e7`; caught only for `LookupError`/timeout at `metadata/dispatcher.py:281-286`; the identify handler catches only `asyncio.TimeoutError` at `routers/ripper.py:755`.
+
+**What.** `metadata/tmdb.py:57-60, 139-142, 175-178` wrap `r.json()` in a `ValueError -> LookupError` guard, with a comment saying a non-JSON 200 "must surface as the module LookupError ... not an uncaught ValueError -> 500". The three sibling clients never got the guard. A proxy/captive-portal HTML page, a Cloudflare challenge, or pythonanywhere's HTML "app down" page served with status 200 makes `_call` raise `json.JSONDecodeError`, which is a `ValueError`, not a `LookupError`; `dispatcher.identify` propagates it, the ripper gets HTTP 500 and `job_controller.py:531-545` treats 5xx as retriable with exponential backoff, holding the drive's active lock until upstream recovers. Expected: map to `LookupError` so the dispatcher logs a miss and continues (TMDb -> OMDb -> label candidates -> `block_on_miss`).
+
+**Repro / evidence.** `uv run python .../sweep2/B4/nonjson.py` (MockTransport returning `200 text/html` for every URL):
+```
+omdb -> ESCAPED _call: JSONDecodeError Expecting value: line 1 column 1 (char 0)
+arm_server -> ESCAPED _call: JSONDecodeError Expecting value: line 1 column 1 (char 0)
+musicbrainz -> ESCAPED _call: JSONDecodeError Expecting value: line 1 column 1 (char 0)
+identify -> ESCAPED: JSONDecodeError Expecting value: line 1 column 1 (char 0)   # DVD scan with a crc64 fingerprint
+```
+`tests/test_metadata_clients.py:687-694` covers the TMDb guard only; no test sends a non-JSON 200 to the other three clients.
+
+**Suggested fix location.** `metadata/omdb.py:_get_json`, `metadata/arm_server.py:lookup_by_crc64`, `metadata/musicbrainz.py:_get` — add the same `try: r.json() except ValueError: raise LookupError(...)` guard TMDb has (or catch `ValueError` in `dispatcher._call`).
+
+**Verification.** Reproduced with the script above against the installed package; ripper retry semantics read from `services/ripper/arm_ripper/job_controller.py:523-549`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/154
+
+### D-157  S3  open  backend  slice B4
+
+**Title.** `_normalize_volume_label` takes the first 4-digit run anywhere in the label as the release year, so titles that contain a year (`BLADE_RUNNER_2049`, `WONDER_WOMAN_1984`, `2001_A_SPACE_ODYSSEY`, `1917`) are searched with a wrong year filter and never retried without it; the fallback then lands on TMDb's TV search.
+
+**Where.** `services/backend/arm_backend/metadata/dispatcher.py:69-74` (`re.search(r"(\d{4})", cleaned)` + `_YEAR_SUFFIX_RE.sub`) at `2625b3e7`; consumed at `:149-152` (label candidate `(label_title, label_year, False)`) and `:206-237` (`_search_title`: TMDb movie with `year`, then TMDb TV without, then OMDb with `y=year`; no year-less movie retry).
+
+**What.** A Blu-ray/DVD volume label that is the film's title with a year in it is common (`BLADE_RUNNER_2049`, `WONDER_WOMAN_1984`, `2001_A_SPACE_ODYSSEY`, `1917`, `2012`). The label pass strips a trailing year and uses it as the TMDb `year` / OMDb `y` filter: `BLADE_RUNNER_2049` becomes `("BLADE RUNNER", 2049)` — no 2049 release exists, so the movie search misses, and the next step is `search_tv("BLADE RUNNER")`, which TMDb answers with the 2021 series "Blade Runner: Black Lotus" -> the job is identified as TV with the wrong title. `2001_A_SPACE_ODYSSEY` keeps the year in the title and filters on 2001 (the film is 1968) -> unidentified; `1917` / `2012` normalise to an empty title -> no candidates. The disc-hint path (`dispatcher.py:157-163`) explicitly caps the hint-year strip at 2029 with a comment naming `BLADE_RUNNER_2049`, but the label path has no cap and no year-less retry. Workaround: manual identify (or a 1337server / TheDiscDB hit first).
+
+**Repro / evidence.** `uv run python .../sweep2/B4/label_year.py`:
+```
+BLADE_RUNNER_2049 -> ('BLADE RUNNER', 2049)
+WONDER_WOMAN_1984 -> ('WONDER WOMAN', 1984)
+2001_A_SPACE_ODYSSEY -> ('2001 A SPACE ODYSSEY', 2001)
+1917 -> ('', 1917)
+2012 -> ('', 2012)
+```
+`tests/test_dispatcher.py:24-70` only exercises labels whose year is a real trailing release year.
+
+**Suggested fix location.** `metadata/dispatcher.py:_normalize_volume_label` / `_identify_video` — only treat a trailing token as the year when it is plausibly a release year (<= current year + 1, like `_HINT_YEAR_SUFFIX_RE`), keep an unstripped title candidate, and add a year-less movie retry before the TV fallback.
+
+**Verification.** Label normalisation reproduced with the script; the provider outcome ("Blade Runner: Black Lotus" via `search_tv`) is inferred from TMDb's catalogue and the search order at `dispatcher.py:206-237`, not executed against live TMDb (no key in the review environment).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/155
+
+### D-158  S3  open  backend  slice B4
+
+**Title.** The `metadata_provider` setting ("Look up titles with — the service ARM searches when it identifies a disc") is never read by the identify pipeline: with both keys set and OMDb selected, every disc is still identified by TMDb first.
+
+**Where.** `services/backend/arm_backend/metadata/dispatcher.py:190-237` (`_search_kind` / `_search_title`: order fixed to TMDb-if-keyed then OMDb-if-keyed; `cfg.metadata_provider` does not appear anywhere in `metadata/`) at `2625b3e7`; the setting's operator copy at `packages/arm_common/arm_common/config_metadata.py:38-43`; the only consumers are the interactive endpoints `routers/metadata.py:79` and `:122`.
+
+**What.** An operator who sets "Look up titles with: OMDb" while keeping a TMDb key (e.g. for episode matching, where the help text for `tvdb_api_key`/`episode_sources` tells them keys are needed) expects identify to use OMDb; the dispatcher ignores the choice and searches TMDb movie/TV first, OMDb only as a fallback. The help text (`"The service ARM searches when it identifies a disc."`) is therefore false for automatic identification; only the manual title search honours it. Workaround: delete the TMDb key (which also disables the TMDb episode source). The setting is validated (`routers/config.py:167-171`) and shown in setup (`FinishStep.svelte:62` "Titles looked up with OMDb"), so the UI claims a behaviour the backend does not have.
+
+**Repro / evidence.** `grep -rn metadata_provider services/backend/arm_backend/metadata/` -> no matches; `dispatcher._search_title` branches only on `cfg.tmdb_api_key` (`:209`) and `cfg.omdb_api_key` (`:226`).
+
+**Suggested fix location.** `metadata/dispatcher.py:_search_title` / `_search_kind` — order the keyed providers by `cfg.metadata_provider` (selected first, the other as fallback), or change the help text in `config_metadata.py:42` to describe the manual search only. This is the concrete piece of #258 that is a defect today.
+
+**Verification.** Static trace of every `metadata_provider` reader; `tests/test_dispatcher.py` has no test selecting OMDb with both keys present.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/156
+
+### D-159  S3  open  backend  slice B4
+
+**Title.** Two overlapping TheDiscDB refreshes (the daily loop and `POST /api/system/thediscdb/refresh`, or two clicks) share the same `index.sqlite.new` path, so one build fails with `disk I/O error` and, depending on timing, a partial index can be moved live.
+
+**Where.** `services/backend/arm_backend/identity/sources/thediscdb_snapshot.py:106-109` (`new_path = dest.with_suffix(".sqlite.new")`; `new_path.unlink(missing_ok=True)`; `sqlite3.connect(new_path)`) and `:133` (`os.replace(new_path, dest_sqlite)`) at `2625b3e7`; callers `routers/system.py:385` and `main.py:181` with no shared lock or in-progress flag.
+
+**What.** `build_index` is documented as atomic, but two concurrent builds both unlink and recreate the same `.sqlite.new` (and share its `-journal`). The second build deletes the first's open database/journal from under it, so the first dies with `sqlite3.OperationalError: disk I/O error` (a 502 "thediscdb refresh failed: disk I/O error" on the manual route, or a warning in the loop). If the first build has already committed when the second unlinks, its `os.replace` moves the second's half-written file over the live index. The realistic overlap is first boot: `_thediscdb_refresh_loop` starts a download immediately when `not store.exists()` (`main.py:179-181`), which is exactly when an operator sees "no snapshot" in Settings and presses Refresh now. Expected: a process-wide `asyncio.Lock` (or a unique temp name + an "in progress" short-circuit) so a second refresh waits or is reported as already running.
+
+**Repro / evidence.** `uv run python .../sweep2/B4/discdb_race.py` (two threads, two 20k-disc tarballs, same dest; the second starts 150 ms later):
+```
+{'A': ('ERR', 'OperationalError: disk I/O error'), 'B': ('ok', 20000)}
+live index exists: True count: 20000
+lookup A000000: False lookup B000000: True
+```
+
+**Suggested fix location.** `identity/sources/thediscdb_snapshot.py:refresh` / `build_index` — write to a unique temp file (`tempfile.mkstemp(dir=dest.parent)`) and guard `refresh` with a module-level `asyncio.Lock`; `routers/system.py:thediscdb_refresh_now` should return 409 while a refresh is running.
+
+**Verification.** Reproduced with the script above (real sqlite, temp dir, no network).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/157
+
+### D-160  S3  open  backend  slice B4
+
+**Title.** The unauthenticated image proxy's negative cache is an unbounded module-level dict that is never pruned, so any anonymous client can grow backend memory one entry per distinct allowlisted-host URL.
+
+**Where.** `services/backend/arm_backend/routers/images.py:21` (`_NEGATIVE_CACHE: dict[str, float] = {}`), `:188`, `:191`, `:195` (entries added on too-large / transport error / 404), `:170` (expiry only checked on a repeat hit of the same URL), `:203` (removed only on a later successful fetch) at `2625b3e7`.
+
+**What.** `GET /api/images/proxy` is deliberately unauthenticated (`images.py:145-147`); the allowlist bounds *where* it fetches, but every distinct URL on an allowlisted host that 404s (`https://image.tmdb.org/t/p/w500/<random>.jpg`) adds a `(url, expiry)` entry that no code path ever removes — expired entries are skipped on read but kept, and `_NEGATIVE_TTL_SECONDS` is a per-entry timestamp, not an eviction policy. The on-disk positive cache, by contrast, is bounded by `ARM_IMAGE_CACHE_MAX_ENTRIES` (`image_cache.py:60-62`). A script hitting the proxy with unique query strings keeps adding ~100-200 bytes per request for the backend's lifetime; a restart is the only workaround.
+
+**Repro / evidence.** Code hunk: the only writes are `images.py:188,191,195` and the only removal is `images.py:203` (success path). `tests/test_images_router.py:127,148,418` assert insertion only; nothing asserts a bound or a sweep.
+
+**Suggested fix location.** `routers/images.py` — cap the dict (evict oldest when `len > N`, like `SourceHttp._cache_put`) and drop expired entries on write; or key the negative cache off the sha256 filename and store it in `image_cache` with its LRU.
+
+**Verification.** Static read; the growth is a direct consequence of the three unconditional writes.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/158
+
+### D-161  S4  open  backend  slice B4  regression of D-094
+
+**Title.** Operator-supplied external ids are still interpolated unescaped into provider URL paths at every site except the two D-094 anchored.
+
+**Where.** `services/backend/arm_backend/identity/episodes/providers/tmdb.py:67` and `:83` (`/tv/{show_id}`, `/tv/{show_id}/season/{number}`), `providers/tvmaze.py:62` (`/shows/{show_id}/episodes`), `providers/tvdb.py:111` and `:148` (`/series/{show_id}/extended`, `/series/{show_id}/episodes/{order}`), `metadata/tmdb.py:163` (`/find/{imdb_id}`, reached from `GET /api/metadata/lookup?imdb_id=` at `routers/metadata.py:142` and from TheDiscDB `ExternalIds.Imdb`), `metadata/musicbrainz.py:129` (`/release/{release_id}` from `GET /api/metadata/music/{release_id}`) at `2625b3e7`.
+
+**What.** `ExternalIds` (`packages/arm_common/arm_common/schemas/job_metadata.py:37-49`) still has no pattern, and `POST /api/jobs/{id}/resolve` copies `external_ids.tmdb/tvdb/imdb` verbatim (`routers/jobs.py:1178-1192`). D-094's fix quoted the `/find/{external_id}` and `/search/remoteid/{ids.imdb}` sites only; the show id those lookups return is then used — or, when the operator pasted a TMDb/TVDB id directly, the pasted string itself is used — unescaped in the season/episode paths. A pasted URL fragment, trailing whitespace, `?` or `#` yields a malformed request (a `?` injects query params ahead of the provider's own) that 404s/400s into `status="miss", detail="show not found"` or a `SourceError` with no hint the id was malformed. The same holds for `/api/metadata/lookup?imdb_id=` into `metadata/tmdb.py:163`.
+
+**Repro / evidence.** `uv run python .../sweep2/B4/showid_quote.py` with `tmdb="123/season/1?x=1#f"` as a resolve-pasted id (MockTransport captures the URL):
+```
+URL: https://api.themoviedb.org/3/tv/123/season/1?x=1#f
+URL: https://api.tvmaze.com/shows/123/season/1?specials=1#f/episodes
+URL: https://api4.thetvdb.com/v4/series/123/season/1?short=true#f/extended
+```
+`grep -rn "quote(" services/backend/arm_backend/metadata/` -> no matches.
+
+**Suggested fix location.** Either validate at the boundary (`ExternalIds` field patterns: `^tt\d+$` for imdb, `^\d+$` for tmdb/tvdb/tvmaze, UUID for musicbrainz_release) or `urllib.parse.quote(value, safe="")` at the listed sites; the boundary validator also makes the failure explicit (422) instead of a silent "show not found".
+
+**Verification.** Reproduced with the script above; static read of `routers/jobs.py` resolve overlay.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/159
+
+### D-162  S2  open  backend  slice B5
+
+**Title.** The WS Origin gate is skipped whenever the client merely *requests* the `arm-service-token` subprotocol, which any browser page can do, so a cross-origin page bypasses the only cross-site protection the WS endpoint has.
+
+**Where.** `services/backend/arm_backend/ws/router.py:69-70` at `2625b3e7` (`if SERVICE_TOKEN_SUBPROTOCOL in subprotocols: return True` runs before any token is seen) and `:114-115` (the server echoes that subprotocol in `accept`, so the browser completes the handshake). Test that pins the behaviour: `services/backend/tests/test_ws_origin.py:19-21`.
+
+**What.** `new WebSocket("wss://arm-host:8081/ws", ["arm-service-token"])` from any origin passes `_origin_allowed`, is accepted, and can then send `{"op":"auth","token":""}`; with guest access enabled it is authenticated as the anonymous guest and subscribes to `ripper.events`, `logs.{job_id}`, etc. Because REST has no CORS middleware, a cross-origin page cannot read `/api/*`, so this WS gate is the only thing stopping a page in a LAN user's browser from reading guest-visible live data (exactly the scenario 05-cross-cutting.md:187 says the gate exists for). The skip should depend on the token actually validating as the service token (or on `Origin` being absent, as sibling containers send none), not on a client-chosen header.
+
+**Repro / evidence.**
+
+```
+uv run python scratchpad/sweep2/B5/repro_ws.py
+evil origin, no subprotocol -> closed 1008
+evil origin + subprotocol, anon auth: {'op': 'ack', 'topic': ''}
+evil origin subscribe: {'op': 'ack', 'topic': 'ripper.events'}
+```
+
+**Suggested fix location.** `services/backend/arm_backend/ws/router.py` `_origin_allowed` / `ws_endpoint` — drop the subprotocol short-circuit (origin-less connects already pass at `:71-72`), or defer the Origin decision until after `_do_auth` and only waive it for a `ServicePrincipal`. Update `tests/test_ws_origin.py::test_service_subprotocol_skips_origin_check` accordingly; ripper/transcoder clients send no `Origin`, so they are unaffected.
+
+**Verification.** scratch script above; code read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/160
+
+### D-163  S3  open  backend  slice B5
+
+**Title.** WS handshake verifies only the JWT signature: a disabled user, a deleted user, or an admin still under `password_must_change` can open `/ws` and subscribe to every UI topic.
+
+**Where.** `services/backend/arm_backend/ws/principal.py:76-85` at `2625b3e7` (JWT branch of `resolve_principal` returns a `UIPrincipal` from the payload with no user lookup); `services/backend/arm_backend/ws/router.py:186-194` (`_do_auth` only consults the DB for the empty-token guest path, `_check_guest_enabled`). Contrast `services/backend/arm_backend/auth.py:111-121` (REST `require_jwt` 401s on `user is None` / `user.disabled` and 403s on `password_must_change`).
+
+**What.** REST enforces three post-signature checks on every UI request; the WS path enforces none of them. A guest whose password an admin set and later disabled keeps a working live feed (logs, progress, events) for the remaining token lifetime (up to 7 days); a fresh install still at `admin`/`admin` with the must-change gate up can stream `logs.{job_id}` and `ripper.events` before the password is changed, which the gate is documented to prevent ("403s every endpoint except /api/auth/password + /api/auth/logout", 05-cross-cutting.md:90). The accepted "validated at handshake only" trade-off (05-cross-cutting.md:194) covers expiry after connect, not skipping the account checks at the handshake itself.
+
+**Repro / evidence.**
+
+```
+uv run python scratchpad/sweep2/B5/repro_ws.py
+disabled-user auth: {'op': 'ack', 'topic': ''}
+disabled-user subscribe: {'op': 'ack', 'topic': 'logs.job_x'}
+must-change auth: {'op': 'ack', 'topic': ''}
+must-change subscribe: {'op': 'ack', 'topic': 'ripper.events'}
+deleted-user auth: {'op': 'ack', 'topic': ''}
+```
+
+**Suggested fix location.** `services/backend/arm_backend/ws/router.py` `_do_auth` — after `resolve_principal` returns a `UIPrincipal` with a real user id, load the `User` row through `SessionLocal()` the same way `_check_guest_enabled` does and raise `_AuthFailure(CLOSE_UNAUTHORIZED, ...)` on missing/disabled and `CLOSE_FORBIDDEN` on `password_must_change` (keeps `resolve_principal` DB-free as its docstring wants).
+
+**Verification.** scratch script above against the real `/ws` router with `FakeSession`; code read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/161
+
+### D-164  S3  open  backend  slice B5
+
+**Title.** `PATCH /api/config` with `null` for any NOT NULL boolean setting still ends in an unhandled IntegrityError (HTTP 500); the D-096 fix covered the int fields only.
+
+**Where.** `arm_common/schemas/auth.py:100-120` at `2625b3e7` (`auto_transcode_on_idle`, `auto_rip_on_insert`, `block_on_miss`, `community_keydb_enabled`, `makemkv_sdf_enabled`, `thediscdb_enabled`, `ripping_paused`, `hold_for_review`, `notifications_enabled` are `bool | None`); `services/backend/arm_backend/routers/config.py:172-196` (None checks exist for the seven ints, `on_previously_ripped`, `transcode_enabled`, `episode_auto_apply` only) and `:248-249` (`setattr(cfg, key, value)` writes the None); `arm_common/models/config.py:451-541` (all nine columns `nullable=False`).
+
+**What.** An explicit JSON `null` for one of those nine keys passes Pydantic (`exclude_unset` keeps it), is written to a NOT NULL column and the commit raises -> 500 with a traceback instead of the 400 every other None-able field now gets. The UI toggles never emit `null` for a bool (SchemaConfigForm only nulls cleared secrets), so this is an API-contract gap rather than a UI-visible one; same class as D-096, not the same rows.
+
+**Repro / evidence.**
+
+```
+uv run python scratchpad/sweep2/B5/repro_config_null_bool.py   # config router over real SQLite
+{'auto_rip_on_insert': None} -> 500 Internal Server Error
+{'notifications_enabled': None} -> 500 Internal Server Error
+{'ripping_paused': None} -> 500 Internal Server Error
+{'hold_for_review': None} -> 500 Internal Server Error
+{'block_on_miss': None} -> 500 Internal Server Error
+{'thediscdb_enabled': None} -> 500 Internal Server Error
+{'drive_scan_interval_seconds': None} -> 400 drive_scan_interval_seconds must be a positive integer
+{'manual_wait_seconds': None} -> 400 manual_wait_seconds must be 0 or a positive integer
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/config.py::update_config` — one generic guard: for every key in `fields` whose `Config.__table__.columns[key].nullable is False`, reject `None` with 400 (replaces the growing per-field lists at `:174-196`).
+
+**Verification.** scratch script above (real SQLite enforces NOT NULL); pydantic check `ConfigUpdateRequest.model_validate({"auto_rip_on_insert": None}).model_dump(exclude_unset=True)` -> `{'auto_rip_on_insert': None}`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/162
+
+### D-165  S3  untested-needs-hardware  backend  slice B5
+
+**Title.** `GET /api/logs/{job_id}.zip` is an `async def` that reads up to 5 MB per log file with blocking file I/O on the event loop; on the network-share `/logs` the project itself plans for, one download stalls every REST/WS consumer in the backend.
+
+**Where.** `services/backend/arm_backend/routers/logs.py:74-110` at `2625b3e7` (coroutine calls `_read_capped_lines` directly, `:93` and `:98`), `:165-185` (`path.open()` + line loop, no `to_thread`); legacy fallback at `:97-100` walks every `*.log` in `/logs`. Compare `services/backend/arm_backend/log_tailer.py:309-311` ("/logs is usually on a network share: every filesystem call here runs in a worker thread so a slow share never stalls the event loop") and the NDJSON sibling at `:129-162`, which Starlette runs in a threadpool because `gen()` is a sync generator.
+
+**What.** Per entry up to `ARM_LOG_ZIP_PER_ENTRY_BYTE_CAP` (5 MB) is read synchronously; for a pre-tailer job the fallback reads up to 5 MB from each service log. While that runs, ripper progress POSTs, WS fan-out and every other request are frozen (single event loop). The same code shape was treated as a defect for `shutil.rmtree` in D-108.
+
+**Repro / evidence.** Code hunk `logs.py:91-100` inside `async def download_job_logs_zip`; `_read_capped_lines` has no `await`. Not timed on a share (needs NFS/SMB-backed `/logs`).
+
+**Suggested fix location.** `services/backend/arm_backend/routers/logs.py::download_job_logs_zip` — build the zip in `await asyncio.to_thread(...)` (one sync helper), or make the route a plain `def` so FastAPI runs it in the threadpool.
+
+**Verification.** code read | untested-needs-hardware: mount `/logs` on NFS, request `/api/logs/<legacy job>.zip` while watching `/api/health` latency.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/163
+
+### D-166  S4  open  backend  slice B5
+
+**Title.** `GET /api/logs/{job_id}?limit=0` is accepted (`ge=0`) but returns one line, because the cap is checked only after a line has been yielded.
+
+**Where.** `services/backend/arm_backend/routers/logs.py:116` at `2625b3e7` (`limit: int | None = Query(default=None, ge=0)`), `:127` (`cap = max(0, min(...))`), `:138-143` and `:153-160` (yield, then `yielded += 1; if yielded >= cap`).
+
+**What.** With `cap == 0` the first matching line is written before the comparison, so the response holds exactly one line for a request that asked for none. Either `ge=1` or check the cap before yielding.
+
+**Repro / evidence.**
+
+```
+uv run python scratchpad/sweep2/B5/repro_logs_limit0.py
+limit=0 -> 200, lines returned = 1
+limit=1 -> 200, lines returned = 1
+limit=2 -> 200, lines returned = 2
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/logs.py::stream_job_logs` — `if cap == 0: return` at the top of `gen()`, or `ge=1` on the query param.
+
+**Verification.** scratch script above.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/164
+
+### D-167  S4  open  backend  slice B5
+
+**Title.** After auth, a non-JSON (or binary) WS frame escapes `_serve_loop` as an unhandled `JSONDecodeError`/`KeyError`, so the connection dies with a server traceback and 1011 instead of the `{"op":"error",...}` frame the pre-auth path sends for the same input.
+
+**Where.** `services/backend/arm_backend/ws/router.py:206` at `2625b3e7` (`raw = await websocket.receive_json()` with no try/except; only `ValidationError` on the *parsed* object is handled at `:207-210`); `:135-140` (`ws_endpoint` catches only `WebSocketDisconnect`). Contrast `:159-166` (`_do_auth` maps the same failure to `CLOSE_BAD_MESSAGE, "auth message must be JSON"`).
+
+**What.** Any client bug (or a stray text frame from a proxy) after the handshake produces an ERROR-level ASGI exception log per occurrence and a hard close, while the identical frame before auth gets a clean application error. Operators see tracebacks for what is a client protocol error.
+
+**Repro / evidence.**
+
+```
+uv run python scratchpad/sweep2/B5/repro_ws.py
+non-JSON frame after auth -> JSONDecodeError Expecting value: line 1 column 1 (char 0)
+```
+
+**Suggested fix location.** `services/backend/arm_backend/ws/router.py::_serve_loop` — wrap `receive_json()` in the same `except Exception` -> `_send_error(CLOSE_BAD_MESSAGE, ...)` + `continue` that `_do_auth` uses (keep `WebSocketDisconnect` propagating).
+
+**Verification.** scratch script above (TestClient re-raises the server exception).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/165
+
+### D-168  S4  open  backend  slice B5
+
+**Title.** The notification dispatcher, `/api/system/stats` and the inbox endpoints load whole tables into Python and filter there, explicitly to suit the in-memory `FakeSession`; the dispatcher does it every 5 s against an events table nothing ever prunes.
+
+**Where.** `services/backend/arm_backend/notification_dispatcher.py:185-196` at `2625b3e7` (`select(Event).where(event_type in NOTABLE)` with no `notified_at IS NULL`, then `unsent = [e for e in candidates if e.notified_at is None]`, every `ARM_NOTIFICATION_DISPATCH_INTERVAL_SECONDS=5`); `services/backend/arm_backend/routers/system.py:272-286` (`select(Job)` and `select(Event)` unfiltered, with the comment "Fetch all events and filter in Python — mirrors the notification_dispatcher pattern to stay compatible with the in-memory FakeSession (which cannot evaluate .is_(None) clauses)"); `services/backend/arm_backend/routers/notifications.py:651-655, 663-667, 677, 698` (`limit` applied after loading every inbox row).
+
+**What.** Every rip/session completion adds notable events that are never deleted except by job CASCADE, so each dispatcher tick and each stats call grows linearly with history (JSONB payloads included). This is production query shape dictated by a test fake, the inverse of the "fake only the I/O boundary" rule in CLAUDE.md; the fix is to teach `tests/_fakes.py` `is_(None)` / `.limit()` rather than keep the scans.
+
+**Repro / evidence.** Code hunks above; `grep -rn "delete(Event" services/backend/arm_backend` -> no results (no pruning path).
+
+**Suggested fix location.** `services/backend/tests/_fakes.py` (`_matches`: support `IS NULL`, `limit`), then `notification_dispatcher.py::_tick` (`.where(col(Event.notified_at).is_(None))`), `routers/system.py::stats` (COUNT/GROUP BY), `routers/notifications.py` inbox queries (`.limit()` / `.where(cleared == False)`).
+
+**Verification.** code read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/166
+
+### D-169  S4  open  docs  slice B5
+
+**Title.** `05-cross-cutting.md` describes an authentication model the code does not implement: argon2 parameters, "random generated password", a config-redacting logging helper, and claim-checked transcoder subscriptions.
+
+**Where.** `docs/developers/architecture/05-cross-cutting.md:99` at `2625b3e7` ("OWASP-default parameters (memory=19 MiB, iterations=2, parallelism=1)") vs `services/backend/arm_backend/routers/auth.py:251` / `routers/users.py:335` / `seeders.py:55` (`PasswordHasher()` defaults: time_cost=3, memory_cost=64 MiB, parallelism=4 on argon2-cffi 25.1.0); `:101` ("closed by the random generated password") vs `:90` and `seeders.py:46,58` (default `admin`/`admin` + must-change); `:201` ("enforced by a structured-logging helper that knows which fields to drop") vs `packages/arm_common/arm_common/logging.py` (no redaction code; `grep -rn redact packages/arm_common` is empty); `:191` and `docs/developers/architecture/03-protocol.md:96` ("only the transcoder holding the claim may subscribe") vs `services/backend/arm_backend/ws/authz.py:43` (compares the topic id to the self-asserted `X-ARM-Task-Id` header only, no `TranscodeTask.claimed_by` check as `can_publish` does at `:65-72`).
+
+**What.** Four statements in the authoritative architecture doc are false for the as-built code (`feedback_docs_describe_current_state.md`). The argon2 and password lines contradict each other inside the same section; the logging-helper line claims an enforcement mechanism that does not exist; the claim-check line promises an authz guarantee the code only makes for publish.
+
+**Repro / evidence.** `uv run python -c "import argon2; h=argon2.PasswordHasher(); print(h.time_cost, h.memory_cost, h.parallelism)"` -> `3 65536 4`; grep results above; `authz.py:43` hunk: `return prefix == "transcoder.commands" and scope is not None and scope == principal.task_id`.
+
+**Suggested fix location.** `docs/developers/architecture/05-cross-cutting.md` (and `03-protocol.md:96`) — state the real parameters and gates; or, for the transcoder line, add the `claimed_by == principal.hostname` lookup in `ws/authz.py::can_subscribe` to match the doc.
+
+**Verification.** code read + interpreter output.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/167
+
+### D-170  S2  untested-needs-hardware  ripper  slice R1
+
+**Title.** `pickup` / `resume_inflight_job` / `recover_held_job` claim the caller's long-lived task as `_active_task`: a re-acquired rip runs inside the heartbeat loop (no heartbeats for hours) and `job.abandoned` cancels the heartbeat loop (or `amain`/`poll_loop`) for good.
+
+**Where.** `services/ripper/arm_ripper/job_controller.py:219` (`pickup`), `:774` (`recover_held_job`), `:804` (`resume_inflight_job`) at `2625b3e7`; callers `main.py:124` (`maybe_reacquire_current_job`, awaited inline from `heartbeat_loop` at `main.py:158`), `main.py:287` and `main.py:496` (`boot_probe` awaited from `_on_reattached` inside `poll_loop`, and from `amain`), `recovery.py:88`. Cancel site `job_controller.py:284`.
+
+**What.** `_active_task = asyncio.current_task()` is correct for `_run_pipeline` (its own task) but in `pickup`/`resume_inflight_job`/`recover_held_job` the current task is whoever awaited it: the heartbeat task, the poll-loop task or `amain` itself. Two consequences: (1) while a heartbeat-reacquired rip runs (IDENTIFIED job resolved after the 30-min park, the common post-review path), `heartbeat_loop` is blocked, so no `/api/ripper/heartbeat` is posted for the whole rip: `media_status_at`/`last_seen_at` age past the 90 s manual-trigger window (`routers/jobs.py:135`) and the 5-min diagnostic window (`routers/drives.py:36,150-152`, "media-status heartbeat is stale") and the online/stale badge counts the ripping drive as stale. (2) Abandoning that job from the UI emits `job.abandoned`; `_handle_abandon` cancels `_active_task`, i.e. the heartbeat task: `heartbeat_loop` has no `CancelledError` handling, so it dies silently (no log, cancelled tasks are not reported) and the drive never heartbeats or re-acquires again until the container restarts. For a boot-probe/reattach resume the cancelled task is `amain`/`poll_loop`: `boot_probe` and `_on_reattached` only catch `Exception`, so `asyncio.run` raises `CancelledError` and the ripper process exits non-zero (restart-policy churn on an operator abandon). Expected: the pipeline runs in its own task (as `_run_pipeline` does via `asyncio.create_task` in the poll loop) so abandon cancels only the rip and the heartbeat/poll loops keep running.
+
+**Repro / evidence.**
+
+```
+ARM_DRIVE_ID=d1 ARM_BACKEND_URL=https://x ARM_SERVICE_TOKEN=t ARM_DRIVE_DEV=/dev/sr0 \
+  uv run python .../sweep2/R1/repro_heartbeat_pickup.py
+heartbeats during the re-acquired rip: 0 (expected ~20)
+controller._active_task is the heartbeat task: True
+heartbeat task after abandon: done=True cancelled=True
+boot-probe resume: controller._active_task is the outer (amain/poll-loop) task: True
+outer task after abandon: done=True cancelled=True
+```
+`tests/test_heartbeat_reprobe.py:22` fakes `pickup`, so no test runs the real claim path from the heartbeat loop.
+
+**Suggested fix location.** `services/ripper/arm_ripper/job_controller.py` — have `pickup`/`resume_inflight_job`/`recover_held_job` spawn the rip with `asyncio.create_task` (and register that task as `_active_task`) or have `main.py` wrap the calls in a task; `heartbeat_loop` should at minimum shield itself.
+
+**Verification.** scratch repro above against the real `heartbeat_loop`, `boot_probe`, `JobController._handle_abandon`; drive-level symptom (stale badge, dead heartbeat after abandon) untested-needs-hardware: `devtools/iso-smoke.sh` then hold a disc in review until the 30-min park expires, Start from the UI, then Abandon mid-rip and watch `drive.media_status_at` stop advancing.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/168
+
+### D-171  S2  untested-needs-hardware  ripper  slice R1
+
+**Title.** `_tNN.mkv` files are paired with eligible titles by list position, so one title that produces no file shifts every later title onto the wrong file (track A credited with title B's mkv, B marked FAILED).
+
+**Where.** `services/ripper/arm_ripper/rip/makemkv_rip.py:676` (`zip(eligible, output_files)`) and `services/ripper/arm_ripper/rip/dispatcher.py:362-377` (`position = eligible_source_indexes.index(title_idx)`; `files[position]`) at `2625b3e7`.
+
+**What.** MakeMKV's `_tNN` suffix is the title's number in its (minlength-filtered) list and does not renumber when a title fails to save (`MSG:5003`); the repo relies on exactly that in `_delete_skipped_outputs` (`dispatcher.py:502-512`, "Matched by their `_tNN` position suffix, not by list order, so a title that produced no file never shifts the others"). But both attribution paths index the sorted file list by position: with eligible `[0,1,2]` and files `_t00`, `_t02` (title 1 unreadable on a scratched disc), source title 1 is PATCHed DONE with `_t02.mkv` (wrong content, wrong duration carried from the scan, wrong naming downstream) and title 2 is FAILED "produced no .mkv". The live `_on_title_done` path has the same shift (and also fires while the next title's file already exists). Expected: match on the parsed `_tNN` number (`_OUTPUT_FILE_RE` already extracts it) exactly as `_delete_skipped_outputs` does.
+
+**Repro / evidence.**
+
+```
+uv run python .../sweep2/R1/repro_positional_attr.py
+source title 0: ok=True file=Disc_t00.mkv err=None
+source title 1: ok=True file=Disc_t02.mkv err=None        <- wrong file
+source title 2: ok=False file=None err=makemkvcon exited 0 but produced no .mkv for this title
+```
+No test covers a gap in the output numbering (`grep -n t02 services/ripper/tests/*.py` shows only contiguous fixtures).
+
+**Suggested fix location.** `services/ripper/arm_ripper/rip/makemkv_rip.py` (`rip_disc` attribution) and `rip/dispatcher.py` (`_on_title_done`) — build `{int(_OUTPUT_FILE_RE): path}` and look up `eligible.index(title_idx)` in it.
+
+**Verification.** scratch repro (stubbed makemkvcon, real `rip_disc`); that MakeMKV leaves the hole is untested-needs-hardware (a disc with one unreadable title; `MSG:5003` in the per-job log, then compare `title_tNN` numbers against `tracks.output_path`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/169
+
+### D-172  S3  open  ripper  slice R1
+
+**Title.** `_run_makemkvcon` cancels the streamer in `finally` before the "drain" await, so robot lines still in the pipe at exit are dropped: MSG:5003 per-title fail reasons and MSG:1002/5037 diagnostics go missing from the error text.
+
+**Where.** `services/ripper/arm_ripper/rip/makemkv_rip.py:542-557` at `2625b3e7` (`finally: ... streamer.cancel()` at `:551`, then `await streamer` with the comment "Drain the streamer so every line after EOF is processed" at `:553-557`).
+
+**What.** `proc.wait()` resolves when makemkvcon exits; the streamer task is then cancelled unconditionally, so whatever it has not yet consumed (the final `MSG:5003 Failed to save title N`, `MSG:1002 Error while reading input`, `MSG:5037 Copy complete ... failed`) is never parsed. The comment describes draining to EOF, which the code does not do. Effects: a failed title's `last_error` is the generic "makemkvcon exited 0 but produced no .mkv" instead of MakeMKV's reason, and a non-zero exit reports `makemkvcon failed: exit=1` with no diagnostics. Any awaiting progress callback (the WS publish in production) widens the window to near-certain loss.
+
+**Repro / evidence.**
+
+```
+uv run python .../sweep2/R1/repro_streamer_race.py     # bare robot tail, exit 0
+3/40 runs lost the MSG:5003 fail_reason (titles seen: [0, 1])
+uv run python .../sweep2/R1/repro_streamer_drain.py    # on_disc_progress awaits 0.5 ms, exit 1
+DIAGNOSTICS LOST -> makemkvcon failed: exit=1 | titles: {}
+20/20 runs lost trailing diagnostics
+```
+
+**Suggested fix location.** `services/ripper/arm_ripper/rip/makemkv_rip.py` `_run_makemkvcon` — on a normal exit await the streamer to EOF (stdout closes when the process exits) and cancel it only on timeout/stop/cancel.
+
+**Verification.** scratch repros above with real `sh` subprocesses and the real `_run_makemkvcon`/`_stream_output`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/170
+
+### D-173  S3  untested-needs-hardware  transcode  slice R1
+
+**Title.** WS `task.cancel` never stops the encoder: `CancelRequested` raised from the progress callback is swallowed by the engines' `except Exception`, so every cancel falls through to the backend's 10 s grace + docker-stop and the "cancelled by user" `/fail` is never sent.
+
+**Where.** `services/transcode/arm_transcode/handbrake.py:188-191` and `services/transcode/arm_transcode/ffmpeg_progress.py:51-54` at `2625b3e7`; raiser `main.py:104-109` (`_on_progress`), handler `main.py:238-241`.
+
+**What.** `main._on_progress` raises `CancelRequested` (a plain `Exception` subclass) when `cancel_event` is set; `_process_progress_line` and `consume_progress` wrap the callback in `except Exception: logger.debug(...)`, so the encode continues to completion. The backend (`transcode_dispatcher.py:1372-1430`) waits `_CANCEL_GRACE_SECONDS=10` for a graceful `/fail`, then `container.stop(timeout=5)` SIGTERMs python (no handler, dies at once), the `atomic_output` cleanup never runs and the `.arm-inprogress` partial stays in `/media` until the startup sweep. MASTER plan line 180 and `03-protocol.md:96` describe `task.cancel` as the graceful path; it is dead. Expected: `CancelRequested` propagates (re-raise it, or check `cancel_event` in the engine loop) and the engine kills its subprocess.
+
+**Repro / evidence.**
+
+```
+uv run python .../sweep2/R1/repro_cancel_swallowed.py
+handbrake: consume_progress returned normally; callback invoked for pcts [1, 2, 3] -> cancel swallowed
+ffmpeg: consume_progress returned normally; callback invoked for pcts [10, 20] -> cancel swallowed
+```
+No transcode test exercises cancel (`grep CancelRequested services/transcode/tests` -> only `asyncio.Event()` placeholders in `test_main.py`).
+
+**Suggested fix location.** `services/transcode/arm_transcode/handbrake.py` / `ffmpeg_progress.py` (re-raise `CancelRequested`; kill `proc` in a `finally`), or `main.py` (make `CancelRequested` a `BaseException`).
+
+**Verification.** scratch repro above against the real `_consume_progress`/`consume_progress`; end-to-end untested-needs-hardware: start a transcode, Cancel in the UI, observe the backend log "force-stopping unresponsive transcoder" every time.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/171
+
+### D-174  S3  untested-needs-hardware  ripper  slice R1
+
+**Title.** `rip_cd` kills only the `abcde` shell script on abandon/timeout; its `cdparanoia`/`flac` children keep reading the drive and writing into the (already rmtree'd) raw dir.
+
+**Where.** `services/ripper/arm_ripper/rip/abcde_rip.py:175-178` at `2625b3e7` (`proc.kill()` with no process group / `killpg`; spawn at `:126-131` has no `start_new_session`).
+
+**What.** `abcde` is a bash script that forks `cdparanoia` per track (and `flac`/`move` steps). On `job.abandoned` the pipeline task is cancelled, `proc.kill()` SIGKILLs bash only; the running `cdparanoia` is orphaned to tini and continues ripping the current track, holding the device (the abandon-eject at `job_controller.py:304` then gets EBUSY through all four retries) and writing into unlinked files after `_handle_abandon` wiped `/raw/<job_id>`. Same class as closed D-040 (hooks), different site; the makemkvcon/dd paths are single processes and unaffected.
+
+**Repro / evidence.** code hunk `abcde_rip.py:175-178`:
+```python
+if proc.returncode is None:
+    proc.kill()
+    with contextlib.suppress(BaseException):
+        await proc.wait()
+```
+
+**Suggested fix location.** `services/ripper/arm_ripper/rip/abcde_rip.py` — spawn with `start_new_session=True` and `os.killpg(proc.pid, SIGKILL)` on kill.
+
+**Verification.** untested-needs-hardware: insert an audio CD, Abandon mid-rip, `docker top <ripper>` shows `cdparanoia` still running and `eject` fails EBUSY.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/172
+
+### D-175  S4  untested-needs-hardware  ripper  slice R1
+
+**Title.** Multi-GB raw-dir `shutil.rmtree` runs synchronously on the event loop in the WS abandon handler, the boot probe and the backup rip (same class as closed D-108, which fixed only `_scan_extracted`).
+
+**Where.** `services/ripper/arm_ripper/job_controller.py:288` (`_handle_abandon`, called synchronously from `on_ws_command`), `services/ripper/arm_ripper/recovery.py:34` (`wipe_raw_dir`), `services/ripper/arm_ripper/rip/makemkv_backup.py:38` at `2625b3e7`.
+
+**What.** Deleting a 50-100 GB `/raw/<job_id>` (or a previous `backup/` tree) blocks the loop for the unlink duration (seconds on NFS/btrfs), stalling the WS receive loop (commands are dropped by the hub while unread), heartbeat and poll ticks. `iso_extract.discard_all` already does this via `asyncio.to_thread` (`iso_extract.py:209`).
+
+**Repro / evidence.** `job_controller.py:288 shutil.rmtree(target)` inside a method documented as "Runs synchronously from the WS handler".
+
+**Suggested fix location.** the three call sites — `await asyncio.to_thread(shutil.rmtree, ...)` (make `_handle_abandon` schedule the wipe as a task).
+
+**Verification.** by inspection; latency untested-needs-hardware (abandon a 50 GB BD job on an NFS raw mount and time the WS gap).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/173
+
+### D-176  S4  open  docs  slice R1
+
+**Title.** Protocol doc says there is no ripper heartbeat and no timeout-based liveness, while the ripper posts `/api/ripper/heartbeat` every 30 s and the backend derives ONLINE/OFFLINE and "stale" notes from it.
+
+**Where.** `docs/developers/architecture/03-protocol.md:42` and `:117` at `2625b3e7`; code `services/ripper/arm_ripper/main.py:35,127-167`, `services/backend/arm_backend/routers/ripper.py:328-363`, `routers/drives.py:36,150-154`.
+
+**What.** The doc states "There is no ripper heartbeat endpoint ... No heartbeat at all. Crash detection is handled at container-restart time". The ripper's `heartbeat_loop` posts media status every `HEARTBEAT_INTERVAL_SECONDS=30`, the backend sets `present`/`OFFLINE` from DETACHED beats and flags 5-min-stale beats in the diagnostic. Per `feedback_docs_describe_current_state.md` the section should describe the current contract.
+
+**Repro / evidence.** `grep -n -i heartbeat docs/developers/architecture/03-protocol.md` -> lines 42, 117 vs `main.py:127`.
+
+**Suggested fix location.** `docs/developers/architecture/03-protocol.md` — rewrite the two paragraphs.
+
+**Verification.** by inspection.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/174
+
+### D-177  S4  open  ripper  slice R1
+
+**Title.** makemkvcon and dd failure excerpts keep the first 400 chars of stderr, not the tail, unlike every other engine (and the transcoder's own `_clip_error` rationale).
+
+**Where.** `services/ripper/arm_ripper/rip/makemkv_rip.py:575` and `services/ripper/arm_ripper/rip/data_rip.py:102` at `2625b3e7` (`stderr.decode(...).strip()[:400]`); compare `abcde_rip.py:197` (`[-400:]`), `handbrake.py:105`, `ffmpeg_audio.py:88`, `transcode/main.py:59-68`.
+
+**What.** When makemkvcon/dd exit non-zero with more than 400 chars on stderr, the decisive last line is cut off `last_error`. Low impact for makemkvcon (robot mode puts diagnostics on stdout, see C3) but the convention is inconsistent and the transcoder docstring records why the head is the wrong end.
+
+**Repro / evidence.** `makemkv_rip.py:575 msg = stderr.decode(errors="replace").strip()[:400] or f"exit={proc.returncode}"`.
+
+**Suggested fix location.** the two lines — `[-400:]`.
+
+**Verification.** by inspection.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/175
+
+### D-178  S4  open  transcode  slice R1
+
+**Title.** `ffmpeg_audio.py` comment points at a module that does not exist (`ffmpeg_video.py`).
+
+**Where.** `services/transcode/arm_transcode/ffmpeg_audio.py:30` at `2625b3e7`.
+
+**What.** "Same shape as ffmpeg_video.py" — the video engine is `engines/ffmpeg_vaapi.py`; `ls services/transcode/arm_transcode/ffmpeg_video.py` -> No such file.
+
+**Repro / evidence.** `grep -rn ffmpeg_video services/` -> only this comment.
+
+**Suggested fix location.** `services/transcode/arm_transcode/ffmpeg_audio.py:30`.
+
+**Verification.** by inspection.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/176
+
+### D-179  S3  untested-needs-hardware  common  slice C1
+
+**Title.** `atomic_output` never fsyncs the output and fsyncs the directory *before* the rename, so the documented "write, fsync, rename" durability does not exist.
+
+**Where.** `packages/arm_common/arm_common/fileops.py:80-86` at `2625b3e7`; claim at `fileops.py:3-4` and `docs/developers/architecture/02-job-lifecycle.md:351`.
+
+**What.** The helper opens the parent directory, `fsync`s it, then `os.replace(tmp_path, final_path)`. A directory fsync before the rename makes nothing about the rename durable, and the data file itself is never fsynced by the helper or by any caller (`services/transcode/arm_transcode/main.py:124/142/158` just run HandBrake/abcde into `tmp`). On power loss right after the task is reported complete the directory may still hold `<final>.arm-inprogress` (or a truncated final), the DB says `done`, and the documented startup sweep deletes any `.arm-inprogress` whose task is not `in_progress`: the output is gone while the task reads done. Should be: fsync the file (or document that it is not), rename, then fsync the directory.
+
+**Repro / evidence.**
+
+```python
+# fileops.py:80-86
+# Best-effort fsync of the directory so the rename is durable on crash.
+fd = os.open(str(final_path.parent), os.O_RDONLY)
+try:
+    os.fsync(fd)
+finally:
+    os.close(fd)
+os.replace(tmp_path, final_path)
+```
+`02-job-lifecycle.md:351`: "The transcoder writes to `<final>.arm-inprogress` in the final directory, `fsync`s, then `rename(2)`".
+
+**Suggested fix location.** `packages/arm_common/arm_common/fileops.py` `atomic_output` (and the copy fallback of `transcode_none`): fsync `tmp_path` before the rename, fsync the directory after it; or drop the durability claim from the docstring and 02-job-lifecycle.md.
+
+**Verification.** code reading + docs; crash-window itself untested-needs-hardware (`devtools/crash-drill.sh` only covers the backend, not a power cut).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/177
+
+### D-180  S3  open  migrations  slice C1
+
+**Title.** `jobs.metadata_json` and `drives.rip_params_json` are JSONB in the database but `JSON` in the models; 0031's comment states the opposite of what 0001 created.
+
+**Where.** `packages/arm_common/arm_common/models/job.py:70`, `models/drive.py:94` (`Column(JSON, ...)`) vs `services/backend/migrations/versions/0001_initial.py:99-103,126-131` (`_jsonb()`); wrong comment at `0031_job_identity_columns.py:63-64`.
+
+**What.** The brief's model/migration-agreement invariant is violated for two columns: Alembic autogenerate reports a type change for both, `Job.metadata_json` cannot use JSONB operators in SQLAlchemy expressions although the column is JSONB, and the e2e harness's "swap JSONB->JSON for SQLite" step (memory `project_backend_test_harness`) does not see these columns at all, so tests exercise a declared type that prod never has. 0031 asserts "metadata_json is a JSON (not JSONB) column: `->>` works directly, but key deletion needs a jsonb round-trip" and casts `metadata_json::jsonb` everywhere; 0001 created it `JSONB NOT NULL DEFAULT '{}'::jsonb`. No runtime failure today (Postgres assignment-casts json->jsonb), but every reviewer and every future migration is being told the wrong type.
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/compare_schema.py
+drives.rip_params_json: type: migration='JSONB' model='JSON'
+jobs.metadata_json: type: migration='JSONB' model='JSON'
+```
+
+**Suggested fix location.** `packages/arm_common/arm_common/models/job.py`, `models/drive.py` (declare `postgresql.JSONB` like `Event.payload_json`, `Config.setup_progress`) and fix the 0031 comment; the e2e harness swap then covers them automatically.
+
+**Verification.** scratch comparison script above; `0001_initial.py:99-103,126-131` read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/178
+
+### D-181  S3  untested-needs-hardware  common  slice C1
+
+**Title.** `IdentificationMode` is written by the rip-preset API and seeders but read by nothing; the UI offers "Deferred placeholder" (and Required/Skip) as a rip-preset setting that has no effect.
+
+**Where.** `packages/arm_common/arm_common/enums.py:188-191` at `2625b3e7`; the only non-seed writer is `services/backend/arm_backend/routers/rip_presets.py:85`; UI option at `services/ui-neu/frontend/src/lib/components/RipPresetForm.svelte:153`.
+
+**What.** `rg identification_mode services/backend/arm_backend services/ripper/arm_ripper` finds only the create path and seeders; no identify/rip code branches on `RipPreset.identification_mode`, and `IdentificationMode.DEFERRED_PLACEHOLDER` has zero references anywhere (`enum_usage.py`). Identify behaviour is actually driven by `Config.block_on_miss` (and the placeholder path by `metadata_json.flags.unidentified`). An operator who sets a preset to "Skip" or "Deferred placeholder" gets exactly the "Required" behaviour, with no error and no hint. Should either be wired into identify (the ripper/backend choose block vs placeholder per preset) or removed from the schema/UI.
+
+**Repro / evidence.**
+
+```
+$ rg -n "identification_mode" services/backend/arm_backend services/ripper/arm_ripper --glob '*.py' | grep -v seeders.py
+services/backend/arm_backend/routers/rip_presets.py:85:        identification_mode=req.identification_mode,
+$ uv run python sweep2/C1/enum_usage.py | grep Identification
+IdentificationMode.DEFERRED_PLACEHOLDER         py=  0 literal=  5   (all 5 literals are UI option/test strings)
+```
+
+**Suggested fix location.** `services/backend/arm_backend/routers/ripper.py` identify (consume the routed rip preset's mode) or remove the field from `RipPresetCreateRequest`/`RipPresetForm.svelte`; cross-slice (backend B*, ui-neu) decision.
+
+**Verification.** grep + enum audit; behaviour untested-needs-hardware (`devtools/iso-smoke.sh` with a preset set to `skip` would show identify still blocking on a miss).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/179
+
+### D-182  S3  open  common  slice C1
+
+**Title.** `move_tree` (DISC_BACKUP passthrough) copies straight into the final folder with no staging: a copy error or a backend crash mid-copy leaves a partial `/media/<Title>` tree, and the helper's own `dst.exists()` guard then refuses every retry.
+
+**Where.** `packages/arm_common/arm_common/fileops.py:197-198,211-217` at `2625b3e7`.
+
+**What.** Across mounts `shutil.move` runs `copytree(..., copy_function=copy)`; `copytree` collects per-file `OSError`s (ENOSPC, EIO, a permission error on one file) and raises `shutil.Error` after the walk, so a half-copied `/media/<Title>/BDMV/...` stays on disk while the source is kept; only `CopyCancelled` is caught and `rmtree`d. The same partial tree is left when the backend dies during the minutes-long copy: the task stays IN_PROGRESS with `claimed_by=backend-inprocess`, `sweep_stale_claims` re-queues it after 90 s, and the re-run hits `FileExistsError("destination already exists")` at `fileops.py:197-198` "whatever the session's overwrite flag" (`passthrough_executor.py:235-242` turns that into a FAILED task). So the folder backup is unrecoverable without a manual delete, and a library scanner indexes the truncated disc folder meanwhile. `transcode_none` stages at `<final>.arm-inprogress` and cleans up on `BaseException`; the folder path should mirror it (copy into `<dst>.arm-inprogress` and `os.replace`, or `rmtree(dst)` on any exception). Reported independently by the B3 and C1 reviewers; merged here.
+
+**Repro / evidence.**
+
+```
+$ uv run python scratchpad/sweep2/B3/repro_retry_summary.py   # partial dst dir, then move_tree(src, dst)
+re-run after crash -> FileExistsError destination already exists: /tmp/.../media/BACKUP
+```
+`fileops.py:211-217`: `try: shutil.move(src, dst, copy_function=copy) except CopyCancelled: shutil.rmtree(dst, ignore_errors=True); raise` — no other exception cleans up.
+
+**Suggested fix location.** `packages/arm_common/arm_common/fileops.py` `move_tree`: `except BaseException: shutil.rmtree(dst, ignore_errors=True); raise` (the rename branch never raises after creating `dst`), or copy to `dst.with_name(dst.name + INPROGRESS_SUFFIX)` and `os.replace` into place.
+
+**Verification.** B3 scratch repro of the retry path (zero-infra); the crash sequence itself is untested-needs-hardware: `bash devtools/iso-smoke.sh` with a backup-mode session on a cross-mount `/raw`->`/media`, `docker kill -s KILL arm-backend` during the copy, restart, wait 100 s, read `last_error`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/180
+
+### D-183  S4  open  common  slice C1
+
+**Title.** The OpenAPI wire contract declares no `securitySchemes` and no `security` on any operation, so the snapshot/TS types describe every endpoint (including `/api/ripper/*`, `/api/transcoder/*`, config, users) as unauthenticated.
+
+**Where.** `services/ui-neu/openapi.snapshot.json` (`components` lacks `securitySchemes`; 158 operations without `security`); cause in `services/backend/arm_backend/auth.py:42-45` (`_extract_bearer(authorization: str | None)` from a plain header dependency, no `fastapi.security` scheme).
+
+**What.** The snapshot is the artefact CI gates on and the UI generates from; it currently cannot tell a reader which routes need the JWT, the service token, or nothing (compare the unauthenticated `GET /api/setup/status` with `GET /api/config`). Any generated client or contract test that reads `security` concludes auth is optional everywhere. Should declare `HTTPBearer` (JWT) and an `APIKeyHeader`/bearer scheme for the service token and attach them via the auth dependencies so the contract carries the requirement.
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/openapi_check.py | sed -n '/security schemes/,/operations without/p'
+== security schemes / unauth routes
+null
+  158 operations without `security`:
+```
+
+**Suggested fix location.** `services/backend/arm_backend/auth.py` (use `fastapi.security.HTTPBearer(auto_error=False)` inside `require_jwt`/`require_service_token`) then `bash devtools/regen-openapi-snapshot.sh` + codegen; cross-slice with the backend auth owner.
+
+**Verification.** scratch audit script over the committed snapshot.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/181
+
+### D-184  S4  open  common  slice C1
+
+**Title.** `CONFIG_FIELD_META` hard-codes the member lists of `PreviouslyRippedAction` and the `metadata_provider` set with no guard that they track the enums.
+
+**Where.** `packages/arm_common/arm_common/config_metadata.py:190` (`enum_values=["hold", "reject", "rip"]`), `:45` (`["tmdb", "omdb"]`, duplicated at `services/backend/arm_backend/routers/config.py:167`); guard test `packages/arm_common/tests/test_config_metadata.py:68-80` only checks labels cover values.
+
+**What.** `on_previously_ripped` is typed `PreviouslyRippedAction` on `ConfigUpdateRequest` (`schemas/auth.py:555`), so adding a member to the enum without touching this list leaves the Settings/setup UI unable to offer it, and nothing fails. The `episode_sources` list is already asserted by value (`test_config_metadata.py:88`); the two enum fields are not.
+
+**Repro / evidence.** `rg -n "enum_values" packages/arm_common/tests/test_config_metadata.py` shows no comparison against `PreviouslyRippedAction`.
+
+**Suggested fix location.** `config_metadata.py` (`enum_values=[m.value for m in PreviouslyRippedAction]`) or a one-line assertion in `packages/arm_common/tests/test_config_metadata.py`.
+
+**Verification.** code reading + grep.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/182
+
+### D-185  S4  untested-needs-hardware  migrations  slice C1
+
+**Title.** `disc_fingerprints.created_at` is nullable with no default in the schema, NOT NULL `now()` in the model, so every fingerprint row on Postgres has `created_at = NULL`.
+
+**Where.** `services/backend/migrations/versions/0006_disc_fingerprints.py:43` vs `packages/arm_common/arm_common/models/disc_fingerprint.py:53` (`created_at_column()`, `_columns.py:95-96`).
+
+**What.** SQLModel omits an unset server-defaulted column from the INSERT and relies on the DB default; 0006 created the column `nullable=True` with no `server_default`, so Postgres stores NULL. `DiscFingerprintView.created_at` (`schemas/jobs.py:150`) therefore serialises as `null` for every real deployment, while the SQLite tier-2 harness (built from `SQLModel.metadata`) shows a timestamp: a test can pass on a value production never has. Model says the column is NOT NULL, which is false in the live schema.
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/insert_probe.py
+INSERT INTO disc_fingerprints (id, job_id, algo, value) VALUES (?, ?, ?, ?) RETURNING created_at
+$ uv run python sweep2/C1/compare_schema.py
+disc_fingerprints.created_at: nullable: migration=True model=False; default: migration=None model='now()'
+```
+
+**Suggested fix location.** New Alembic revision: `UPDATE disc_fingerprints SET created_at = now() WHERE created_at IS NULL`, then `ALTER ... SET DEFAULT now(), SET NOT NULL` (model already matches the intended shape).
+
+**Verification.** scratch scripts above (zero-infra); live NULLs untested-needs-hardware (`psql -c "select count(*) from disc_fingerprints where created_at is null"`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/183
+
+### D-186  S4  open  migrations  slice C1
+
+**Title.** Index inventory drifts between the live schema and the models: three DB-only indexes, one model-only index, and the `uq_transcode_tasks_output_path_live` partial unique index exists only in 0001, so the e2e harness never enforces it.
+
+**Where.** `services/backend/migrations/versions/0001_initial.py:314-332` (composite + partial unique indexes), `0015_notification_channels.py` (`ix_notification_dispatch_log_channel_id`, `ix_notification_dispatch_log_created_at`), `0016_notification_inbox.py` (`ix_notification_inbox_created_at`) vs `packages/arm_common/arm_common/models/transcode_task.py:28-35` (`index=True` on `status` -> `ix_transcode_tasks_status`, which the DB does not have), `models/notification_dispatch_log.py`, `models/notification_inbox.py` (no indexes).
+
+**What.** Alembic autogenerate against head is not clean (it would drop three indexes and add one), and the "only one live task can own an output_path" guarantee is a DB-only fact: `SQLModel.metadata.create_all` in `tests/e2e` builds `transcode_tasks` without `uq_transcode_tasks_output_path_live`, so a regression in the collision logic that relies on that constraint cannot surface in the zero-infra tier.
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/compare_schema.py
+notification_dispatch_log INDEX ix_notification_dispatch_log_channel_id: migration=(('channel_id',), False) model=None
+notification_dispatch_log INDEX ix_notification_dispatch_log_created_at: migration=(('created_at',), False) model=None
+notification_inbox INDEX ix_notification_inbox_created_at: migration=(('created_at',), False) model=None
+transcode_tasks INDEX ix_transcode_tasks_status: migration=None model=(('status',), False)
+transcode_tasks INDEX ix_transcode_tasks_status_heartbeat: migration=(('status', 'claim_heartbeat_at'), False) model=None
+transcode_tasks INDEX uq_transcode_tasks_output_path_live: migration=(('output_path',), True) model=None
+```
+
+**Suggested fix location.** `packages/arm_common/arm_common/models/transcode_task.py` (`__table_args__` with the composite `Index` and the partial unique `Index(..., unique=True, postgresql_where=...)`, drop `index=True` on `status`), `models/notification_dispatch_log.py`, `models/notification_inbox.py` (declare the three indexes).
+
+**Verification.** scratch comparison script.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/184
+
+### D-187  S4  open  common  slice C1
+
+**Title.** "Enums are validated at write time in the SQLModel/Pydantic layer" is claimed in three places but nothing validates: `_StrEnumString.process_bind_param` stringifies any value and SQLModel table models skip validation.
+
+**Where.** `packages/arm_common/arm_common/models/_columns.py:30-35` (`return str(value)`), claim at `services/backend/migrations/versions/0001_initial.py:3-5`, `docs/developers/architecture/04-data-model.md:13`, `.claude/memory/feedback_db_enums_as_varchar.md`.
+
+**What.** The VARCHAR-enum convention explicitly trades DB enforcement for app-layer validation, but the app layer has none at the model boundary: a `Job`/`Drive`/`Track` instance accepts any string for an enum column and the bind processor writes it verbatim. Today every write path happens to go through a typed request schema or an enum member, so there is no observed bad row, but the stated guardrail does not exist and the one cheap place to add it (the bind processor) is the place that currently widens.
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/validate_probe.py
+Job constructed with bogus enums, no error: bogus nope xx
+assignment accepted: also_bogus
+bind param of bogus: garbage
+```
+
+**Suggested fix location.** `packages/arm_common/arm_common/models/_columns.py` `_StrEnumString.process_bind_param`: coerce through `self._enum_cls(value)` and raise on an unknown value (keep the tolerant *read* path), then the doc claims become true; or reword 04-data-model.md/0001/memory to "validated by the request schemas".
+
+**Verification.** scratch probe above.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/185
+
+### D-188  S4  open  common  slice C1
+
+**Title.** `_StrEnumString` sets `cache_ok = True` without exposing `enum_cls` to the cache key, so every enum column type shares one SQL-compilation cache key.
+
+**Where.** `packages/arm_common/arm_common/models/_columns.py:24-28` at `2625b3e7`.
+
+**What.** SQLAlchemy builds a `TypeDecorator`'s cache key from constructor-argument names found in `__dict__`; the class stores the argument as `_enum_cls`, so the key is `(_StrEnumString,)` for `JobStatus`, `DriveStatus`, `MediaType`, ... alike. Two statements that differ only in the enum type of a bound literal compile to the same cached form. ORM statements include the Column in the key so no symptom is observed today; it is a latent misuse of `cache_ok` (SQLAlchemy requires either same-named attributes or `cache_ok = False`).
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/cache_probe.py
+cache keys equal across enum classes: True (<class 'arm_common.models._columns._StrEnumString'>,)
+stmt cache keys equal: True
+```
+
+**Suggested fix location.** `_columns.py`: store the argument as `self.enum_cls` (same name as the `__init__` parameter) or set `cache_ok = False`.
+
+**Verification.** scratch probe above.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/186
+
+### D-189  S4  open  migrations  slice C1
+
+**Title.** Offline rendering (`alembic upgrade --sql`, the mode `env.py` and the migration tests use) crashes in 0032/0033 with `TypeError: 'NoneType' object is not iterable`; the chain test's comment says only 0011 blocks a full-range render.
+
+**Where.** `services/backend/migrations/versions/0032_job_metadata_sections.py:97-98` and `0033_drop_metadata_mirrors.py:59-60` (`rows = bind.execute(...)`; `for job_id, md in rows`); comment at `services/backend/tests/test_migration_chain.py:71-74`; offline entry point `services/backend/migrations/env.py:29-37`.
+
+**What.** In offline mode `op.get_bind()` is a mock connection whose `dialect.name` is `postgresql` (so the early return is not taken) and whose `execute()` returns `None`. Both migrations guard the dialect but not the mode, so any `--sql` render spanning 0032 fails, and no migration after 0031 can be covered by the `_render_sql` parity tests over a range that includes them (the existing tests stop at adjacent pairs 0034->0035, 0037->0038, 0038->0039, 0041->0042). Should check `context.is_offline_mode()` and return (the data lift cannot be rendered as SQL anyway).
+
+**Repro / evidence.**
+
+```
+$ uv run python sweep2/C1/render.py 0030_drive_lifecycle 0033_drop_metadata_mirrors
+  File ".../versions/0032_job_metadata_sections.py", line 98, in upgrade
+    for job_id, md in rows:
+TypeError: 'NoneType' object is not iterable
+```
+
+**Suggested fix location.** `0032_job_metadata_sections.py` / `0033_drop_metadata_mirrors.py` `upgrade()`: `if context.is_offline_mode() or bind.dialect.name != "postgresql": return`; update the comment in `test_migration_chain.py:71-74`.
+
+**Verification.** scratch render above (zero-infra, uses the suite's own `_render_sql`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/187
+
+### D-190  S4  open  backend  slice C1
+
+**Title.** Backend statement coverage is 99% (32 missed statements in 9 files) against the documented 100%-statement policy; PR #110 brought it to 100% and the later fix sweeps regressed it.
+
+**Where.** `uv run coverage run -m pytest && uv run coverage report -m` on `main` @ `2625b3e7`: `passthrough_executor.py:251-252,345,348,359-364`, `routers/config.py:320-322,336,340-341,402-404`, `transcode_dispatcher.py:812-814,831-832,850`, `auto_session.py:912-913`, `drive_scanner.py:91-92`, `utils.py:33-34`, `main.py:187`, `notifications/bash_runner.py:64`, `notifications/script_meta.py:144`.
+
+**What.** CLAUDE.md and `docs/developers/architecture/09-testing.md` state the Backend holds 100% statement coverage with explicit, justified pragmas for anything unreachable; `test/backend-coverage-100` (#110) delivered that on 2026-10-10. The fix sweeps #259/#261/#262/#264 added branches (passthrough cancel paths, config validation, dispatcher cancel/release paths, bash runner process-group kill) without tests or pragmas, so 32 statements are now unexercised; CI measures but does not gate, so nothing flagged it. The misses sit exactly in the code those sweeps changed to fix S2/S3 defects, so the fixes themselves are untested.
+
+**Repro / evidence.**
+
+```
+$ cd <main> && uv run coverage run -m pytest -q && uv run coverage report -m | grep -v 100%
+TOTAL  11006  32  3354  40  99%
+```
+
+**Suggested fix location.** The nine files above: add tests for each listed line (or a justified `# pragma: no cover` where truly unreachable), then enable the `fail_under` ratchet the testing doc says is ready.
+
+**Verification.** Measured by the coordinator on the full suite (3854 passed) at 2625b3e7.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/188
+
+### D-191  S3  open  ui-neu  slice U1
+
+**Title.** A wrong "current password" on /change-password (and Settings > Users, setup step 1) logs the operator out and bounces to /login; the API client treats every 401 as session expiry and discards the backend detail.
+
+**Where.** `services/ui-neu/frontend/src/lib/api/client.ts:59-67` at `2625b3e7`; callers `src/routes/change-password/+page.svelte:17`, `src/lib/components/settings/ChangePasswordForm.svelte:65-69`; backend `services/backend/arm_backend/routers/auth.py:73-81`.
+
+**What.** `POST /api/auth/password` answers 401 `"current password incorrect"` for a typo in the current password (auth.py:80-81), and `POST /api/auth/login` answers 401 `"invalid credentials"`. `handle()` fires `on401()` (logoutLocal + `goto('/login')`) before throwing, and throws the fixed message `'API 401: Unauthorized'` instead of `detail`. On /change-password a typo therefore clears the token and redirects to the login page with no message; on /login a bad password shows "API 401: Unauthorized" (and re-runs the logout/redirect handler) instead of "invalid credentials". A 401 from a credential endpoint is not a stale session.
+
+**Repro / evidence.**
+
+```
+client.ts:59-67   if (res.status === 401) { on401(); ... throw new ApiError(401, 'API 401: Unauthorized', body); }
+auth.py:80-81     raise HTTPException(401, detail="current password incorrect")
+ChangePasswordForm.svelte:65-69   await changePassword(...) -> catch: error = err.message   (never rendered: the page is gone)
+```
+Manual: sign in, open /change-password, enter a wrong current password, submit: you land on /login logged out.
+
+**Suggested fix location.** `src/lib/api/client.ts` `handle()`: only call `on401()` when the request carried a bearer token AND the path is not `/api/auth/login` / `/api/auth/password` (or let `apiFetch` take an `allow401` option that `auth.ts` sets), and surface `detail` for 401 like every other status. `auth.ts` is the natural place to opt the two credential calls out.
+
+**Verification.** Code reading of client.ts + auth.py + ChangePasswordForm; no existing test covers a 401 from `changePassword`/`login` through the real client (login-page.test.ts mocks `login`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/189
+
+### D-192  S3  open  ui-neu  slice U1
+
+**Title.** Job detail "redirect to dashboard on 404" never fires: it string-matches `'404'` in a message the API client has replaced with the backend `detail` ("unknown job_id: ..."); both tests pass only because they throw their own `new Error('404 Not Found')`.
+
+**Where.** `services/ui-neu/frontend/src/routes/jobs/[id]/+page.svelte:185-188` at `2625b3e7`; tests `src/routes/jobs/__tests__/job-detail-page.test.ts:167` and `src/routes/jobs/[id]/page.test.ts:195`; message source `src/lib/api/client.ts:70-79`; backend `services/backend/arm_backend/routers/jobs.py:386-387`.
+
+**What.** `GET /api/jobs/{id}` 404s with `detail="unknown job_id: <id>"`; `handle()` sets `ApiError.message = detail`, so `e.message.includes('404')` is false and a deleted/bogus job id shows the LoadState error box ("unknown job_id: ...") and keeps the 5 s poll alive instead of `goto('/')`. Same class as closed D-059 (string-matching a status in a message the client rewrites).
+
+**Repro / evidence.**
+
+```
++page.svelte:185   if (e instanceof Error && e.message.includes('404')) { goto('/'); return; }
+client.ts:70-73    const detail = body.detail; if (typeof detail === 'string') message = detail;
+jobs.py:387        detail=f"unknown job_id: {job_id}"
+page.test.ts:195   mockFetchJob.mockRejectedValueOnce(new Error('404 Not Found'));   // not what the client produces
+```
+
+**Suggested fix location.** `routes/jobs/[id]/+page.svelte` loadJob: `e instanceof ApiError && e.status === 404` (ApiError is already imported at line 6); change both tests to reject with `new ApiError(404, 'unknown job_id: job_1', null)`.
+
+**Verification.** Code reading; vitest subset passes today (61/61) which is the point: the tests encode the wrong message shape.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/190
+
+### D-193  S3  open  ui-neu  slice U1
+
+**Title.** Notifications "Show dismissed" shows nothing after a reload: dismiss sets `cleared=true`, the inbox list omits cleared rows by default and the UI never asks for them.
+
+**Where.** `services/ui-neu/frontend/src/routes/notifications/+page.svelte:28` at `2625b3e7`; `src/lib/api/notifications.ts:11-13`; backend `services/backend/arm_backend/routers/notifications.py:644-655`; test `src/routes/notifications/__tests__/notifications-page.test.ts:249-258`.
+
+**What.** `filtered = showCleared ? notifications : notifications.filter(!seen)` only toggles rows already in memory. `fetchNotifications()` calls `/api/notifications/inbox` without `include_cleared=true`, and `list_inbox` drops `cleared` rows (every dismissed row, since `dismissNotification` PATCHes `seen+cleared`). So the checkbox only reveals rows dismissed during the current page visit; after navigation/reload "Show dismissed" lists nothing while "Purge Cleared" (from the count endpoint) still says there are N cleared rows. The test passes by seeding a `seen: true, cleared: false` row the UI never produces.
+
+**Repro / evidence.**
+
+```
+notifications.ts:12   get('/api/notifications/inbox')          // no include_cleared
+notifications.py:646  include_cleared: bool = Query(default=False)
+notifications.py:653  if not include_cleared: rows = [r for r in rows if not r.cleared]
+```
+Dismiss a row, reload /notifications, tick "Show dismissed": empty list; header still offers "Purge Cleared".
+
+**Suggested fix location.** `src/lib/api/notifications.ts` `fetchNotifications(includeCleared)` passing `?include_cleared=true` when the checkbox is on (or always, filtering client-side), and the page's `load()`/`showCleared` effect; update the test fixture to use `cleared: true`.
+
+**Verification.** Code reading of page + API + router.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/191
+
+### D-194  S3  untested-needs-hardware  ui-neu  slice U1
+
+**Title.** Transcoder page task list goes stale when the last in-progress task finishes: the jobs poll is stopped by the stats tick without a final reload, and WS events only reload the GPU rows.
+
+**Where.** `services/ui-neu/frontend/src/routes/transcoder/+page.svelte:128-135` at `2625b3e7` (also 114-124 poll timer, 171-180 WS handler).
+
+**What.** `loadJobs(false)` runs on a 5 s interval only while `tasks_by_status.in_progress|queued > 0` (from the separate 5 s stats poller). When a task completes between the last jobs poll and the next stats poll, the stats tick flips the counts to 0, the `$effect` calls `stopJobsPolling()` and nothing refetches the list, so the card keeps showing `in_progress` with a live progress bar until the operator switches tabs or reloads. The `transcode.events` subscription (line 171) only calls `loadGpus()`.
+
+**Repro / evidence.**
+
+```
+128  $effect(() => { if (statusCount('in_progress') > 0 || statusCount('queued') > 0) startJobsPolling(); else stopJobsPolling(); });
+171  wsClient.subscribe('transcode.events', () => { ... loadGpus(); });   // no loadJobs
+```
+Window: up to one poll interval per completion, every time the queue drains.
+
+**Suggested fix location.** `routes/transcoder/+page.svelte`: call `loadJobs(false)` in the `else` branch (on the transition to idle) and/or in the `transcode.events` handler alongside `loadGpus()`.
+
+**Verification.** Code reading; `untested-needs-hardware` for the live race (`bash devtools/iso-smoke.sh` with a transcode session, watch the Transcoder page as the single task finishes).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/192
+
+### D-195  S3  open  ui-neu  slice U1
+
+**Title.** Transcoder Retry/Delete swallow failures: no try/catch, and the `actionFeedback` banner state is declared but never set.
+
+**Where.** `services/ui-neu/frontend/src/routes/transcoder/+page.svelte:100-112` at `2625b3e7` (`actionFeedback` at 105, rendered 375-380).
+
+**What.** `handleRetry` and `handleDelete` `await` the API and then `loadJobs()`; a 409 from retry (`transcodes.py:142-146`, task no longer FAILED after a concurrent retry), a 503 from delete (`transcodes.py:226-231`, dispatcher unavailable) or a network error becomes an unhandled promise rejection: the button does nothing visible, the list is not refreshed, and the "Dismiss"-able feedback banner (lines 375-380) can never appear because nothing assigns `actionFeedback`.
+
+**Repro / evidence.**
+
+```
+100  async function handleRetry(id) { await retryTranscoderJob(id); loadJobs(); }
+107  async function handleDelete(id) { if (confirm(...)) { await deleteTranscoderJob(id); loadJobs(); } }
+105  let actionFeedback = $state<...>(null);   // only ever reset to null at 378
+```
+
+**Suggested fix location.** `routes/transcoder/+page.svelte`: wrap both in try/catch setting `actionFeedback = {type:'error', message: e.message}` (ApiError.message already carries the backend detail) and refresh on success.
+
+**Verification.** Code reading; `grep -n "actionFeedback =" src/routes/transcoder/+page.svelte` shows only the `null` reset.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/193
+
+### D-196  S3  open  ui-neu  slice U1
+
+**Title.** Per-drive prescan/enumeration settings are dead: Settings feeds DriveCard hard-coded "global defaults" (1 / 300 / 3 / 60) from `arm_config.PRESCAN_*` keys that never exist in the v3 ConfigView, and no ripper or backend code reads `prescan_cache_mb` / `prescan_timeout` / `prescan_retries` / `disc_enum_timeout`.
+
+**Where.** `services/ui-neu/frontend/src/routes/settings/+page.svelte:672-677` at `2625b3e7`; `src/lib/api/settings.ts:71-73` (arm_config = stringified ConfigView keys, all snake_case); model `packages/arm_common/arm_common/models/drive.py:99-102`; consumer `src/lib/components/DriveCard.svelte:110-152, 162-164, 682`.
+
+**What.** `Number(settings?.arm_config?.PRESCAN_CACHE_MB) || 1` is always the fallback because ConfigView has no such key (settings.ts:71 builds `arm_config` from the ConfigView's own lowercase fields). DriveCard shows those numbers as the "global default" placeholder and stores `null` when the operator types the same value (162-164). `grep -rn "prescan_\|disc_enum_timeout" services/ripper services/backend/arm_backend` (non-test) finds no reader, so whatever the operator saves changes nothing. The UI presents a tunable with a documented default that is fictional.
+
+**Repro / evidence.**
+
+```
+settings/+page.svelte:673   prescan_cache_mb: Number(settings?.arm_config?.PRESCAN_CACHE_MB) || 1,
+settings.ts:71-73           arm_config: Object.fromEntries(Object.entries(config).map(([k, v]) => [k, String(v)]))   // keys are ConfigView keys
+grep -rn "prescan_timeout\|disc_enum_timeout" --include=*.py services/ripper services/backend/arm_backend | grep -v tests   -> (no output)
+```
+
+**Suggested fix location.** Either wire the four Drive columns into the ripper (`arm_ripper` scan/rip settings, with real defaults published on `ConfigView`), or remove the Advanced prescan fields from `DriveCard.svelte` and the `globalDefaults` prop from `routes/settings/+page.svelte` until they do something.
+
+**Verification.** Code reading + grep; cross-slice (DriveCard, ripper) for the coordinator.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/194
+
+### D-197  S3  open  ui-neu  slice U1
+
+**Title.** `dashboard-page.test.ts` "Dashboard job grouping logic" tests a private re-implementation of the grouping, not the page, and that copy disagrees with the page (`identified` is a review card on the page, "finishing" in the test).
+
+**Where.** `services/ui-neu/frontend/src/routes/__tests__/dashboard-page.test.ts:77-130` at `2625b3e7`; page logic `src/routes/+page.svelte:49-57, 69-85`.
+
+**What.** The five tests call a `groupJobs()` defined inside the test file (lines 78-91) and never render the page or import its helpers, so they can never fail when the page's lanes change. They also assert `identified` -> finishing and ignore `awaiting_review`, while the page puts `identified`/`awaiting_review` in WAITING FOR REVIEW (lines 49-57) and `finishingJobs` excludes review cards (line 85). A test that passes for the wrong reason.
+
+**Repro / evidence.**
+
+```
+test:78   function groupJobs(jobs) { const waiting = jobs.filter(s === 'awaiting_user_id' || s === 'ripped_awaiting_identify'); ... finishing = s === 'identified' || ... }
+page:55   return s === 'awaiting_user_id' || s === 'ripped_awaiting_identify' || s === 'awaiting_review' || s === 'identified';
+```
+
+**Suggested fix location.** Delete the describe block or move the lane partition into `src/lib/utils/job-status*.ts` and test that function, plus one render test per lane with `fetchDashboard` fixtures.
+
+**Verification.** Code reading; vitest subset passes (61/61).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/195
+
+### D-198  S4  open  ui-neu  slice U1
+
+**Title.** Three destructive actions still use the native `confirm()` dialog where the shared `ConfirmDialog` exists (same pattern as closed D-026, different sites).
+
+**Where.** `services/ui-neu/frontend/src/routes/+page.svelte:173` (bulk delete/purge jobs), `src/routes/transcoder/+page.svelte:108` (delete transcode task), `src/routes/settings/+page.svelte:224` (delete user theme) at `2625b3e7`.
+
+**What.** `ConfirmDialog` is the standard (used on the same Settings page for Clear Cache at 794-802, on Files for every delete, on Notifications for purge). These three sites block the UI thread with the browser prompt, cannot be themed, and are untestable with the component harness (files-page.test stubs `confirm` globally).
+
+**Repro / evidence.** `grep -rn "confirm(" src/routes | grep -v test` -> the three lines.
+
+**Suggested fix location.** The three files: a `ConfirmDialog` with `variant="danger"`, as Files/Settings already do.
+
+**Verification.** grep + reading `feedback_standard_ui_patterns.md`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/196
+
+### D-199  S4  open  ui-neu  slice U1
+
+**Title.** One-off markup where shared components exist: `&times;` close buttons instead of `CloseButton`, and inline SVGs whose paths are byte-identical to `Glyph` entries (chevron-right, lock, refresh, gear, sun, moon).
+
+**Where.** `services/ui-neu/frontend/src/routes/+page.svelte:455` and `src/routes/notifications/+page.svelte:107-112` (close glyph); `src/routes/jobs/[id]/+page.svelte:764-766` (= `GLYPH_PATHS['chevron-right']`); `src/routes/files/+page.svelte:518-526` (= `lock`), `:637-640` (= `refresh`); `src/routes/+layout.svelte:344-361` (= `gear`, split in two paths), `:437-444` (= `sun`), `:446-453` (= `moon`) at `2625b3e7`.
+
+**What.** `feedback_standard_ui_patterns.md`: recurring icons/close buttons are the shared `Glyph`/`CloseButton`, never pasted SVG. The paths above match `src/lib/components/glyph-names.ts` exactly (`chevron-right: 'M9 5l7 7-7 7'`, `lock`, `refresh`, `gear`, `sun`, `moon`), so these are copies that will drift the moment the glyph set changes; the two `&times;` buttons also lack an aria-label.
+
+**Repro / evidence.** Diff the `d=` attributes at the lines above against `glyph-names.ts:43-80`; `grep -rn "CloseButton" src/routes` -> no use in any route.
+
+**Suggested fix location.** Replace with `<Glyph name=.../>` and `<CloseButton onclick=.../>` in the five files.
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/197
+
+### D-200  S4  open  ui-neu  slice U1
+
+**Title.** Settings > Themes renders `themeFeedback` twice (once at the top of the section, again inside the User Themes panel) whenever a user theme exists.
+
+**Where.** `services/ui-neu/frontend/src/routes/settings/+page.svelte:509-513` and `:574-578` at `2625b3e7`.
+
+**What.** Both blocks are `{#if themeFeedback}` on the same state, so after a theme delete the message "Theme X deleted" appears as an alert above the swatches and as a paragraph under the User Themes grid.
+
+**Repro / evidence.** Lines 509 and 574 are both `{#if themeFeedback}`.
+
+**Suggested fix location.** Drop one of the two blocks (574-578 is the orphan: the panel it sits in disappears when the last user theme is deleted, so the success message would vanish with it).
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/198
+
+### D-201  S4  open  ui-neu  slice U1
+
+**Title.** Settings starts a 10 s `/api/drives` poller for every tab (not just Drives) on top of the layout's 5 s dashboard fan-out that already fetches `/api/drives`, and POSTs `/api/drives/rescan` on every visit.
+
+**Where.** `services/ui-neu/frontend/src/routes/settings/+page.svelte:141, 263-267` at `2625b3e7`.
+
+**What.** `drives.start()` runs in `onMount` regardless of `activeTab`; the drive list is only read by the Drives tab (652-685) and the stats bar at the top is already fed by `dashboard` (`fetchDrives({includeRetired:true})` every 5 s, dashboard.ts:90). Sitting on Settings > Themes therefore issues `/api/drives` 18 times a minute from two pollers, plus a write (`rescan`) each time the page mounts. Sibling of open D-136 (different page/endpoint).
+
+**Repro / evidence.**
+
+```
+141  const drives = createPollingStore(fetchDrives, [] as Drive[], 10000);
+265  rescanDrives().catch(() => {}).then(() => drives.start());   // unconditional
+```
+
+**Suggested fix location.** `routes/settings/+page.svelte`: start/stop the drives store from `setTab`/`onHashChange` when `tab === 'drives'` (as `loadDriveSessions` already is), and move the rescan into the Drives tab entry.
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/199
+
+### D-202  S4  open  ui-neu  slice U1
+
+**Title.** Transcoder card "Took Xh Ym" is `updated_at - created_at`, so queue wait counts as encode time (sibling of open D-130 on another surface); the task view carries no claimed/started timestamp to compute it correctly.
+
+**Where.** `services/ui-neu/frontend/src/routes/transcoder/+page.svelte:485-490` at `2625b3e7`; `TranscodeTaskView` fields `src/lib/types/api.gen.ts:5185-5225` (`created_at`, `updated_at`, `claim_heartbeat_at` only).
+
+**What.** A task queued at 09:00 that waited for a GPU until 11:00 and encoded for 20 minutes shows "Took 2h 20m 0s" in green. D-130 fixes the ETA on `TranscodeCard`; this label has the same root cause and needs a `claimed_at`/`started_at` on `TranscodeTaskView`.
+
+**Repro / evidence.** `486 {@const dur = formatDuration(job.created_at, job.updated_at)}` ... `Took {dur}`.
+
+**Suggested fix location.** Backend `TranscodeTaskView` (+ OpenAPI regen) to expose the claim time, then this label; until then drop "Took" or label it "Queued to done".
+
+**Verification.** Code reading of the generated type.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/200
+
+### D-203  S4  open  ui-neu  slice U1
+
+**Title.** Job detail track Title cell is a clickable `<td onclick>` with no role, tabindex or key handler: the inline title editor is mouse-only and invisible to assistive tech.
+
+**Where.** `services/ui-neu/frontend/src/routes/jobs/[id]/+page.svelte:539-548` at `2625b3e7`.
+
+**What.** For admins the cell toggles `editingTrackId` on click (`cursor: pointer` via `.job-detail-track-title-cell`) but there is no `<button>`, `role="button"`, `tabindex` or Enter/Space handling, so keyboard users cannot open `TrackTitleSearch` and screen readers get no affordance. The IMDb link inside needs `stopPropagation` (571) only because the whole cell is a click target.
+
+**Repro / evidence.** Lines 539-548: `<td class="table-cell {...}" data-label="Title" onclick={$isAdmin ? () => {...} : undefined}>`.
+
+**Suggested fix location.** Wrap the title in a `<button type="button" class="btn-link">` (or an edit icon `Glyph`) inside the cell; drop the `onclick` from the `<td>`.
+
+**Verification.** Code reading; svelte a11y lint does not flag `onclick` on `<td>` without an explicit role.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/201
+
+### D-204  S4  open  ui-neu  slice U1
+
+**Title.** Two write actions surface no error: excluding a track (`toggleExcluded`) re-throws into the void and "Run setup again" has no catch.
+
+**Where.** `services/ui-neu/frontend/src/routes/jobs/[id]/+page.svelte:146-154` and `src/routes/settings/+page.svelte:252-260` at `2625b3e7`.
+
+**What.** `toggleExcluded` is `try { await updateTrack } finally { await loadJob() }`: a 409 (job not editable in this status) or 403 just snaps the checkbox back with no message and an unhandled rejection in the console. `runSetupAgain` is `try { await restartSetup(); goto(...) } finally { restartingSetup = false }`: a failure leaves the operator on Settings with no feedback.
+
+**Repro / evidence.** Both functions have no `catch`; neither page has a feedback state wired to them.
+
+**Suggested fix location.** The two functions: catch and show `flashNote(e.message)` (jobs page already has `flashNote`) / a `settings-page-feedback` alert.
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/202
+
+### D-205  S4  open  ui-neu  slice U1
+
+**Title.** `fetchDashboard` throws away `TranscodeStatsView`, so the header's "N queued" badge and the `worker_running` branch of the Transcode health dot are dead code.
+
+**Where.** `services/ui-neu/frontend/src/lib/api/dashboard.ts:152` at `2625b3e7` (type 20-26); consumers `src/routes/+layout.svelte:267-274, 311-313`.
+
+**What.** `transcoder_stats` is always `{}` on success, so `transcoder_stats?.pending` is `undefined` and `(Number(undefined) || 0) > 0` is never true: the "queued" badge never renders although `/api/transcodes/stats.tasks_by_status.queued` is in the response that was just fetched. `worker_running ?? true` likewise always takes the default. The code comment at 20-22 claims v3 has no pending count; `TranscodeStatsView.tasks_by_status` (transcoder.py:79) has it.
+
+**Repro / evidence.**
+
+```
+dashboard.ts:152   transcoder_stats: transcoderStatsRes.status === 'fulfilled' ? {} : null,
++layout.svelte:311 {#if $dashboard.transcoder_online && (Number($dashboard.transcoder_stats?.pending) || 0) > 0}
+```
+
+**Suggested fix location.** `src/lib/api/dashboard.ts`: map `pending: stats.tasks_by_status.queued ?? 0` (and drop `worker_running` or derive it from `/api/transcodes/workers`), or delete the badge/branch in `+layout.svelte`.
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/203
+
+### D-206  S4  open  ui-neu  slice U1
+
+**Title.** Em-dash and unicode-symbol glyphs in UI copy via HTML entities (`&mdash;`, `&middot;`, `&rarr;`, `&rsaquo;`, `&times;`), which the `[^\x00-\x7F]` pre-commit grep cannot see.
+
+**Where.** `services/ui-neu/frontend/src/routes/transcoder/+page.svelte:324` (`&mdash;`), `:299` and `:331` (`&middot;` separators), `:496` (`&rarr;`); `src/routes/jobs/[id]/+page.svelte:307` (`&rsaquo;` breadcrumb separator); `src/routes/+page.svelte:455` and `src/routes/notifications/+page.svelte:111` (`&times;` close glyphs) at `2625b3e7`.
+
+**What.** `feedback_no_em_dashes_in_ui_copy.md` bans `—` and `· → › ×` as UI, naming `|` for separators and SVG glyphs for arrows/close. The transcoder worker card renders "Task #x — gpu-0", "GPUs: 1/1 available · Queue: 0 queued", "50% · 3m since heartbeat" and "→ movie.mkv"; the job breadcrumb uses `›`.
+
+**Repro / evidence.** `grep -rnoE "&(mdash|ndash|middot|rarr|rsaquo|times);" src/routes | grep -v test` -> the 7 lines above.
+
+**Suggested fix location.** The files above: `|` / `,` for separators, `-` or `:` for the em-dash, `Glyph name="arrow-right"` / `"chevron-right"` for the arrows, `CloseButton` for `&times;` (see C11). Add the entity names to the pre-commit non-ASCII check.
+
+**Verification.** grep.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/204
+
+### D-207  S3  open  ui-neu  slice U2
+
+**Title.** ApplySessionDialog's session filter disagrees with the backend compatibility rule: it offers TV sessions to CD and data jobs (backend 422s) and hides ISO/data sessions the backend accepts for video jobs; the test pins the wrong filter.
+
+**Where.** `services/ui-neu/frontend/src/lib/components/ApplySessionDialog.svelte:47-52, 60-72` at `2625b3e7`; test `src/lib/components/__tests__/ApplySessionDialog.test.ts:117-135`; backend `services/backend/arm_backend/auto_session.py:97-116`, `routers/jobs.py:1380-1384`; unused mirror `src/lib/utils/sessions.ts:461-468`.
+
+**What.** `filteredSessions` keeps a session when `s.media_type === mt || s.media_type === 'tv'` with `mt` derived from `disc_type` (dvd/bluray -> movie, cd -> music, data -> data). The backend's `_media_types_compatible` is: same type, or movie<->tv, or an iso/data session for a movie/tv/data job; music is only ever music. So for a CD job the dialog lists every TV session (Apply then fails with 422 "session media type is not compatible with job media type", shown only after the click), for a data disc it lists TV sessions (same 422) and hides `data` sessions' sibling `iso` ones, and for a movie/tv job it hides the iso-dump/data sessions the backend accepts (same defect class as closed D-034, which fixed SessionRoutesCard with `mediaTypesCompatible` from `utils/sessions.ts`; this dialog never adopted it). It also ignores `job.media_type`, so a DVD identified as `tv` is filtered as a movie. The test at :117-135 asserts "Data ISO" is hidden for a bluray job, locking in the divergence.
+
+**Repro / evidence.**
+
+```
+ApplySessionDialog.svelte:62   const byMediaType = sessions.filter((s) => mt === null || s.media_type === mt || s.media_type === 'tv');
+auto_session.py:113-115        if sess_mt in (ISO, DATA) and job_mt in video | {DATA}: return True   # music never matches tv
+ApplySessionDialog.test.ts:134 expect(screen.queryByText(/Data ISO/)).not.toBeInTheDocument();   // backend would accept it
+```
+Manual: open the review card of a CD job, Apply session: TV sessions are listed; choosing one gives "session media type is not compatible with job media type".
+
+**Suggested fix location.** `ApplySessionDialog.svelte` `filteredSessions`: `sessions.filter((s) => mt === null || mediaTypesCompatible(mt, s.media_type))` with `mt = job.media_type ?? discTypeToMediaType(job.disc_type)`; update the test fixture expectations (Data ISO visible for bluray, TV hidden for cd).
+
+**Verification.** Code reading of component, test and backend rule; vitest subset passes (that is the problem).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/205
+
+### D-208  S3  untested-needs-hardware  ui-neu  slice U2
+
+**Title.** DriveCard "Start rip" is enabled in every drive state: while the drive is already ripping (backend 409), while the tray is reported empty/open (backend 400) and on a detached drive (backend 202, nothing ever starts, no feedback).
+
+**Where.** `services/ui-neu/frontend/src/lib/components/DriveCard.svelte:574-582` (button, only `disabled={triggering}`), `:226-239` (`startManualRip`), `:221-224` (`isDetached`/`isRipping` already derived) at `2625b3e7`; backend `services/backend/arm_backend/routers/jobs.py:986-1010`.
+
+**What.** `manual_trigger` refuses with 409 when the drive has a RIPPING job (`jobs.py:990-999`) and with 400 when a fresh heartbeat says `media_status` is not ready (`:1004-1010`). The card already knows both (`isRipping(drive)` at `:391`, `drive.media_status` at `:525-529`) and the detached state (`isDetached`), yet keeps the primary "Start rip" button active; the 409/400 text only appears after the click. For a detached drive the heartbeat is stale so the backend answers 202 and emits `ripper.commands.<id>` to a ripper that is gone: the button spins, clears the session select and the operator gets no indication that nothing happened. The Unenroll button beside it is correctly gated (`:598`), so this is an inconsistency on the same row.
+
+**Repro / evidence.**
+
+```
+DriveCard.svelte:574-582   <button onclick={startManualRip} disabled={triggering} ...>Start rip</button>
+jobs.py:996-999            detail=f"drive {req.drive_id} already has an in-flight RIPPING job"   (409)
+jobs.py:1004-1010          if age < _MEDIA_STATUS_FRESHNESS and drive.media_status not in _MEDIA_STATUS_READY: 400
+```
+Manual: on a drive mid-rip click Start rip: red "already has an in-flight RIPPING job"; unplug a drive (status pill "detached"), click Start rip: no error, no job.
+
+**Suggested fix location.** `DriveCard.svelte`: `disabled={triggering || isRipping(drive) || isDetached || (drive.media_status && drive.media_status !== 'loaded')}` with a title explaining why; the detached case could also be a backend 409 in `manual_trigger` when `drive.present === false`.
+
+**Verification.** Code reading of component + router; `untested-needs-hardware` for the detached no-op (`devtools/iso-smoke.sh` then unplug / `armctl` stop the ripper and press Start rip).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/206
+
+### D-209  S4  open  ui-neu  slice U2
+
+**Title.** JobActions still uses the native `confirm()` for Abandon and Delete where the shared `ConfirmDialog` exists (same class as closed D-026 / U1 C10, different sites); its test stubs `confirm` globally.
+
+**Where.** `services/ui-neu/frontend/src/lib/components/JobActions.svelte:32, 68` at `2625b3e7`; `src/lib/components/JobActions.test.ts:19-23, 162-169`.
+
+**What.** `feedback_standard_ui_patterns.md` names `ConfirmDialog` the standard; DiscReviewWidget (`:515-523`), DriveCard, SessionsArea, GpusCard and NotificationsTab all use it for the same destructive actions. JobActions (jobs table + job detail) blocks the thread with the browser prompt, cannot be themed and is only testable by stubbing `window.confirm`.
+
+**Repro / evidence.** `grep -rn "confirm(" src/lib/components --include=*.svelte | grep -v ConfirmDialog` -> the two lines.
+
+**Suggested fix location.** `JobActions.svelte`: a `ConfirmDialog` with `variant="danger"` for Delete (and Abandon), as DiscReviewWidget does; drop the `vi.stubGlobal('confirm')` from the test.
+
+**Verification.** grep + reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/207
+
+### D-210  S4  open  ui-neu  slice U2
+
+**Title.** Banned copy characters (em-dash, `·`, `…`, `▾`, `›`, `○`, gear/triangle numeric entities, `&middot;`, `&rarr;`, `&times;`) rendered from components, stores and utils; the pre-commit config has no non-ASCII/entity check so the memory rule is unenforced.
+
+**Where.** at `2625b3e7`: `src/lib/utils/drives.ts:3` (`'○ detached: reconnect the drive'`, rendered by `DriveCard.svelte:452-458` and used as the `isDetached` sentinel at `:222`); `src/lib/stores/rips.svelte.ts:143` (`parts.join(' · ')`, rendered by `ActiveJobRow.svelte:215`); `src/lib/components/IsoPicker.svelte:560` (`{size} · {date}`); `DriveMaintenance.svelte:31-32` (`·` x4); `setup/SetupStepper.svelte:50, 68` (`·`); `episodes/EpisodeRows.svelte:44, 45, 47, 49, 85, 101, 135, 154, 159` (`·`, `—`, `Change…`); `episodes/EpisodeMatchPanel.svelte:249, 251, 341, 343, 361, 370, 388, 406, 416, 434` (`·`, `…`, `▾`, `›`); `episodes/RerunPanel.svelte:82` (`Previewing…`); `episodes/episodeModel.ts:49` (`—`); `BulkActionsMenu.svelte:67, 69` (`&#9881;` gear, `&#9662;` down-triangle as icons); `settings/SchemaConfigForm.svelte:214` (`&middot;`); `settings/SessionRoutesCard.svelte:214` (`&rarr;`); `DiscReviewWidget.svelte:411` (`&times;`). (`JobPagination.svelte:16` `&ndash;` in a numeric range is borderline and not counted.)
+
+**What.** `feedback_no_em_dashes_in_ui_copy.md` and `feedback_glyph_icons_not_emoji.md` ban exactly these (`·` -> `|`, `…` -> `...`, `—` -> `-`, `▾`/`→`/`×`/`○` -> Glyph). `Glyph` already has `gear`, `chevron-down`, `arrow-right`, `x`; `CloseButton` exists for the `&times;`. Several of these are new since the sweep-1 fixes (episodes panel, setup stepper, ISO picker, rip transfer line), and nothing in `.pre-commit-config.yaml` would have caught them.
+
+**Repro / evidence.** `grep -rnP "[^\x00-\x7F]" src/lib/components src/lib/stores src/lib/utils --include=*.svelte --include=*.ts | grep -v "test\|__tests__\|glyph-names" | grep -vP "^\S+:\d+:\s*(//|\*|/\*|<!--)"` -> the 29 lines above; `grep -rnoE "&(middot|rarr|times);|&#x?[0-9a-fA-F]+;" src/lib/components --include=*.svelte` -> 5 lines.
+
+**Suggested fix location.** The files above (character correction only, per the memory rule); `utils/drives.ts` `DETACHED_LABEL` can lose the `○` without touching the sentinel compare. Add a pre-commit grep for `[^\x00-\x7F]` and the entity names over `src/**/*.svelte,*.ts` minus tests/comments.
+
+**Verification.** grep; `DriveCard.test.ts` and `drives-labels.test.ts` compare against the exported constant, so they keep passing after the change.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/208
+
+### D-211  S4  open  ui-neu  slice U2
+
+**Title.** Shared-component violations inside components: 15 inline SVGs byte-identical to `Glyph` paths, three notifications components importing lucide `ChevronRight` where `Glyph chevron-right` exists, a pause icon implemented twice (inline SVG and lucide), and a `&times;` close button where `CloseButton` exists.
+
+**Where.** at `2625b3e7`, `d=` equal to `glyph-names.ts` entries: `src/lib/components/MusicSearch.svelte:414, 493` (= `refresh`); `BreadcrumbNav.svelte:36`, `JobLogPanel.svelte:58`, `JsonTree.svelte:39` (= `chevron-right`); `TranscodeCard.svelte:89`, `ActiveJobRow.svelte:195`, `notifications/ServiceDropdown.svelte:49` (= `chevron-down`); `TrackTitleSearch.svelte:170`, `FileRow.svelte:100` (= `x`); `FileRow.svelte:95` (= `check`); `FileRow.svelte:151` (= `lock`); `ApplySessionDialog.svelte:311` (= `warning`, same class as closed D-024, different site). lucide instead of Glyph: `notifications/ChannelRow.svelte:3, 107`, `notifications/BashTestPanel.svelte:2, 107`, `notifications/sections/BashScriptFields.svelte:3, 152` (`ChevronRight`). Pause icon twice: `CountdownTimer.svelte:52, 57` (inline play/pause paths) vs `JobLifecycle.svelte:3, 36, 49` (lucide `Pause`), neither in `Glyph`. Close: `DiscReviewWidget.svelte:411` (`<button>&times;</button>`, no aria-label).
+
+**What.** `feedback_standard_ui_patterns.md`: recurring icons are the shared `Glyph`/`CloseButton`, never pasted SVG; a pattern in two places is extracted. These copies drift the moment `glyph-names.ts` changes (the chevron set already differs in stroke width between `Glyph` and the lucide imports), and the error-dismiss button in the review card has no accessible name.
+
+**Repro / evidence.** `grep -rnoE 'd="M[^"]+"' src/lib/components --include=*.svelte | grep -v Glyph.svelte` and diff each against `glyph-names.ts:35-89`; `grep -rn "from 'lucide-svelte'" src/lib/components`.
+
+**Suggested fix location.** The files above: `<Glyph name=.../>`, `<CloseButton .../>`; add `pause`/`play` to `glyph-names.ts` and use them from both CountdownTimer and JobLifecycle.
+
+**Verification.** Code reading; `Glyph.test.ts` covers the registry so new names are cheap to add.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/209
+
+### D-212  S4  open  ui-neu  slice U2
+
+**Title.** MakemkvKeyField runs its own 5 s poller of `/api/config` and `/api/drives` for as long as Settings > Metadata or the setup MakeMKV step is mounted, duplicating the layout's dashboard poll of the same two endpoints (sibling of open D-136 / U1 C13).
+
+**Where.** `services/ui-neu/frontend/src/lib/components/settings/MakemkvKeyField.svelte:28-36` at `2625b3e7`; rendered for the `makemkv_key` widget by `settings/ConfigSchemaField.svelte:52-53` (Metadata > API keys) and `setup/steps/MakemkvStep.svelte:1502`.
+
+**What.** `usePoll(async () => { [cfg, drives] = await Promise.all([fetchConfigView(), fetchDrives()]) }, 5000)` fires every 5 s while the field is on screen, only to compute the key-status strip. The layout's `dashboard` store (`stores/dashboard.ts:161`, via `api/dashboard.ts`) already fetches `/api/config` and `/api/drives` every 5 s and exposes `makemkv_key_valid`/`makemkv_key_checked_at`/`drive_names`. Sitting on Settings > Metadata therefore costs 4 extra requests per 5 s tick; Settings > Ripping/Transcoding tabs do not pay this. Workaround: none needed functionally; it is load.
+
+**Repro / evidence.** `MakemkvKeyField.svelte:30-34` vs `stores/dashboard.ts:92-108` (fields `makemkv_key_valid`, `makemkv_key_checked_at`, `drive_names` already present).
+
+**Suggested fix location.** `MakemkvKeyField.svelte`: read `$dashboard.makemkv_key_valid` / `drive_names` (the store is already running on every authenticated page), or poll at the key-check cadence (30 s+) and only `/api/config`.
+
+**Verification.** Code reading.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/210
+
+### D-213  S4  open  ui-neu  slice U2
+
+**Title.** ARIA attributes on role-less elements and mouse-only interactive cells (sibling of closed D-049 and U1 C15, different sites).
+
+**Where.** at `2625b3e7`: `src/lib/components/notifications/StatusDot.svelte:7` (`<span class="status-dot" aria-label={status}>`), `src/lib/components/IsoSourceChip.svelte:21` (`<span class="chip" aria-label="...">`), `src/lib/components/ReviewTracksTable.svelte:95-100` (`<td onclick>` toggling the title search, no role/tabindex/key handler), `src/lib/components/settings/UsersCard.svelte:114` (`<div role="presentation" onclick={closePanel}>` scrim).
+
+**What.** `aria-label` is prohibited on a generic `span` (ARIA 1.2, axe `aria-prohibited-attr`); StatusDot's label is also just the raw status word. The review-tracks Title cell is the only way to open `TrackTitleSearch` on the review card and is unreachable by keyboard (the adjacent icon button only exists in the last column for video rows, so the cell click is redundant for mouse users and invisible to AT). UsersCard copies the slide-over pattern but with a click-only div scrim where ConfirmDialog/SessionsArea/ApplySessionDialog use a `<button aria-label="Close dialog">`.
+
+**Repro / evidence.** `grep -rnE "<(div|span)[^>]*aria-(label|checked)" src/lib/components --include=*.svelte | grep -v role=` -> the two spans; `ReviewTracksTable.svelte:850-855` in the concatenated read = file lines 95-100.
+
+**Suggested fix location.** StatusDot/IsoSourceChip: `role="img"` or drop the attribute (the chip already has visible text + `title`); ReviewTracksTable: remove the `<td onclick>` (the icon button exists) or make the title a `<button class="btn-link">`; UsersCard: a `<button>` scrim like ConfirmDialog.
+
+**Verification.** Code reading; svelte-check does not flag any of these.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/211
+
+### D-214  S4  open  ui-neu  slice U2
+
+**Title.** Review card offers "Start rip" ("Save the metadata and start ripping this disc") on a `ripped_awaiting_identify` placeholder whose disc is already ripped; the action only resolves identity (promotes to `ripped`), no rip starts, and the status bar reads "Awaiting Review".
+
+**Where.** `services/ui-neu/frontend/src/lib/components/DiscReviewWidget.svelte:83-87` (`canStart` includes `'ripped_awaiting_identify'`), `:202-229` (`handleStartRip`: `resolveJob`, then `startWaitingJob` only for `awaiting_review`), `:289-295` (status label), `:457-466` (button text/title) at `2625b3e7`; backend `packages/arm_common/arm_common/enums.py:105-111`, `RESOLVABLE_PROMOTE_JOB_STATUSES` `:133-135`.
+
+**What.** `RIPPED_AWAITING_IDENTIFY` is "a placeholder disc ripped successfully but identification never landed"; resolve promotes it to RIPPED and the parked session drains. The card is right to offer the resolve, but labels it "Start rip" with a "start ripping this disc" tooltip and a green success button, and the header says "Awaiting Review" (the review-gate wording) instead of something like "Ripped: needs identity". The operator is told a rip will start; the backend will not start one and the disc may already be ejected. The `__tests__/DiscReviewWidget.test.ts:95-117` case for this status only checks Delete/Cancel, so the copy is untested.
+
+**Repro / evidence.**
+
+```
+DiscReviewWidget.svelte:84   ['awaiting_user_id', 'awaiting_review', 'ripped_awaiting_identify', 'identified'].includes(...)
+DiscReviewWidget.svelte:462  title={previousId ? 'Rip this disc again' : 'Save the metadata and start ripping this disc'}
+enums.py:106-110             identification never landed ... resolve ... promotes this to RIPPED (not IDENTIFIED)
+```
+
+**Suggested fix location.** `DiscReviewWidget.svelte`: for `isPostRipStatus(status)` label the button "Save identity" (and the status bar "Ripped: needs identity"), reusing `isAwaitingIdentity`/`isPostRipStatus` from `utils/job-status-groups.ts`.
+
+**Verification.** Code reading of component + enum docstring.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/212
+
+### D-215  S4  open  ui-neu  slice U2
+
+**Title.** `colorScheme.ts` built-in schemes still carry the removed legacy alias tokens (`--color-primary-dark`, `--color-primary-light-bg`, `--color-primary-border`, and the `-dark` twins) and `applyTokens` writes them onto `<html>` "for components that still use `dark:bg-surface-dark`"; no component or stylesheet reads them any more (sibling of closed D-047).
+
+**Where.** `services/ui-neu/frontend/src/lib/stores/colorScheme.ts:36, 41` (and the same keys in every built-in scheme 28-772), `:812, 830-835` at `2625b3e7`; `styles/__tests__/tokens.test.ts:192-204` asserts `tokens.css` carries none of these aliases.
+
+**What.** `grep -rnE "primary-dark|primary-light-bg|surface-dark|page-dark|primary-text-dark|primary-border" src static/themes` outside `colorScheme.ts` finds only comments. The `-dark` twins are legitimately used as data to pick the dark value for the base role (`:838-840`), but `--color-primary-dark`, `--color-primary-light-bg` and `--color-primary-border` have no reader at all, and writing every `-dark` name as a live custom property (`:830-835`) is dead output with a stale justification. Docs vs code drift per `feedback_docs_describe_current_state.md`.
+
+**Repro / evidence.** the grep above; `colorScheme.ts:831-832` comment.
+
+**Suggested fix location.** `stores/colorScheme.ts`: drop the three unread aliases from `COLOR_SCHEMES`, stop `setProperty` for `-dark` names (keep them as lookup data), fix the comment; align `THEME_TEMPLATE.md` if it still lists them.
+
+**Verification.** grep + reading `applyTokens`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/213
+
+### D-216  S3  untested-needs-hardware  devtools  slice D1
+
+**Title.** Leaf TLS keys are group-owned by the installer's gid, not `.env`'s `PGID`; the documented "edit PUID/PGID to match your media server" leaves the backend unable to read `tls.key`.
+
+**Where.** `deploy/lib/certs.sh:28-29,55` at `2625b3e7`; nothing in `deploy/` or `devtools/` ever sets `ARM_PGID` (`grep -rn ARM_PGID deploy devtools install.sh` → only the `${ARM_PGID:-$(id -g)}` readers and the comment). Consumers: `deploy/install/flow.sh:228-233` (`make_leaf` on every install run), `docker-compose.yml.example:116-117` (`arm-backend.key` mounted ro), `services/_common/docker-entrypoint.sh:336-348,416` (process runs as `PUID:PGID`), `services/backend/arm_backend/main.py:518-519` (`ssl_keyfile`).
+
+**What.** `make_leaf` writes each leaf key `0440` and `chgrp "${ARM_PGID:-$(id -g)}"`; the comment says this is "so a stack whose PUID differs from the user who ran the installer can still read them", but `ARM_PGID` is never exported, so the group is always the installing user's primary gid. `docs/user/Configuring-ARM.md:28` and `docs/user/Troubleshooting.md:106-110` tell operators to set `PUID`/`PGID` to the media server's uid/gid (e.g. 999:999). The backend container then runs `arm` as 999:999 and `uvicorn` opens `/etc/ssl/arm/tls.key` (installer-uid:installer-gid, 0440) → `PermissionError`, crash loop under `restart: unless-stopped`. Re-running `armctl install` does not help: `write_env` keeps the existing `PUID`/`PGID` (config.sh:479-486) and `make_leaf` re-chgrps to `$(id -g)` again. `arm-ui` (nginx master as root) and `arm-db` (`install -o postgres` as root) are unaffected; only the backend breaks. Expected: chgrp the leaf keys to the `PGID` that `.env` carries (or mode 0444 like the certs, since the key is already behind the 0700 `certs/` dir), and/or document the chgrp.
+
+**Repro / evidence.**
+
+```
+$ grep -n 'chgrp' deploy/lib/certs.sh
+55:    chgrp "${ARM_PGID:-$(id -g)}" "$key" 2>/dev/null || true
+$ grep -rn 'ARM_PGID=' deploy devtools install.sh        # no setter anywhere
+(no output)
+# sequence: armctl install (as uid 1000) -> edit .armctl/.env PUID=999 PGID=999 -> armctl up
+#  -> armv3-backend: PermissionError: [Errno 13] Permission denied: '/etc/ssl/arm/tls.key'
+```
+
+**Suggested fix location.** `deploy/lib/certs.sh` (`make_leaf`): take the gid from `env_file_value PGID` when `ENV_FILE` exists (armctl) / the detected gid (setup-dev), and re-chgrp existing keys on re-run; `deploy/install/flow.sh` Certificates step runs after `.env` is known for the PGID value. Mention the requirement in `docs/user/Configuring-ARM.md` § File ownership.
+
+**Verification.** Static trace of certs.sh + entrypoint + main.py; `grep` for setters. untested-needs-hardware for the crash itself: `armctl install --no-host-changes`, set `PUID`/`PGID` in `.armctl/.env` to an unrelated uid:gid, `armctl up`, `armctl compose logs arm-backend`.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/214
+
+### D-217  S3  untested-needs-hardware  devtools  slice D1
+
+**Title.** The UI leaf certificate has no LAN-IP SAN, so trusting `arm-ca.crt` does not silence the warning for the `https://<host-ip>:8081` access path the docs advertise.
+
+**Where.** `deploy/install/flow.sh:233` and `devtools/setup-dev.sh:214` (`make_leaf arm-ui localhost "$(hostname -f ...)"`), `deploy/lib/certs.sh:36-50` (SAN list = `DNS:arm-ui`, `DNS:localhost`, `DNS:<hostname>` only) at `2625b3e7`. Claims: `docs/user/Getting-Started.md:162-163,194-205`, `docs/user/Troubleshooting.md:118-123`, `docs/developers/architecture/06-deployment.md:398`.
+
+**What.** Getting-Started tells the user to open `https://<host-ip>:8081` from another device and that importing the CA "silence[s] it for good on every device on your LAN". With the CA trusted, a browser still fails the IP connection with `ERR_CERT_COMMON_NAME_INVALID` because the leaf carries no `IP:` SAN; `hostname -f` on a typical LAN host is not resolvable from other devices either, so the only warning-free path is `localhost` on the host itself. `make_leaf` already supports IP SANs (certs.sh:44-47) but the installer never passes any. Expected: add the host's non-loopback IPv4 addresses (and/or an `--ui-san` flag) to the UI leaf, or correct the docs.
+
+**Repro / evidence.**
+
+```
+$ grep -n 'make_leaf arm-ui' deploy/install/flow.sh devtools/setup-dev.sh
+deploy/install/flow.sh:233:    make_leaf arm-ui localhost "$(hostname -f 2>/dev/null || hostname || echo localhost)"
+devtools/setup-dev.sh:214:    make_leaf arm-ui localhost "$(hostname -f 2>/dev/null || hostname || echo localhost)"
+# after armctl install: openssl x509 -in arm/certs/arm-ui.crt -noout -ext subjectAltName
+#   -> DNS:arm-ui, DNS:localhost, DNS:<hostname>   (no IP:)
+```
+
+**Suggested fix location.** `deploy/install/flow.sh` Certificates step (collect `hostname -I` addresses, pass as extra SANs, re-issue when the address set changes) with a matching line in `devtools/setup-dev.sh`; or rewrite the two doc sections to say "by hostname only".
+
+**Verification.** Static: SAN construction in certs.sh + call sites. Browser behaviour is standard RFC 6125 matching; untested-needs-hardware for the end-to-end check (`armctl install`, open `https://<lan-ip>:8081` from a device that trusts `arm-ca.crt`).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/215
+
+### D-218  S3  open  docs  slice D1
+
+**Title.** `MAKEMKV_KEY` in `~/arm/.armctl/.env` is documented as a working key source in three places, but no container ever receives it.
+
+**Where.** `docs/user/MakeMKV.md:19,37`, `docs/user/MakeMKV-Ripper.md:10`, `docs/user/Configuring-ARM.md:41` at `2625b3e7`. Code: `docker-compose.yml.example:40-104` (backend environment, no `MAKEMKV_KEY`), `services/backend/arm_backend/ripper_manager.py:122-139` (ripper env, no `MAKEMKV_KEY`), `services/backend/arm_backend/config.py` (no such setting).
+
+**What.** The ripper's `update_key.sh` / `makemkv_key.py` do honour a `MAKEMKV_KEY` in the ripper container's environment, but rippers are spawned by the backend with the fixed env in `container_spec`, and the compose template forwards nothing named `MAKEMKV_KEY` to the backend. A user who follows the docs and puts the key in `.env` gets no error; the ripper silently falls back to the forum beta scrape (and "App key incorrect" when that fails). Expected: either forward `MAKEMKV_KEY` through the backend into `container_spec` (like the `ARM_RIPPER_*` tunables) or remove the env path from the three pages and keep only the UI/`Config.makemkv_key` path (`devtools/iso-smoke.sh:255-258` already states the ripper "no longer reads MAKEMKV_KEY from its own environment").
+
+**Repro / evidence.**
+
+```
+$ grep -rn 'MAKEMKV_KEY\b' docker-compose.yml.example services/backend/arm_backend/*.py | grep -v KEYCHECK
+(no output)
+$ grep -n 'MAKEMKV_KEY=T' docs/user/MakeMKV.md docs/user/MakeMKV-Ripper.md
+docs/user/MakeMKV.md:19:2. **You supply a key via env.** Set `MAKEMKV_KEY=T-…` in `~/arm/.armctl/.env`. Used when
+docs/user/MakeMKV-Ripper.md:10:2. **Operator-supplied env key** — set `MAKEMKV_KEY=T-…` in the ripper service environment (typically `.env`). ...
+```
+
+**Suggested fix location.** `docs/user/MakeMKV.md`, `docs/user/MakeMKV-Ripper.md`, `docs/user/Configuring-ARM.md` (drop or mark the env path), or `docker-compose.yml.example` + `arm_backend/config.py` + `ripper_manager.py` if the env path is wanted.
+
+**Verification.** grep above; read of `ripper_manager.container_spec` and the compose template.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/216
+
+### D-219  S3  open  ci  slice D1
+
+**Title.** `publish-wiki.yml` syncs `docs/user` to the live GitHub wiki on every `pull_request_review`, i.e. from the PR's unmerged merge commit; its one action is pinned with `# main`, and the `gollum` trigger is dead.
+
+**Where.** `.github/workflows/publish-wiki.yml:3-7,17-18,24` at `2625b3e7`.
+
+**What.** The workflow runs on `pull_request_review: submitted` with `contents: write` and the `ARM_WIKI_TOKEN` secret. For a same-repo PR, `actions/checkout` checks out `refs/pull/N/merge`, so a reviewer submitting any review (comment, request-changes) publishes that PR's `docs/user/**` to the public wiki before it is merged (and a later push to `main` reverts it). The `gollum:` trigger is listed but the only job has `if: github.event_name != 'gollum'`, so it fires a no-op run. `newrelic/wiki-sync-action@8fb7a9ef… # main` is a SHA but violates the `# vX.Y.Z` convention (`.claude/memory/feedback_pin_actions_to_sha.md`) and dependabot cannot track a branch comment. Expected: trigger only on `push: main` (+ `workflow_dispatch`), drop `gollum`, and pin to a release tag comment.
+
+**Repro / evidence.**
+
+```
+$ sed -n 3,7p .github/workflows/publish-wiki.yml
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/user/**
+  pull_request_review:
+    types: [submitted]
+  gollum:
+$ sed -n 24p .github/workflows/publish-wiki.yml
+        uses: newrelic/wiki-sync-action@8fb7a9efe4e975bdb2977107fbed96fa0433db52 # main
+```
+
+**Suggested fix location.** `.github/workflows/publish-wiki.yml` — trigger list and the `uses:` comment.
+
+**Verification.** Static read; GitHub's documented checkout ref for `pull_request_review` events. Not reproduced (no GitHub access in this review).
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/217
+
+### D-220  S3  open  devtools  slice D1
+
+**Title.** `setup-dev.sh` creates `arm/iso-library/` and the template mounts it at `/ingress`, but `.env` never gets `ARM_HOST_ISO_LIBRARY_PATH`, so a dev stack reports "Rip from ISO" as not configured (dev sibling of D-119).
+
+**Where.** `devtools/setup-dev.sh:203,240-299` at `2625b3e7` (the dir is created; `.env` is written from `.env.example` where the key is commented out, line 74; only `ARM_GPUS`, `ARM_RENDER_GID`, `ARM_TRANSCODE_CAPABLE` are set afterwards). Consumers: `docker-compose.yml.example:69,111`, `services/backend/arm_backend/iso_library.py:15-24` (empty → not configured).
+
+**What.** The dev template mounts `${ARM_HOST_ISO_LIBRARY_PATH:-./arm/iso-library}:/ingress:ro`, so the folder IS inside the backend, but the backend's `ARM_HOST_ISO_LIBRARY_PATH` env resolves to `""` and `iso_library` treats the feature as unconfigured (503 from the picker; `GET /api/iso/library`). `devtools/iso-smoke.sh:309-316` works around it by telling the developer to append the key by hand and re-run `setup-dev.sh up`. D-119 fixed the same gap in `armctl install` (`deploy/install/config.sh:493`) but not in the dev script that shares the library. Expected: `setup-dev.sh` writes `ARM_HOST_ISO_LIBRARY_PATH=${ARM_DIR}/iso-library` when the key is absent/empty, as it does for `ARM_RENDER_GID`.
+
+**Repro / evidence.**
+
+```
+$ grep -n 'ARM_HOST_ISO_LIBRARY_PATH' devtools/setup-dev.sh
+(no output)
+$ grep -n 'ARM_HOST_ISO_LIBRARY_PATH' .env.example docker-compose.yml.example
+.env.example:74:#ARM_HOST_ISO_LIBRARY_PATH=/mnt/nas/iso
+docker-compose.yml.example:69:      ARM_HOST_ISO_LIBRARY_PATH: ${ARM_HOST_ISO_LIBRARY_PATH:-}
+docker-compose.yml.example:111:      - ${ARM_HOST_ISO_LIBRARY_PATH:-./arm/iso-library}:/ingress:ro
+```
+
+**Suggested fix location.** `devtools/setup-dev.sh` (next to the `ARM_RENDER_GID` set-or-append block, ~line 267); pin it in `devtools/test-setup-dev.sh`.
+
+**Verification.** Static trace; `iso_library.py:15-24` read. Zero-infra reproduction: run `setup-dev.sh` on a fresh checkout and `grep ARM_HOST_ISO_LIBRARY_PATH .env` → only the commented example line.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/218
+
+### D-221  S3  open  ci  slice D1
+
+**Title.** `weekly-rebuild.yml` refreshes `arm-transcode:<tag>` but not the `:<tag>-nvidia` alias `release.yml` published; the two tags documented as "the same image" diverge after the first weekly run.
+
+**Where.** `.github/workflows/weekly-rebuild.yml:91,161-171` vs `.github/workflows/release.yml:67,109-113` at `2625b3e7`. Docs claiming identity: `release.yml:8-10`, `docs/user/Hardware-Transcoding.md:184-189,199`, `.env.example:53-55`.
+
+**What.** The release matrix carries `alias: "-nvidia"` for the base transcode leg and tags the same digest twice. The weekly rebuild's matrix has no `alias`, and its `metadata-action` step emits only `type=raw,value=<tag>` with the leg suffix, so the CVE-refresh rebuild never re-pushes `<tag>-nvidia`. An operator who followed Hardware-Transcoding.md and set `ARM_TRANSCODE_IMAGE_NVENC=.../arm-transcode:v3.x.y-nvidia` keeps pulling the stale digest with no signal, defeating the workflow's stated purpose ("users pinned to the supported stable tag get CVE-patched bits"). `write_image_pins` (config.sh:443-446) also never pins `ARM_TRANSCODE_IMAGE_NVENC`, so such a user is not moved by `armctl upgrade` either. Expected: add the `alias` leg + alias tag lines to weekly-rebuild (same as release.yml), or stop publishing the alias.
+
+**Repro / evidence.**
+
+```
+$ grep -n 'alias' .github/workflows/release.yml .github/workflows/weekly-rebuild.yml
+.github/workflows/release.yml:67:          - {service: transcode, target: base, suffix: "", alias: "-nvidia"}
+.github/workflows/release.yml:109:          # `alias` (base transcode only) adds a second tag for the same
+.github/workflows/release.yml:113:            type=ref,event=tag,suffix=${{ matrix.alias }},enable=${{ matrix.alias != '' }}
+(weekly-rebuild.yml: no match)
+```
+
+**Suggested fix location.** `.github/workflows/weekly-rebuild.yml` matrix + "Compute image tags" step; optionally `deploy/install/config.sh:write_image_pins` for `ARM_TRANSCODE_IMAGE_NVENC`.
+
+**Verification.** Static diff of the two workflows.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/219
+
+### D-222  S4  open  docs  slice D1
+
+**Title.** Hardware-Transcoding says NVIDIA needs "driver >= 418.81" while the installer skips NVENC entirely below driver 530.
+
+**Where.** `docs/user/Hardware-Transcoding.md:21` vs `deploy/lib/detect.sh:14,26-28` and `services/transcode/Dockerfile:272-284` at `2625b3e7`.
+
+**What.** `detect_gpus` advertises NVENC only when `nvenc_driver_ok` sees major >= `ARM_NVENC_MIN_DRIVER=530` (the nv-codec-headers 12.1.14.0 floor the Dockerfile pins); on 418–529 it writes no NVIDIA entry to `ARM_GPUS` and warns. The user page's "Older cards need driver >= 418.81" sends an operator on a 470/525 driver to look for a different cause when the GPU never appears. Expected: state the 530 floor (and keep it in lockstep per `feedback_nvenc_header_driver_pin.md`).
+
+**Repro / evidence.**
+
+```
+$ grep -n 'ARM_NVENC_MIN_DRIVER=' deploy/lib/detect.sh
+14:ARM_NVENC_MIN_DRIVER=530
+$ sed -n 21p docs/user/Hardware-Transcoding.md
+| **NVIDIA** | NVENC | GeForce GTX Pascal (1050+) or RTX Turing (1650+, 2060+). Older cards need driver >= 418.81. |
+```
+
+**Suggested fix location.** `docs/user/Hardware-Transcoding.md:21` (and the "GPU isn't detected" entry in Troubleshooting.md could name the warning text from detect.sh:27).
+
+**Verification.** grep.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/220
+
+### D-223  S4  open  docs  slice D1
+
+**Title.** Three user pages link to `README.md#local-development`, a heading the README does not have.
+
+**Where.** `docs/user/Getting-Started.md:147-150`, `docs/user/Troubleshooting.md:170-173`, `docs/user/Status-Known-Issues.md:12-15` at `2625b3e7`; `README.md` headings are Overview / Features / Usage / Requirements / Install / Troubleshooting / Contributing / License.
+
+**What.** The "image pull returns 404 during the alpha; build locally" escape hatch points at a non-existent anchor, so the one place a blocked installer-user is sent lands on the top of the README with no build instructions. (The absolute GitHub URL also bypasses the docs site's link checker, which only validates relative links, so `npm test` in `site/` cannot catch it.) Expected: link to `CONTRIBUTING.md` § dev setup or `docs/developers/contributing/Contribute.md`, or add the section to README.
+
+**Repro / evidence.**
+
+```
+$ grep -n '^## ' README.md
+27:## Overview  34:## Features  53:## Usage  60:## Requirements  67:## Install  75:## Troubleshooting  78:## Contributing  84:## License
+$ grep -rn 'README.md#local-development' docs/user | wc -l
+3
+```
+
+**Suggested fix location.** The three pages.
+
+**Verification.** grep.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/221
+
+### D-224  S4  open  devtools  slice D1
+
+**Title.** Stale descriptions of removed behaviour: devtools/README.md says iso-smoke "borrows an enrolled drive"; the compose template says "install.sh adds that volume automatically"; `.env.example` says armctl writes `./ssh`.
+
+**Where.** `devtools/README.md:56` (also `:17,19` say certs go under `certs/` and that `docker-compose.yml` is created from the template; the data dir is `arm/certs/`), `docker-compose.yml.example:92-96`, `.env.example:152` at `2625b3e7`. Code: `devtools/iso-smoke.sh:5-8` ("no longer borrows … a real enrolled drive"), `devtools/test-setup-dev.sh` ("iso-smoke no longer borrows a drive" passes), `deploy/install/config.sh:511,544-545` (`ARM_TRANSCODE_SSH_DIR=${ARM_DIR}/ssh`, the mount is written by `armctl install` into `host-overlay.yml`), `install.sh:1-6` (bootstrap only).
+
+**What.** devtools/README.md describes the pre-D-015/D-020 iso-smoke (`ARM_SMOKE_DRIVE_ID`, stopping the manager-created container) that the script and its test both say is gone. The compose comment credits `install.sh` with adding the ssh volume, but `install.sh` is now a bootstrap and the volume comes from `armctl install`'s generated host overlay; `.env.example` says the value is `./ssh` while config.sh writes an absolute path. Minor, but these are the files `env_merge_new_keys` ships verbatim to every production install.
+
+**Repro / evidence.**
+
+```
+$ sed -n 56p devtools/README.md | cut -c1-120
+Prereqs: dev stack up (`docker compose up -d arm-db arm-backend arm-ui`) and at least one **enrolled** drive. The script borrows
+$ sed -n 94p docker-compose.yml.example
+      # install.sh adds that volume automatically; if you hand-copy this
+$ grep -n 'ARM_TRANSCODE_SSH_DIR' deploy/install/config.sh
+511:        env_set ARM_TRANSCODE_SSH_DIR "${ARM_DIR}/ssh"
+```
+
+**Suggested fix location.** `devtools/README.md` (iso-smoke + setup-dev sections), `docker-compose.yml.example:92-96`, `.env.example:151-157`.
+
+**Verification.** grep + read.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/222
+
+### D-225  S4  open  ci  slice D1
+
+**Title.** `stale.yml` runs with no `permissions:` block, and CI builds/tests the UI on Node 24 while `.nvmrc`, the ui-neu Dockerfile and `setup-dev.sh` require Node 26.
+
+**Where.** `.github/workflows/stale.yml:1-15` (no `permissions:`), `.github/workflows/ci.yml:23` (`NODE_VERSION: '24'`), `.github/workflows/docs-pages.yml:262` (`'24'`) vs `services/ui-neu/frontend/.nvmrc` (`26`), `services/ui-neu/Dockerfile:445,454` (`node:26-slim`), `devtools/setup-dev.sh:178` ("install Node 26 (matches … .nvmrc / Dockerfile)") at `2625b3e7`.
+
+**What.** Every other workflow declares least-privilege `permissions:`; `stale.yml` inherits the repository default token scope (write-all on older repos, or read-only on hardened ones, where `actions/stale` then fails to label/close). `check-ui-neu`, `lint-ui-neu`, `test-ui-neu`, `codegen-ui-neu` and `test-site` run `npm ci`/vitest/svelte-check/codegen on Node 24, so CI does not exercise the toolchain the image ships and contributors are told to use; a Node-26-only or Node-24-only breakage passes in one place and fails in the other. Expected: `permissions: issues: write, pull-requests: write` on stale.yml; `NODE_VERSION` read from `.nvmrc` (`node-version-file`) or set to 26.
+
+**Repro / evidence.**
+
+```
+$ grep -c '^permissions:' .github/workflows/*.yml | grep ':0'
+.github/workflows/stale.yml:0
+$ cat services/ui-neu/frontend/.nvmrc; grep -n "NODE_VERSION:" .github/workflows/ci.yml .github/workflows/docs-pages.yml
+26
+.github/workflows/ci.yml:23:  NODE_VERSION: '24'   
+.github/workflows/docs-pages.yml:262:  NODE_VERSION: '24'
+```
+
+**Suggested fix location.** `.github/workflows/stale.yml`, `.github/workflows/ci.yml`, `.github/workflows/docs-pages.yml` (`actions/setup-node` supports `node-version-file: services/ui-neu/frontend/.nvmrc`).
+
+**Verification.** grep.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/223
+
+### D-226  S4  open  docs  slice D1  regression of D-019
+
+**Title.** User docs still describe the per-drive `armv3-ripper-srN` compose model: container names, "devices passed in / paired by the scanner", a per-drive `ID_PATH` udev rule, and `docker compose exec ripper`.
+
+**Where.** `docs/user/Troubleshooting.md:23,25-27,29,47,57-68`, `docs/user/MakeMKV.md:34`, `docs/user/MakeMKV-Ripper.md:18` at `2625b3e7`. Code: `services/backend/arm_backend/ripper_manager.py:100-114` (names are `arm-ripper-<serial>-<id6>` / `arm-ripper-iso-<id12>`), `:43,155` (device cgroup rules, no `devices:`), `deploy/lib/udev.sh:17-20` (unscoped `KERNEL=="sr[0-9]*"` rule).
+
+**What.** D-019 moved the wiki into `docs/user` (publish-wiki.yml syncs it) and most pages were rewritten, but Troubleshooting still tells users `docker ps` should list `armv3-ripper-srN`, to `docker logs -f armv3-ripper-sr0` / `docker inspect armv3-ripper-sr0`, that "each drive needs both its block device and its SCSI-generic node passed in. The backend's drive scanner pairs them when it starts the ripper", and hand-writes a udev rule scoped by `ENV{ID_PATH}` "for the ARM drive(s) only" while the installer writes an unscoped rule for every `sr*`. MakeMKV.md names `armv3-ripper-sr0`; MakeMKV-Ripper.md names a compose service `ripper` that does not exist. None of these commands work on a v3 stack.
+
+**Repro / evidence.**
+
+```
+$ grep -rn 'armv3-ripper\|compose exec ripper\|SCSI-generic node passed' docs/user
+docs/user/Troubleshooting.md:23:   `armv3-ripper-srN` as up. ...
+docs/user/Troubleshooting.md:26:   device and its SCSI-generic node passed in. The backend's drive scanner
+docs/user/Troubleshooting.md:29:   `docker logs -f armv3-ripper-sr0`. ...
+docs/user/Troubleshooting.md:47:(`docker inspect armv3-ripper-sr0`).
+docs/user/MakeMKV.md:34:docker exec armv3-ripper-sr0 grep app_Key /home/arm/.MakeMKV/settings.conf
+docs/user/MakeMKV-Ripper.md:18:docker compose exec ripper grep app_Key /home/arm/.MakeMKV/settings.conf
+```
+
+**Suggested fix location.** The three pages; point readers at `bash devtools/ripper-containers.sh list` / `docker ps --filter label=arm.drive_id` and the Drives page, and describe the cgroup + pre-created nodes model (06-deployment.md:156-157 has it right).
+
+**Verification.** grep + read of ripper_manager.py / udev.sh.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/224
+
+### D-227  S4  open  docs  slice D1  regression of D-056
+
+**Title.** Bare `docker compose up -d` is still the instruction in eight developer-facing places, contrary to CLAUDE.md / CONTRIBUTING.md ("never a bare docker compose").
+
+**Where.** `devtools/README.md:56`, `docs/developers/contributing/real-disc-smoke.md:116`, `docs/user/Hardware-Transcoding.md:250`, `docs/user/Web-UI.md:92` (`docker compose logs` on a production install that has no compose file), `devtools/setup-dev.sh:371`, `devtools/crash-drill.sh:60,75`, `devtools/seed-test-data.sh:34,53`, `devtools/iso-smoke.sh:283` at `2625b3e7`.
+
+**What.** D-056's original anchors (`CONTRIBUTING.md:65-66`, `Contribute.md:32-33`) are fixed, but the same instruction survives in the devtools README, the real-disc runbook, two user pages and the error/usage text of four dev scripts. A dev who follows `crash-drill.sh`'s own hint (`cd … && docker compose up -d`) starts the stack without the spawned-container cleanup, the guard or the backup that `setup-dev.sh up` exists for; a production user following Web-UI.md:92 gets "no configuration file provided". Expected: `bash devtools/setup-dev.sh up` in dev text, `armctl compose logs` / `armctl up` in user pages.
+
+**Repro / evidence.**
+
+```
+$ grep -rn 'docker compose up -d' devtools/*.sh devtools/README.md docs/user docs/developers | grep -v 'never\|bare' 
+devtools/setup-dev.sh:371:  (or: docker compose up -d --build; no backup or health wait)
+devtools/crash-drill.sh:60:    err "    cd ${ROOT_DIR} && docker compose up -d"
+devtools/seed-test-data.sh:53:        echo "stack not running ($svc is down); start it with: docker compose up -d" >&2
+devtools/iso-smoke.sh:283:            err "bring the stack up first: cd ${ROOT_DIR} && docker compose up -d arm-db arm-backend arm-ui"
+devtools/README.md:56:Prereqs: dev stack up (`docker compose up -d arm-db arm-backend arm-ui`) ...
+docs/developers/contributing/real-disc-smoke.md:116:docker compose up -d arm-db arm-backend arm-ui       # if not already up
+docs/user/Hardware-Transcoding.md:250:  the old environment; run `armctl up` (or `docker compose up -d`) instead.
+```
+
+**Suggested fix location.** The files listed; `devtools/test-setup-dev.sh` could pin the absence in `devtools/*.sh`.
+
+**Verification.** grep above.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/225
+
+### D-228  S4  open  docs  slice D1
+
+**Title.** Deployment docs describe the optical-access and first-boot mechanisms the code does not use: `group_add`, `CDROM_GID` via `stat -c %g /dev/sr0`, compose `devices:`, and a "random" first-boot admin password.
+
+**Where.** `docs/user/Getting-Started.md:61-62`, `docs/user/Configuring-ARM.md:29`, `docs/developers/architecture/06-deployment.md:226,256,265,397` at `2625b3e7`. Code: `deploy/lib/detect.sh:92-96` (`getent group cdrom`, else 44), `services/_common/docker-entrypoint.sh:350-366` (`usermod -aG` + `mknod` of `sr0..7`/`sg0..15`), `services/backend/arm_backend/ripper_manager.py:43,155` (`device_cgroup_rules`, no `devices`), `services/backend/arm_backend/seeders.py:45-46,66-69` (`ADMIN_DEFAULT_PASSWORD = "admin"`).
+
+**What.** 06-deployment.md contradicts itself (lines 156-157 describe the cgroup + pre-created-node model; lines 256 and 265 say "drive exposed via compose `devices:`" and "`group_add: [\"${CDROM_GID}\"]`"), and says the admin seed is "a random password written to /logs/first-boot.log" while the seeder writes the fixed default `admin` (which Getting-Started.md:155 states correctly). Configuring-ARM says `CDROM_GID` is "detected via `stat -c %g /dev/sr0`"; the installer uses `getent group cdrom` with fallback 44 and never looks at `/dev/sr0`. Expected: one description matching `detect.sh`, `docker-entrypoint.sh`, `ripper_manager.py` and `seeders.py` (`feedback_docs_describe_current_state.md`).
+
+**Repro / evidence.**
+
+```
+$ grep -n 'group_add\|stat -c %g /dev/sr0\|random password' docs/user/Getting-Started.md docs/user/Configuring-ARM.md docs/developers/architecture/06-deployment.md
+docs/user/Getting-Started.md:62:granted access to the drive via `group_add` automatically.
+docs/user/Configuring-ARM.md:29:| `CDROM_GID` | The host's optical group GID, detected via `stat -c %g /dev/sr0` ...
+docs/developers/architecture/06-deployment.md:226:CDROM_GID=<detected via `stat -c %g /dev/sr0`, else 44>
+docs/developers/architecture/06-deployment.md:256:The ripper containers also need `group_add: ["${CDROM_GID}"]` ... detects it via `stat -c %g /dev/sr0`.
+docs/developers/architecture/06-deployment.md:265:| `arm-ripper-*` | no | `/dev/sr*` | Drive exposed via compose `devices:` ...
+docs/developers/architecture/06-deployment.md:397:... seeds the `admin` user with a random password written to `/logs/first-boot.log` ...
+```
+
+**Suggested fix location.** The three pages; `deploy/lib/detect.sh:90-91` comment is the correct source for `CDROM_GID`.
+
+**Verification.** grep + read of the referenced code.
+
+**Issue.** https://github.com/uprightbass360/arm-v3/issues/226
+
