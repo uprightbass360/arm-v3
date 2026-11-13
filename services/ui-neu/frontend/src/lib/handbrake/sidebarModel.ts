@@ -18,7 +18,8 @@ import type {
 } from '$lib/types/api.gen';
 import { blockFields, encoderCards, type EncoderCard } from './encoderCards';
 import { keysForTab, type TabId } from './fields';
-import { matchesFilter } from './filter';
+import { matchesKeyFilter } from './filter';
+import { PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';
 import { pruneUnreachable, toPayload } from './settingsEdit';
 import { plural } from '$lib/utils/plural';
 
@@ -48,7 +49,6 @@ export const AMD_NOTE =
 export const CLEARED_NOTE = "This preset's HandBrake settings will be cleared when you save.";
 export const MARKED_ISSUES_MESSAGE = 'Fix the marked settings and save again.';
 
-const PRESET_ENCODER = 'preset';
 const LOCKED_TOOLS = new Set<TranscodeTool>(['abcde', 'none']);
 // HandBrake's VideoQualityType when neither the preset, the base nor the template names one: constant quality.
 const CONSTANT_QUALITY = 2;
@@ -71,7 +71,7 @@ export function initialDraft(preset: TranscodePresetView | null): Draft {
 		tool: preset?.tool ?? 'handbrake',
 		preset_ref: preset?.preset_ref ?? null,
 		container: preset?.container ?? 'mkv',
-		encoder: preset?.encoder ?? PRESET_ENCODER,
+		encoder: preset?.encoder ?? PRESET_ENCODER_ID,
 		extra_args: preset?.extra_args ?? '',
 		settings: settingsOf(preset?.handbrake_settings ?? null)
 	};
@@ -118,7 +118,7 @@ export function draftToCreate(d: Draft): TranscodePresetCreateRequest {
 
 // abcde and none run their own encoder, so a codec encoder would 422.
 export function onToolChange(d: Draft, tool: TranscodeTool): Draft {
-	return { ...d, tool, encoder: LOCKED_TOOLS.has(tool) ? PRESET_ENCODER : d.encoder };
+	return { ...d, tool, encoder: LOCKED_TOOLS.has(tool) ? PRESET_ENCODER_ID : d.encoder };
 }
 
 // Drops the blocks of families the new encoder can never reach (Review Focus 4).
@@ -145,9 +145,9 @@ export function onBaseChange(
 	bases: Bases
 ): Draft {
 	const next = { ...d, preset_ref: presetRef };
-	if (!schema || d.encoder !== PRESET_ENCODER) return next;
+	if (!schema || d.encoder !== PRESET_ENCODER_ID) return next;
 	if (presetRef !== null && !(presetRef in bases)) return next;
-	return onEncoderChange(next, PRESET_ENCODER, schema, baseEncoderOf(bases, presetRef));
+	return onEncoderChange(next, PRESET_ENCODER_ID, schema, baseEncoderOf(bases, presetRef));
 }
 
 // One preset-block edit; `bases` holds the built-in presets loaded so far, by name. Without a schema the
@@ -253,8 +253,8 @@ export function commonKeys(schema: HandbrakeSchemaSlimView, tab: TabId): SlimKey
 }
 
 function textMatch(key: SlimKey, text: string, schema?: HandbrakeSchemaSlimView): boolean {
-	if (matchesFilter(key, text)) return true;
-	return key.type === 'list_obj' && (schema?.audio_item_keys ?? []).some((k) => matchesFilter(k, text));
+	if (matchesKeyFilter(key, text)) return true;
+	return key.type === 'list_obj' && (schema?.audio_item_keys ?? []).some((k) => matchesKeyFilter(k, text));
 }
 
 export function keyShown(key: SlimKey, stored: boolean, f: FilterState, schema?: HandbrakeSchemaSlimView): boolean {
@@ -283,7 +283,7 @@ export function cardShown(
 ): boolean {
 	if (f.changedOnly && Object.keys(block).length === 0) return false;
 	if (f.text.trim() === '') return true;
-	return [BIT_DEPTH_KEY, ...blockFields(schema, family)].some((k) => matchesFilter(k, f.text));
+	return [BIT_DEPTH_KEY, ...blockFields(schema, family)].some((k) => matchesKeyFilter(k, f.text));
 }
 
 export function issuesFor(

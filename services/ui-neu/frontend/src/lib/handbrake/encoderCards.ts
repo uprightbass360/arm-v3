@@ -9,6 +9,7 @@ import type {
 	SlimKey,
 	SlimVariant
 } from '$lib/types/api.gen';
+import { findAvailability } from './encoder-availability';
 
 // 'open' is a card with no hardware state to report: a pinned or base-preset family.
 export type CardState = 'verified' | 'cpu-fallback' | 'collapsed' | 'open';
@@ -57,7 +58,7 @@ function reachableFamilies(
 }
 
 function cardFor(family: string, anyCodec: boolean, availability: EncoderAvailabilityView[]): EncoderCard {
-	const entry = availability.find((a) => a.id === family);
+	const entry = findAvailability(availability, family);
 	const label = entry?.label ?? family;
 	if (entry?.available) return { family, label, state: 'verified', device: entry.label };
 	if (!anyCodec) return { family, label, state: 'open', device: null };

@@ -2,6 +2,7 @@
 // one at a time. Pure functions; the components call them inside $derived.
 
 import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, SlimKey } from '$lib/types/api.gen';
+import { availabilityLabel } from './encoder-availability';
 import { showsAmdNote } from './encoderCards';
 import { fieldKind, type TabId } from './fields';
 import {
@@ -28,11 +29,10 @@ export interface SettingsPanelView {
 }
 
 export function settingsPanelView(input: SettingsPanelInput): SettingsPanelView {
-	const known = input.availability.find((a) => a.id === input.encoder);
 	return {
 		section: input.tab === 'video' ? 'video' : 'plain',
 		showAmdNote: showsAmdNote(input.encoder, input.availability),
-		encoderLabel: known?.label ?? 'This preset'
+		encoderLabel: availabilityLabel(input.availability, input.encoder, 'This preset')
 	};
 }
 
