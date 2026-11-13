@@ -78,15 +78,17 @@ describe('EncoderBlockCard', () => {
 		expect(screen.getByLabelText('RF, 0 to 51')).toBeTruthy();
 	});
 
-	it('disables multi-pass with a hint under constant quality', () => {
-		mount('x264');
+	it('disables multi-pass and turbo with a hint under constant quality', () => {
+		mount('x264', { qualityType: 2 });
 		expect((screen.getByLabelText('Multi-pass encoding') as HTMLInputElement).disabled).toBe(true);
-		expect(screen.getByText('Applies with average bitrate only')).toBeTruthy();
+		expect((screen.getByLabelText('Turbo first pass') as HTMLInputElement).disabled).toBe(true);
+		expect(screen.getAllByText('Applies with average bitrate only')).toHaveLength(2);
 	});
 
-	it('enables multi-pass under average bitrate', () => {
-		mount('x264', { qualityType: 2 });
+	it('enables multi-pass and turbo under average bitrate', () => {
+		mount('x264', { qualityType: 1 });
 		expect((screen.getByLabelText('Multi-pass encoding') as HTMLInputElement).disabled).toBe(false);
+		expect((screen.getByLabelText('Turbo first pass') as HTMLInputElement).disabled).toBe(false);
 		expect(screen.queryByText('Applies with average bitrate only')).toBeNull();
 	});
 
@@ -126,7 +128,7 @@ describe('EncoderBlockCard', () => {
 		const select = screen.getByLabelText('Bit depth') as HTMLSelectElement;
 		await fireEvent.change(select, { target: { value: '10-bit' } });
 		expect(onchange).toHaveBeenCalledWith('bit_depth', 10);
-		await fireEvent.change(select, { target: { value: '8-bit, default' } });
+		await fireEvent.change(select, { target: { value: '' } });
 		expect(onreset).toHaveBeenCalledWith('bit_depth');
 	});
 

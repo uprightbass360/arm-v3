@@ -34,7 +34,9 @@
 		onreset
 	}: Props = $props();
 
-	const AVERAGE_BITRATE = 2;
+	// HandBrake's VideoQualityType: 1 is average bitrate, 2 is constant quality.
+	const CONSTANT_QUALITY = 2;
+	const AVERAGE_BITRATE_ONLY = ['VideoMultiPass', 'VideoTurboMultiPass'];
 	const LISTS: Record<string, keyof SlimVariant> = {
 		VideoPreset: 'presets',
 		VideoTune: 'tunes',
@@ -67,7 +69,7 @@
 			shown: shownKey(key),
 			options: options(key),
 			range: rangeFor(key),
-			multiPass: isMultiPass(key),
+			averageOnly: isAverageOnly(key),
 			issue: issueFor(key)
 		}))
 	);
@@ -93,8 +95,8 @@
 		return { min: q.low, max: q.high, step: q.step };
 	}
 
-	function isMultiPass(key: SlimKey): boolean {
-		return key.name === 'VideoMultiPass';
+	function isAverageOnly(key: SlimKey): boolean {
+		return AVERAGE_BITRATE_ONLY.includes(key.name);
 	}
 
 	function issueFor(key: SlimKey): SettingIssue | undefined {
@@ -128,14 +130,14 @@
 					{/if}
 				</div>
 				<select id={depthId} class="field-control" disabled={readonly} onchange={onDepth}>
-					<option selected={block.bit_depth === undefined}>{defaultDepthLabel}</option>
+					<option value="" selected={block.bit_depth === undefined}>{defaultDepthLabel}</option>
 					{#each family.variants as v (v.depth)}
 						<option selected={block.bit_depth === v.depth}>{depthText(v.depth)}</option>
 					{/each}
 				</select>
 			</div>
 			{#each rows as row (row.name)}
-				{@const gated = row.multiPass && qualityType !== AVERAGE_BITRATE}
+				{@const gated = row.averageOnly && qualityType === CONSTANT_QUALITY}
 				<TunableField
 					key={row.shown}
 					value={block[row.name]}
