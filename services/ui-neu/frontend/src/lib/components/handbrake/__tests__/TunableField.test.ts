@@ -222,4 +222,14 @@ describe('TunableField fidelity', () => {
 		expect(inherited.container.querySelector('.tunable-field')).not.toHaveClass('tunable-field-stored');
 		expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
 	});
+
+	it('updates the shown value when stored and value props change', async () => {
+		const { rerender } = mount('PictureWidth', { inherited: 2 });
+		const input = () => screen.getByLabelText(key('PictureWidth').label) as HTMLInputElement;
+		expect([input().value, input().placeholder]).toEqual(['', '2']);
+		await rerender({ stored: true, value: 5 });
+		expect([input().value, input().placeholder]).toEqual(['5', '']);
+		await rerender({ value: 9 });
+		expect(input().value).toBe('9');
+	});
 });

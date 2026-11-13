@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { HandbrakeSchemaSlimView, SlimKey } from '$lib/types/api.gen';
 import fixture from './fixtures/slim-schema.json';
-import { TABS, fieldKind, fieldOptions, keysForTab, numberLimits, optionLabel } from '../fields';
+import { TABS, fieldKind, fieldOptions, fieldView, keysForTab, numberLimits, optionLabel } from '../fields';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const key = (name: string): SlimKey => {
@@ -161,5 +161,65 @@ describe('optionLabel', () => {
 	it('falls back to the value, with or without a label map', () => {
 		expect(optionLabel(key, 7)).toBe('7');
 		expect(optionLabel({ name: 'X' } as unknown as SlimKey, 'a')).toBe('a');
+	});
+});
+
+describe('fieldView', () => {
+	const base = { value: undefined, inherited: undefined, stored: false, options: null };
+
+	it('selects the inherited option and keeps numeric raw values', () => {
+		const view = fieldView(key('AudioBitrate'), { ...base, options: [-1, 128, 'auto'], inherited: 128 });
+		expect(view.kind).toBe('select');
+		expect(view.options.map((o) => [o.value, o.raw, o.selected])).toEqual([
+			['-1', -1, false],
+			['128', 128, true],
+			['auto', 'auto', false]
+		]);
+	});
+
+	it('prefers the stored value over the inherited one', () => {
+		const view = fieldView(key('AudioBitrate'), { ...base, options: [1, 2], value: 1, inherited: 2, stored: true });
+		expect(view.shown).toBe(1);
+		expect(view.options.map((o) => o.selected)).toEqual([true, false]);
+		expect(view.stored).toBe(true);
+	});
+
+	it('treats null options as an empty list', () => {
+		expect(fieldView(key('AudioBitrate'), base).options).toEqual([]);
+	});
+
+	it('labels options through the schema', () => {
+		const labelled = { ...key('AudioBitrate'), option_labels: { '1': 'Average' } } as SlimKey;
+		expect(fieldView(labelled, { ...base, options: [1, 2] }).options.map((o) => o.label)).toEqual(['Average', '2']);
+	});
+
+	it('shows the inherited value as a placeholder with an empty input', () => {
+		const view = fieldView(key('PictureWidth'), { ...base, inherited: 1920 });
+		expect([view.inputValue, view.placeholder]).toEqual(['', '1920']);
+	});
+
+	it('shows the stored value as the input value with no placeholder', () => {
+		const view = fieldView(key('PictureWidth'), { ...base, stored: true, value: 7 });
+		expect([view.inputValue, view.placeholder]).toEqual(['7', undefined]);
+	});
+
+	it('reads a missing value as empty text', () => {
+		const view = fieldView(key('PictureWidth'), base);
+		expect([view.inputValue, view.placeholder, view.shown == null]).toEqual(['', '', true]);
+	});
+
+	it('takes limits from the schema and an explicit range over them', () => {
+		const limited = { ...key('PictureWidth'), limits: [1, 9] } as unknown as SlimKey;
+		const fromSchema = fieldView(limited, base);
+		expect([fromSchema.min, fromSchema.max, fromSchema.step]).toEqual([1, 9, undefined]);
+		const ranged = fieldView(limited, { ...base, range: { min: 2, max: 5, step: 0.5 } });
+		expect([ranged.min, ranged.max, ranged.step]).toEqual([2, 5, 0.5]);
+		const none = fieldView(key('PictureWidth'), base);
+		expect([none.min, none.max]).toEqual([undefined, undefined]);
+	});
+
+	it('lists chip values as strings, and none for a non-list value', () => {
+		expect(fieldView(key('AudioLanguageList'), { ...base, inherited: ['eng', 2] }).chipValues).toEqual(['eng', '2']);
+		expect(fieldView(key('AudioLanguageList'), { ...base, inherited: null }).chipValues).toEqual([]);
 	});
 });

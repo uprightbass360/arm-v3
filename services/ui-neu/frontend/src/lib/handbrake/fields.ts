@@ -81,3 +81,57 @@ export function optionLabel(key: SlimKey, value: string | number): string {
 export function keysForTab(schema: HandbrakeSchemaSlimView, tab: TabId): SlimKey[] {
 	return schema.keys.filter((k) => k.tab === tab);
 }
+
+export interface FieldViewOption {
+	value: string;
+	label: string;
+	selected: boolean;
+	// The option as the schema lists it, so a number stays a number when chosen.
+	raw: string | number;
+}
+
+export interface FieldView {
+	kind: FieldKind;
+	shown: unknown;
+	inputValue: string;
+	placeholder: string | undefined;
+	min: number | undefined;
+	max: number | undefined;
+	step: number | undefined;
+	options: FieldViewOption[];
+	chipValues: string[];
+	stored: boolean;
+}
+
+export interface FieldViewInput {
+	value: unknown;
+	inherited: unknown;
+	stored: boolean;
+	options: Array<string | number> | null;
+	range?: { min: number; max: number; step: number };
+}
+
+// What a field draws: an unstored text or number field is empty with the inherited
+// value as its placeholder; a select marks the inherited value as selected.
+export function fieldView(key: SlimKey, opts: FieldViewInput): FieldView {
+	const shown = opts.stored ? opts.value : opts.inherited;
+	const text = shown == null ? '' : String(shown);
+	const limits = numberLimits(key);
+	return {
+		kind: fieldKind(key),
+		shown,
+		inputValue: opts.stored ? text : '',
+		placeholder: opts.stored ? undefined : text,
+		min: opts.range?.min ?? limits?.min,
+		max: opts.range?.max ?? limits?.max,
+		step: opts.range?.step,
+		options: (opts.options ?? []).map((raw) => ({
+			value: String(raw),
+			label: optionLabel(key, raw),
+			selected: String(raw) === String(shown),
+			raw
+		})),
+		chipValues: Array.isArray(shown) ? shown.map(String) : [],
+		stored: opts.stored
+	};
+}
