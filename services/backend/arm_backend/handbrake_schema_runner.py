@@ -21,6 +21,7 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlmodel import col, select
 
@@ -187,7 +188,11 @@ class HandbrakeSchemaRunner:
         return status_code, stdout
 
     async def _store_row(self, raw: dict[str, Any], schema: HandbrakeSchema, image: str) -> None:
-        """Insert the dump unless a row with this hash exists (its `fetched_at` is left as it was)."""
+        """Insert the dump unless a row with this hash exists (its `fetched_at` is left as it was).
+
+        An overlapping refresh can insert the same hash between the check and the commit; the unique
+        `content_hash` then rejects this insert, which is rolled back and treated as already stored.
+        """
         async with self._db_factory() as db:
             stmt = select(HandbrakeSchemaRecord).where(col(HandbrakeSchemaRecord.content_hash) == schema.content_hash)
             if (await db.execute(stmt)).scalars().first() is not None:
@@ -202,4 +207,7 @@ class HandbrakeSchemaRunner:
                     fetched_at=datetime.now(UTC),
                 )
             )
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()

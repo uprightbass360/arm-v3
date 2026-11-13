@@ -10,6 +10,8 @@ import asyncio
 import json
 from typing import Any
 
+from sqlalchemy.exc import IntegrityError
+
 from arm_backend import handbrake_schema_runner as runner_mod
 from arm_backend.config import Settings
 from arm_backend.handbrake_schema_runner import (
@@ -104,6 +106,15 @@ async def test_the_same_hash_twice_stores_one_row_but_resets_the_store() -> None
     assert await runner.refresh() is None
     assert len(_rows(db)) == 1
     assert store.current() is not None
+
+
+async def test_a_concurrent_insert_of_the_same_hash_is_treated_as_stored() -> None:
+    """Overlapping refreshes: the unique content_hash rejects the loser's insert; it rolls back and loads."""
+    runner, db, _docker, store, _container = _build()
+    db.commit_raises = IntegrityError("INSERT", {}, Exception("duplicate content_hash"))
+    assert await runner.refresh() is None
+    assert db.call_log[-2:] == ["commit", "rollback"]
+    assert store.current() is not None and store.current().content_hash == fixture_schema().content_hash
 
 
 async def test_a_new_hash_adds_a_second_row() -> None:
