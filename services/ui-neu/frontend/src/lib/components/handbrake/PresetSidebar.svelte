@@ -13,6 +13,7 @@
 	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcodePresets';
 	import { handbrakeSchema } from '$lib/stores/handbrakeSchema.svelte';
 	import { encodersStore } from '$lib/stores/encoders.svelte';
+	import { presetSidebarView } from '$lib/handbrake/panelView';
 	import {
 		VAAPI_NOTE,
 		applyField,
@@ -23,7 +24,6 @@
 		onBaseChange,
 		saveFailure,
 		schemaLoadError,
-		showTabs,
 		sidebarTitle,
 		unplacedIssues,
 		usageLabel,
@@ -64,12 +64,23 @@
 	// Built-in names already asked for, so each is fetched once.
 	let requested: string[] = [];
 
-	const readonly = $derived(mode === 'view');
 	const schema = $derived(handbrakeSchema.schema);
-	const base = $derived(bases[draft.preset_ref ?? ''] ?? null);
 	const loose = $derived(unplacedIssues(issues, schema));
+	const cloneAction = $derived(preset && onclone ? () => onclone(preset) : null);
+	const view = $derived(
+		presetSidebarView({
+			mode,
+			importing,
+			draft,
+			submitting,
+			cloneAvailable: cloneAction !== null,
+			failure,
+			unplacedCount: loose.length
+		})
+	);
+	const readonly = $derived(view.readonly);
+	const base = $derived(bases[draft.preset_ref ?? ''] ?? null);
 	const note = $derived(footerNote(preset));
-	const canSave = $derived(!submitting && draft.name.trim().length > 0);
 
 	onMount(() => {
 		if (handbrakeSchema.state === 'idle') handbrakeSchema.load();
@@ -109,6 +120,7 @@
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
+		if (!view.canSubmit) return;
 		submitting = true;
 		failure = null;
 		try {
@@ -128,7 +140,7 @@
 		note={usageLabel(usage)}
 		readOnly={readonly}
 		formId={FORM_ID}
-		canSubmit={canSave}
+		canSubmit={view.canSubmit}
 		{submitting}
 		{onclose}
 	/>
@@ -139,31 +151,31 @@
 	title={sidebarTitle(mode)}
 	width="wide"
 	stacked
-	footer={importing ? undefined : footer}
+	footer={view.showFooter ? footer : undefined}
 	{onclose}
 >
 	{#snippet headerActions()}
-		{#if readonly && preset && onclone}
-			<button type="button" class="btn btn-sm" onclick={() => onclone(preset)}>Clone</button>
+		{#if view.showClone}
+			<button type="button" class="btn btn-sm" onclick={cloneAction}>Clone</button>
 		{/if}
-		<button type="button" class="btn btn-sm" disabled={readonly || importing} onclick={() => (importing = true)}
+		<button type="button" class="btn btn-sm" disabled={view.importDisabled} onclick={() => (importing = true)}
 			>Import HandBrake preset</button
 		>
 	{/snippet}
 
-	{#if importing}
+	{#if view.showImport}
 		<ImportPanel {schema} availability={encodersStore.list} oncancel={() => (importing = false)} onuse={useImported} />
 	{:else}
 		<form id={FORM_ID} class="preset-sidebar" onsubmit={save}>
-			{#if failure}
+			{#if view.failure}
 				<div class="alert alert-danger preset-sidebar-banner" role="alert">
-					<span>{failure.message}</span>
-					{#if failure.schemaMissing}
+					<span>{view.failure.message}</span>
+					{#if view.showRetry}
 						<button type="button" class="btn btn-sm" onclick={() => handbrakeSchema.retry()}>Retry</button>
 					{/if}
 				</div>
 			{/if}
-			{#if loose.length > 0}
+			{#if view.showUnplaced}
 				<ul class="alert alert-warning preset-sidebar-issues">
 					{#each loose as issue, i (i)}<li>{issue.message}</li>{/each}
 				</ul>
@@ -183,7 +195,7 @@
 				{onfield}
 			/>
 
-			{#if showTabs(draft)}
+			{#if view.settings === 'tabs'}
 				<div class="preset-sidebar-settings">
 					<LoadState
 						data={schema}
@@ -212,7 +224,7 @@
 						{/snippet}
 					</LoadState>
 				</div>
-			{:else if draft.tool === 'handbrake'}
+			{:else if view.settings === 'vaapi-note'}
 				<p class="field-help">{VAAPI_NOTE}</p>
 			{/if}
 		</form>

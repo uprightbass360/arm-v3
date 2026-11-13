@@ -6,21 +6,9 @@
 	import { onMount } from 'svelte';
 	import { encodersStore, PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';
 	import { encoderGroups } from '$lib/utils/encoder-groups';
-	import {
-		CLEARED_NOTE,
-		clearsSettings,
-		isVaapiEncoder,
-		issuesFor,
-		showTabs,
-		type Draft,
-		type PresetField
-	} from '$lib/handbrake/sidebarModel';
+	import { presetBlockView } from '$lib/handbrake/panelView';
+	import { CLEARED_NOTE, isVaapiEncoder, issuesFor, type Draft, type PresetField } from '$lib/handbrake/sidebarModel';
 	import type { SettingIssue } from '$lib/types/api.gen';
-
-	// A HandBrake preset name that names a hardware encoder (a common
-	// convention in preset libraries) does nothing on its own. HandBrake
-	// only attaches a GPU when the Encoder field asks for one.
-	const HARDWARE_HINT_PATTERN = /QSV|NVENC|VCN|VCE/i;
 
 	interface Props {
 		draft: Draft;
@@ -43,15 +31,17 @@
 	const encoders = $derived(encodersStore.list);
 	const optgroups = $derived(encoderGroups(encoders));
 
-	// abcde/none presets can't carry a codec encoder (only handbrake presets can).
-	const encoderLocked = $derived(draft.tool === 'abcde' || draft.tool === 'none');
 	// vaapi_* encoders run over ffmpeg directly; the HandBrake base preset plays
 	// no part, and extra args are ffmpeg CLI flags, not HandBrake ones.
-	const usesFfmpegVaapi = $derived(isVaapiEncoder(draft.encoder));
-	const encoderHint = $derived(
-		draft.encoder === PRESET_ENCODER_ID && HARDWARE_HINT_PATTERN.test(draft.preset_ref ?? '')
-			? 'This HandBrake preset uses a hardware encoder; choose the matching encoder above or ARM will not attach a GPU.'
-			: null
+	const view = $derived(
+		presetBlockView({
+			draft,
+			readonly,
+			builtinNames,
+			encodersLoading: encodersStore.loading,
+			encoderCount: encoders.length,
+			presetEncoderId: PRESET_ENCODER_ID
+		})
 	);
 	const refIssue = $derived(issuesFor(issues, 'preset_ref'));
 
@@ -130,14 +120,14 @@
 		>
 			<option value="mkv">MKV</option>
 			<option value="mp4">MP4</option>
-			<option value="webm" disabled={usesFfmpegVaapi}>WebM</option>
+			<option value="webm" disabled={view.usesFfmpegVaapi}>WebM</option>
 			<option value="flac">FLAC</option>
 			<option value="mp3">MP3</option>
 			<option value="ogg">OGG</option>
 			<option value="iso">ISO</option>
 			<option value="none">None</option>
 		</select>
-		{#if usesFfmpegVaapi}
+		{#if view.usesFfmpegVaapi}
 			<p class="field-help" data-testid="tp-container-vaapi-note">AMD VAAPI encoders write MKV or MP4.</p>
 		{/if}
 	</div>
@@ -148,12 +138,12 @@
 			id="tp-encoder"
 			data-testid="tp-encoder"
 			value={draft.encoder}
-			disabled={readonly || encoderLocked || encodersStore.loading}
+			disabled={view.encoderDisabled}
 			onchange={onEncoder}
 		>
-			{#if encodersStore.loading}
+			{#if view.encoderList === 'loading'}
 				<option value={draft.encoder} disabled>Loading encoders...</option>
-			{:else if encoders.length === 0}
+			{:else if view.encoderList === 'empty'}
 				<option value={draft.encoder}>{draft.encoder}</option>
 			{:else}
 				{#each optgroups as grp (grp.group)}
@@ -170,13 +160,13 @@
 		{#if encodersStore.error}
 			<p class="field-error" data-testid="tp-encoder-error">Could not load encoders; the current encoder is kept.</p>
 		{/if}
-		{#if encoderHint}
-			<p class="field-help" data-testid="tp-encoder-hint">{encoderHint}</p>
+		{#if view.encoderHint}
+			<p class="field-help" data-testid="tp-encoder-hint">{view.encoderHint}</p>
 		{/if}
 	</div>
 
 	<!-- The base preset is a select of HandBrake's built-ins once a schema is loaded; free text otherwise. -->
-	{#if draft.tool === 'handbrake' && builtinNames}
+	{#if view.baseNames}
 		<div class="field">
 			<label class="field-label" for="tp-preset-ref">Base preset</label>
 			<select
@@ -187,7 +177,7 @@
 				onchange={(e) => onfield('preset_ref', value(e))}
 			>
 				<option value="">None (HandBrake defaults)</option>
-				{#each withStoredName(builtinNames, draft.preset_ref) as name (name)}
+				{#each withStoredName(view.baseNames, draft.preset_ref) as name (name)}
 					<option value={name}>{name}</option>
 				{/each}
 			</select>
@@ -209,7 +199,7 @@
 	{/if}
 
 	<div class="field">
-		<label class="field-label" for="tp-extra-args">{usesFfmpegVaapi ? 'ffmpeg arguments' : 'Extra args'}</label>
+		<label class="field-label" for="tp-extra-args">{view.extraArgsLabel}</label>
 		<input
 			id="tp-extra-args"
 			data-testid="tp-extra-args"
@@ -218,18 +208,18 @@
 			disabled={readonly}
 			oninput={(e) => onfield('extra_args', value(e))}
 		/>
-		{#if showTabs(draft)}
+		{#if view.showOverrideHelp}
 			<p class="field-help">Flags here are added last and override the settings below.</p>
 		{/if}
 	</div>
 
-	{#if clearsSettings(draft)}
+	{#if view.showClearedNote}
 		<p class="alert alert-warning preset-block-wide" role="status">{CLEARED_NOTE}</p>
 	{/if}
 </div>
 
 {#snippet refNotes()}
-	{#if usesFfmpegVaapi}
+	{#if view.usesFfmpegVaapi}
 		<p class="field-help" data-testid="tp-preset-ref-note">Not used by this encoder.</p>
 	{/if}
 	{#if refIssue}<p class="field-error" role="alert">{refIssue.message}</p>{/if}

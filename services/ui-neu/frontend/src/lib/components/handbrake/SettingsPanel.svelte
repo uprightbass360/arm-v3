@@ -9,8 +9,9 @@
 		SettingIssue,
 		SlimKey
 	} from '$lib/types/api.gen';
-	import { fieldKind, fieldOptions, type TabId } from '$lib/handbrake/fields';
-	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine, showsAmdNote } from '$lib/handbrake/encoderCards';
+	import { fieldOptions, type TabId } from '$lib/handbrake/fields';
+	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine } from '$lib/handbrake/encoderCards';
+	import { keyRow, settingsPanelView } from '$lib/handbrake/panelView';
 	import { resetBlock, resetCommon, setBlock, setCommon } from '$lib/handbrake/settingsEdit';
 	import {
 		AMD_NOTE,
@@ -25,7 +26,6 @@
 		inheritedDepth,
 		inheritedValue,
 		issuesFor,
-		keyShown,
 		type BaseValues,
 		type FilterState
 	} from '$lib/handbrake/sidebarModel';
@@ -54,7 +54,7 @@
 	// Selects whose options hang off another key (a filter's presets) read the value in effect.
 	const context = $derived({ ...base, ...common });
 	const qualityType = $derived(effectiveQualityType(settings, base, schema));
-	const encoderLabel = $derived(availability.find((a) => a.id === encoder)?.label ?? 'This preset');
+	const view = $derived(settingsPanelView({ tab, encoder, availability }));
 	const cards = $derived(
 		cardFamilies(encoderCards(encoder, presetRef, schema, availability, baseVideoEncoder(base)), schema)
 	);
@@ -62,7 +62,7 @@
 
 <SettingsTabs {schema} {settings} {issues} {tab} ontab={(t) => (tab = t)}>
 	{#snippet children(f: FilterState)}
-		{#if tab === 'video'}
+		{#if view.section === 'video'}
 			<div class="settings-panel-section">
 				<h4 class="settings-panel-heading">All encoders</h4>
 				<p class="settings-panel-line">{ALL_ENCODERS_LINE}</p>
@@ -70,9 +70,9 @@
 			{@render fields(commonKeys(schema, 'video'), f)}
 			<div class="settings-panel-section settings-panel-divided">
 				<h4 class="settings-panel-heading">Per encoder</h4>
-				<p class="settings-panel-line">{perEncoderLine(encoderLabel)}</p>
+				<p class="settings-panel-line">{perEncoderLine(view.encoderLabel)}</p>
 			</div>
-			{#if showsAmdNote(encoder, availability)}<p class="field-help">{AMD_NOTE}</p>{/if}
+			{#if view.showAmdNote}<p class="field-help">{AMD_NOTE}</p>{/if}
 			<div class="settings-panel-cards">
 				{#each cards as { card, family } (card.family)}
 					{@const block = blockOf(settings, family.name)}
@@ -105,30 +105,29 @@
 	<div class="settings-panel-grid">
 		{#each keys as key (key.name)}
 			{@const stored = key.name in common}
-			{#if keyShown(key, stored, f, schema)}
-				{#if fieldKind(key) === 'audio-list'}
-					<div class="settings-panel-wide">
-						<AudioTrackList
-							value={audioListValue(key, settings, base)}
-							{schema}
-							{issues}
-							{readonly}
-							onchange={(v) => onsettings(setCommon(settings, key.name, v))}
-						/>
-					</div>
-				{:else}
-					<TunableField
-						{key}
-						value={common[key.name]}
-						inherited={inheritedValue(key, base)}
-						{stored}
-						options={fieldOptions(key, schema, context)}
-						issue={issuesFor(issues, key.name)}
-						disabled={readonly}
+			{@const row = keyRow(key, stored, f, schema)}
+			{#if row === 'audio-list'}
+				<div class="settings-panel-wide">
+					<AudioTrackList
+						value={audioListValue(key, settings, base)}
+						{schema}
+						{issues}
+						{readonly}
 						onchange={(v) => onsettings(setCommon(settings, key.name, v))}
-						onreset={() => onsettings(resetCommon(settings, key.name))}
 					/>
-				{/if}
+				</div>
+			{:else if row === 'field'}
+				<TunableField
+					{key}
+					value={common[key.name]}
+					inherited={inheritedValue(key, base)}
+					{stored}
+					options={fieldOptions(key, schema, context)}
+					issue={issuesFor(issues, key.name)}
+					disabled={readonly}
+					onchange={(v) => onsettings(setCommon(settings, key.name, v))}
+					onreset={() => onsettings(resetCommon(settings, key.name))}
+				/>
 			{/if}
 		{/each}
 	</div>

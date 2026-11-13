@@ -69,7 +69,14 @@ function preset(over: Partial<TranscodePresetView> = {}): TranscodePresetView {
 	};
 }
 
-function mount(props: Partial<{ preset: TranscodePresetView | null; mode: 'new' | 'edit' | 'view'; usage: number }>) {
+function mount(
+	props: Partial<{
+		preset: TranscodePresetView | null;
+		mode: 'new' | 'edit' | 'view';
+		usage: number;
+		onclone: (p: TranscodePresetView) => void;
+	}>
+) {
 	const onclose = vi.fn();
 	const onsaved = vi.fn();
 	renderComponent(PresetSidebar, { props: { preset: null, mode: 'new', usage: 0, onclose, onsaved, ...props } });
@@ -302,6 +309,32 @@ describe('editing and saving', () => {
 	it('disables Save without a name', async () => {
 		mount({});
 		expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+	});
+
+	it('offers Clone on a read-only preset only when a clone handler is given', async () => {
+		const builtin = preset({ is_builtin: true });
+		const onclone = vi.fn();
+		mount({ mode: 'view', preset: builtin, onclone });
+		await fireEvent.click(screen.getByRole('button', { name: 'Clone' }));
+		expect(onclone).toHaveBeenCalledWith(builtin);
+		cleanup();
+		mount({ mode: 'view', preset: builtin });
+		expect(screen.queryByRole('button', { name: 'Clone' })).not.toBeInTheDocument();
+	});
+
+	it('does not save when the form is submitted on a read-only preset', async () => {
+		mount({ mode: 'view', preset: preset({ is_builtin: true }) });
+		await ready();
+		await fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+		expect(createTranscodePreset).not.toHaveBeenCalled();
+		expect(updateTranscodePreset).not.toHaveBeenCalled();
+	});
+
+	it('does not save when the form is submitted without a name', async () => {
+		mount({});
+		await ready();
+		await fireEvent.submit(document.querySelector('form') as HTMLFormElement);
+		expect(createTranscodePreset).not.toHaveBeenCalled();
 	});
 
 	it('sends handbrake_settings null once every value is reset (Review Focus 2)', async () => {
