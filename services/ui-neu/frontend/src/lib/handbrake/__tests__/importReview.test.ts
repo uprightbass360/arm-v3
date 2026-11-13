@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, ImportedPresetView } from '$lib/types/api.gen';
 import slim from './fixtures/slim-schema.json';
+import tenBit from './fixtures/x265-10bit-import-response.json';
 import plex from './fixtures/plex-import-response.json';
 import { applyProposal, defaultPick, familyLabel, reviewRows } from '../importReview';
 import { initialDraft } from '../sidebarModel';
@@ -8,6 +9,7 @@ import { initialDraft } from '../sidebarModel';
 const schema = slim as unknown as HandbrakeSchemaSlimView;
 const response = plex as unknown as { presets: ImportedPresetView[] };
 const PLEX = response.presets[0];
+const TEN = (tenBit as unknown as { presets: ImportedPresetView[] }).presets[0];
 
 function enc(id: string, label: string): EncoderAvailabilityView {
 	return {
@@ -26,7 +28,10 @@ const AVAILABILITY = [
 	enc('any_h264', 'Any H.264'),
 	enc('x264', 'CPU x264'),
 	enc('qsv_h264', 'Intel QSV H.264'),
-	enc('nvenc_h264', 'NVIDIA H.264')
+	enc('nvenc_h264', 'NVIDIA H.264'),
+	enc('x265', 'CPU x265'),
+	enc('nvenc_h265', 'NVIDIA H.265'),
+	enc('qsv_h265', 'Intel QSV H.265')
 ];
 
 function entry(over: Partial<ImportedPresetView>): ImportedPresetView {
@@ -80,6 +85,37 @@ describe('reviewRows on the Plex export', () => {
 	});
 });
 
+describe('reviewRows on a 10-bit export', () => {
+	const review = reviewRows(TEN, schema, AVAILABILITY);
+
+	it('resolves the variant to its family', () => {
+		expect(review.encoderInFile).toBe('CPU x265');
+		expect(review.storedFor).toBe('CPU x265');
+		expect(review.codecDepth).toBe('H.265, 10-bit');
+		expect(review.values[0]).toEqual(['Bit depth', '10']);
+		expect(review.values).toHaveLength(7);
+	});
+
+	it('copies the real depth and never shows the variant name', () => {
+		expect(review.copiedLine).toBe('Bit depth 10 also set for NVIDIA H.265, Intel QSV H.265');
+		expect(review.notes.join(' ')).not.toContain('x265_10bit');
+		expect(review.notes.join(' ')).not.toContain('undefined');
+	});
+
+	it('takes the depth from the suffix when the block has none, else 8', () => {
+		const bare = { ...TEN.proposal!, handbrake_settings: { common: {}, encoders: {} } };
+		expect(reviewRows(entry({ source_encoder: 'x265_10bit', proposal: bare }), schema).codecDepth).toBe(
+			'H.265, 10-bit'
+		);
+		expect(reviewRows(entry({ source_encoder: 'x265', proposal: bare }), schema).codecDepth).toBe('H.265, 8-bit');
+	});
+
+	it('lists eight-bit-only families', () => {
+		const r = reviewRows(entry({ ...TEN, eight_bit_only: ['x265'] }), schema, AVAILABILITY);
+		expect(r.eightBitOnly).toEqual(['CPU x265: 8-bit on this encoder']);
+	});
+});
+
 describe('reviewRows edge cases', () => {
 	it('pluralises dropped keys and appends warnings and issue messages', () => {
 		const r = reviewRows(
@@ -106,12 +142,11 @@ describe('reviewRows edge cases', () => {
 		expect(r.eightBitOnly).toEqual(['CPU x264: 8-bit on this encoder']);
 	});
 
-	it('leaves the codec blank for an unknown family and the depth out when absent', () => {
+	it('leaves the codec out for an unknown family', () => {
 		const proposal = { ...PLEX.proposal!, handbrake_settings: { common: {}, encoders: {} } };
 		const r = reviewRows(entry({ source_encoder: 'mystery', proposal }), schema);
-		expect(r.codecDepth).toBe('');
+		expect(r.codecDepth).toBe('8-bit');
 		expect(r.values).toEqual([]);
-		expect(reviewRows(entry({ source_encoder: 'x265', proposal }), schema).codecDepth).toBe('H.265');
 	});
 
 	it('falls back to the key name when the schema has no label, and tolerates absent encoders', () => {
@@ -143,6 +178,11 @@ describe('applyProposal', () => {
 		expect(d.name).toBe('Custom_Plex_720p');
 		expect(d.encoder).toBe('any_h264');
 		expect(d.settings).toBe(PLEX.proposal!.handbrake_settings);
+	});
+
+	it('clears the base preset', () => {
+		const d = applyProposal({ ...initialDraft(null), preset_ref: 'Fast 1080p30' }, PLEX);
+		expect(d.preset_ref).toBeNull();
 	});
 
 	it('keeps a name the draft already has', () => {

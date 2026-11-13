@@ -38,12 +38,26 @@ const CODEC_LABELS: Record<string, string> = {
 	svt_av1: 'AV1'
 };
 const BIT_DEPTH_KEY = 'bit_depth';
+const DEFAULT_DEPTH = 8;
+// The export names an encoder variant (x265_10bit); blocks are keyed by its family (x265).
+const DEPTH_SUFFIX = /_(\d+)bit$/;
 
 type Block = Record<string, unknown>;
 
 // The availability label of the catalog id that matches the family, else the family id.
 export function familyLabel(family: string, availability: EncoderAvailabilityView[]): string {
 	return availability.find((a) => a.id === family)?.label ?? family;
+}
+
+function sourceFamily(encoder: string): string {
+	return encoder.replace(DEPTH_SUFFIX, '');
+}
+
+// The block's own depth, else the variant's suffix, else HandBrake's 8-bit.
+function depthOf(encoder: string, block: Block): number {
+	const stored = block[BIT_DEPTH_KEY];
+	if (typeof stored === 'number') return stored;
+	return Number(DEPTH_SUFFIX.exec(encoder)?.[1] ?? DEFAULT_DEPTH);
 }
 
 function codecOf(family: string): string | null {
@@ -60,9 +74,8 @@ function blockValues(block: Block, schema: HandbrakeSchemaSlimView): [string, st
 	return Object.entries(block).map(([name, value]) => [keyLabel(name, schema), String(value)]);
 }
 
-function codecDepth(family: string, block: Block): string {
-	const parts = [codecOf(family), block[BIT_DEPTH_KEY] === undefined ? null : `${block[BIT_DEPTH_KEY]}-bit`];
-	return parts.filter((part) => part !== null).join(', ');
+function codecDepth(family: string, depth: number): string {
+	return [codecOf(family), `${depth}-bit`].filter((part) => part !== null).join(', ');
 }
 
 function tabCounts(settings: HandbrakeSettings, schema: HandbrakeSchemaSlimView): Record<TabId, number> {
@@ -101,7 +114,7 @@ function emptyReview(p: ImportedPresetView, availability: EncoderAvailabilityVie
 	const empty = {} as Record<TabId, number>;
 	for (const tab of TABS) empty[tab.id] = 0;
 	return {
-		encoderInFile: familyLabel(p.source_encoder, availability),
+		encoderInFile: familyLabel(sourceFamily(p.source_encoder), availability),
 		codecDepth: '',
 		encoderInArm: '',
 		container: '',
@@ -123,18 +136,20 @@ export function reviewRows(
 ): ImportReview {
 	const proposal = p.proposal;
 	if (proposal === null) return emptyReview(p, availability);
-	const block: Block = proposal.handbrake_settings.encoders?.[p.source_encoder] ?? {};
-	const sourceLabel = familyLabel(p.source_encoder, availability);
+	const family = sourceFamily(p.source_encoder);
+	const block: Block = proposal.handbrake_settings.encoders?.[family] ?? {};
+	const depth = depthOf(p.source_encoder, block);
+	const sourceLabel = familyLabel(family, availability);
 	const copiedTo = p.copied_depth_to.map((family) => familyLabel(family, availability));
 	const counts = tabCounts(proposal.handbrake_settings, schema);
 	return {
 		encoderInFile: sourceLabel,
-		codecDepth: codecDepth(p.source_encoder, block),
+		codecDepth: codecDepth(family, depth),
 		encoderInArm: familyLabel(proposal.encoder, availability),
 		container: proposal.container,
 		storedFor: sourceLabel,
 		values: blockValues(block, schema),
-		copiedLine: copiedTo.length > 0 ? `Bit depth ${block[BIT_DEPTH_KEY]} also set for ${copiedTo.join(', ')}` : null,
+		copiedLine: copiedTo.length > 0 ? `Bit depth ${depth} also set for ${copiedTo.join(', ')}` : null,
 		copiedTo,
 		eightBitOnly: p.eight_bit_only.map((family) => `${familyLabel(family, availability)}: 8-bit on this encoder`),
 		tabCounts: counts,
@@ -143,19 +158,21 @@ export function reviewRows(
 	};
 }
 
-// The preset to preselect: the only one, else the first that can be imported.
+// The preset to preselect: the first that can be imported, or none.
 export function defaultPick(presets: ImportedPresetView[]): number | null {
 	const at = presets.findIndex((p) => p.importable);
 	return at === -1 ? null : at;
 }
 
-// Fills the draft from a proposal; an existing name is kept. Nothing is saved.
+// Fills the draft from a proposal; an existing name is kept. The proposal was
+// validated with no base preset, so the base is cleared. Nothing is saved.
 export function applyProposal(d: Draft, p: ImportedPresetView): Draft {
 	const proposal = p.proposal;
 	if (proposal === null) return d;
 	return {
 		...d,
 		name: d.name.trim() === '' ? proposal.name : d.name,
+		preset_ref: null,
 		container: proposal.container,
 		encoder: proposal.encoder,
 		settings: proposal.handbrake_settings

@@ -7,6 +7,7 @@ import type {
 	ImportedPresetView
 } from '$lib/types/api.gen';
 import slim from '$lib/handbrake/__tests__/fixtures/slim-schema.json';
+import tenBit from '$lib/handbrake/__tests__/fixtures/x265-10bit-import-response.json';
 import plex from '$lib/handbrake/__tests__/fixtures/plex-import-response.json';
 import { ApiError } from '$lib/api/client';
 import { parseHandbrakeImport } from '$lib/api/transcodePresets';
@@ -34,7 +35,10 @@ const AVAILABILITY = [
 	enc('any_h264', 'Any H.264'),
 	enc('x264', 'CPU x264'),
 	enc('qsv_h264', 'Intel QSV H.264'),
-	enc('nvenc_h264', 'NVIDIA H.264')
+	enc('nvenc_h264', 'NVIDIA H.264'),
+	enc('x265', 'CPU x265'),
+	enc('nvenc_h265', 'NVIDIA H.265'),
+	enc('qsv_h265', 'Intel QSV H.265')
 ];
 
 function mount(loaded: HandbrakeSchemaSlimView | null = schema) {
@@ -232,5 +236,33 @@ describe('before the schema has loaded', () => {
 		expect(await screen.findByText('Review the import')).toBeInTheDocument();
 		expect(screen.queryByText('Encoder in the file')).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Use these settings' })).toBeEnabled();
+	});
+});
+
+describe('step 2 with a 10-bit export', () => {
+	it('shows the family, its stored values and the real depth', async () => {
+		vi.mocked(parseHandbrakeImport).mockResolvedValue(tenBit as unknown as ImportParseResponse);
+		mount();
+		await paste('x');
+		await readFile();
+		expect(await screen.findByText('Stored for CPU x265')).toBeInTheDocument();
+		expect(screen.getByText('Codec and bit depth').nextElementSibling).toHaveTextContent('H.265, 10-bit');
+		expect(screen.getByText('Bit depth 10 also set for NVIDIA H.265, Intel QSV H.265')).toBeInTheDocument();
+	});
+});
+
+describe('version mismatch', () => {
+	it('shows every warning from the response as a note', async () => {
+		const warning = 'Exported from HandBrake 72.0.1, this ARM reads 72.0.0';
+		const mismatch = {
+			...PLEX,
+			handbrake_version: { export: '72.0.1', schema: '72.0.0' },
+			presets: [{ ...PLEX.presets[0], warnings: [warning] }]
+		};
+		vi.mocked(parseHandbrakeImport).mockResolvedValue(mismatch);
+		mount();
+		await paste('x');
+		await readFile();
+		expect(await screen.findByText(warning)).toBeInTheDocument();
 	});
 });
