@@ -48,15 +48,27 @@
 <div class="import-panel">
 	{#if presets === null}
 		<h3 class="import-title">Import a HandBrake preset</h3>
+		<p class="import-steps">1. Import &gt; 2. Review</p>
+		{#if schema}
+			<p class="field-help">The file is checked against HandBrake {schema.handbrake_tag}, then discarded.</p>
+		{/if}
+		<p>Choose a preset file exported from the HandBrake app (Presets, Export), or paste its JSON.</p>
 		<div class="import-field">
-			<label class="field-label" for="import-file">HandBrake export file</label>
-			<input id="import-file" type="file" accept="application/json,.json" onchange={chooseFile} />
+			<input
+				id="import-file"
+				class="sr-only import-file-input"
+				type="file"
+				accept="application/json,.json"
+				onchange={chooseFile}
+			/>
+			<label class="btn btn-sm import-file-button" for="import-file">Choose file</label>
 		</div>
 		<div class="import-field">
-			<label class="field-label" for="import-json">Or paste the export JSON</label>
+			<label class="field-label" for="import-json">HandBrake preset JSON</label>
 			<textarea id="import-json" class="input import-json" rows="8" bind:value={text}></textarea>
 		</div>
 		{#if error}<p class="field-error" role="alert">{error}</p>{/if}
+		<p class="field-help">Nothing changes in the preset until you finish the review.</p>
 		<div class="import-actions">
 			<button type="button" class="btn btn-ghost" onclick={oncancel}>Cancel</button>
 			<button type="button" class="btn btn-primary" disabled={text.trim() === '' || loading} onclick={readFile}
@@ -143,6 +155,21 @@
 		display: flex;
 		flex-direction: column;
 		gap: 0.25rem;
+	}
+	.import-steps {
+		margin: 0;
+		font-size: 0.75rem;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-muted);
+	}
+	.import-file-button {
+		align-self: flex-start;
+		cursor: pointer;
+	}
+	.import-file-input:focus-visible + .import-file-button {
+		outline: 2px solid var(--color-primary);
+		outline-offset: 2px;
 	}
 	.import-json {
 		font-family: var(--font-mono, monospace);

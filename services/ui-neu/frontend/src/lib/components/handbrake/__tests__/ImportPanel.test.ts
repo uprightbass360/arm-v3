@@ -49,7 +49,7 @@ function mount(loaded: HandbrakeSchemaSlimView | null = schema) {
 }
 
 async function paste(text: string) {
-	await fireEvent.input(screen.getByLabelText('Or paste the export JSON'), { target: { value: text } });
+	await fireEvent.input(screen.getByLabelText('HandBrake preset JSON'), { target: { value: text } });
 }
 
 async function readFile() {
@@ -62,6 +62,24 @@ afterEach(() => {
 });
 
 describe('step 1', () => {
+	it('shows the steps, the checked version, the instruction and the review promise', () => {
+		mount();
+		expect(screen.getByText('1. Import > 2. Review')).toBeInTheDocument();
+		expect(
+			screen.getByText(`The file is checked against HandBrake ${schema.handbrake_tag}, then discarded.`)
+		).toBeInTheDocument();
+		expect(
+			screen.getByText('Choose a preset file exported from the HandBrake app (Presets, Export), or paste its JSON.')
+		).toBeInTheDocument();
+		expect(screen.getByText('Choose file').tagName).toBe('LABEL');
+		expect(screen.getByText('Nothing changes in the preset until you finish the review.')).toBeInTheDocument();
+	});
+
+	it('leaves out the version line while the schema is not loaded', () => {
+		mount(null);
+		expect(screen.queryByText(/is checked against HandBrake/)).toBeNull();
+	});
+
 	it('disables Read file while the text is empty', async () => {
 		mount();
 		const button = screen.getByRole('button', { name: 'Read file' });
@@ -76,7 +94,7 @@ describe('step 1', () => {
 		await paste('nope');
 		await readFile();
 		expect(await screen.findByRole('alert')).toHaveTextContent('This is not a HandBrake export');
-		expect(screen.getByLabelText('Or paste the export JSON')).toHaveValue('nope');
+		expect(screen.getByLabelText('HandBrake preset JSON')).toHaveValue('nope');
 		expect(screen.queryByText('Review the import')).not.toBeInTheDocument();
 	});
 
@@ -99,14 +117,14 @@ describe('step 1', () => {
 	it('loads a chosen file into the text box', async () => {
 		mount();
 		const file = new File(['{"a":1}'], 'export.json', { type: 'application/json' });
-		await fireEvent.change(screen.getByLabelText('HandBrake export file'), { target: { files: [file] } });
-		await waitFor(() => expect(screen.getByLabelText('Or paste the export JSON')).toHaveValue('{"a":1}'));
+		await fireEvent.change(screen.getByLabelText('Choose file'), { target: { files: [file] } });
+		await waitFor(() => expect(screen.getByLabelText('HandBrake preset JSON')).toHaveValue('{"a":1}'));
 	});
 
 	it('ignores a file dialog that chose nothing', async () => {
 		mount();
-		await fireEvent.change(screen.getByLabelText('HandBrake export file'), { target: { files: [] } });
-		expect(screen.getByLabelText('Or paste the export JSON')).toHaveValue('');
+		await fireEvent.change(screen.getByLabelText('Choose file'), { target: { files: [] } });
+		expect(screen.getByLabelText('HandBrake preset JSON')).toHaveValue('');
 	});
 
 	it('Cancel calls oncancel', async () => {
@@ -159,7 +177,7 @@ describe('step 2 with the Plex export', () => {
 	it('Back returns to step 1 with the text kept', async () => {
 		await review();
 		await fireEvent.click(screen.getByRole('button', { name: 'Back' }));
-		expect(screen.getByLabelText('Or paste the export JSON')).toHaveValue('{"PresetList":[]}');
+		expect(screen.getByLabelText('HandBrake preset JSON')).toHaveValue('{"PresetList":[]}');
 	});
 
 	it('Use these settings hands the preset over', async () => {

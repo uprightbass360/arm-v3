@@ -35,7 +35,7 @@
 				{#each columns as col (col.id)}
 					<th scope="col" class={col.align === 'end' ? 'data-table-num' : ''}>{col.header}</th>
 				{/each}
-				<th scope="col"><span class="sr-only">Actions</span></th>
+				<th scope="col" class="data-table-actions"><span class="sr-only">Actions</span></th>
 			</tr>
 		</thead>
 		<tbody>
@@ -86,8 +86,11 @@
 		border-collapse: collapse;
 		font-size: 0.8125rem;
 	}
+	.data-table tr {
+		background: var(--color-surface);
+	}
 	.data-table th {
-		padding: 0.625rem 1rem;
+		padding: 0.625rem 0.75rem;
 		text-align: left;
 		font-size: 0.6875rem;
 		font-weight: 400;
@@ -97,8 +100,8 @@
 		color: var(--color-text-muted);
 	}
 	.data-table td {
-		max-width: 16rem;
-		padding: 0.625rem 1rem;
+		max-width: 12rem;
+		padding: 0.5rem 0.75rem;
 		border-top: 1px solid var(--color-border);
 		color: var(--color-text);
 		vertical-align: middle;
@@ -125,7 +128,7 @@
 		color: var(--color-on-info-soft);
 	}
 	.data-table tr[aria-current='true'] {
-		background: var(--color-primary-tint-2);
+		background: linear-gradient(var(--color-primary-tint-2), var(--color-primary-tint-2)), var(--color-surface);
 	}
 	.data-table td[data-muted='true'] {
 		color: var(--color-text-muted);
@@ -153,7 +156,13 @@
 		font-size: 0.75rem;
 		color: var(--color-text-muted);
 	}
-	.data-table-actions {
+	/* Pinned to the right edge so the actions stay reachable when a narrow
+	   window scrolls the table sideways; the cell takes its row's background. */
+	.data-table .data-table-actions {
+		position: sticky;
+		right: 0;
+		max-width: none;
+		background: inherit;
 		white-space: nowrap;
 		text-align: right;
 	}

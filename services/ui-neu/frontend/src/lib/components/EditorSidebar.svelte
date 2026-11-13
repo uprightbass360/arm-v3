@@ -14,7 +14,8 @@
 		/** Opened over another sidebar. */
 		stacked?: boolean;
 		headerActions?: Snippet;
-		footer: Snippet;
+		/** Omit to draw no footer strip at all. */
+		footer?: Snippet;
 		children: Snippet;
 		onclose: () => void;
 	}
@@ -31,13 +32,22 @@
 	}: Props = $props();
 </script>
 
-<SlideOver bind:open {title} width="editor-sidebar-{width}" {stacked} {headerActions} {onclose}>
+{#snippet footerStrip()}
+	<footer class="editor-sidebar-footer" data-testid="editor-sidebar-footer">
+		{@render footerContent!()}
+	</footer>
+{/snippet}
+
+<SlideOver
+	bind:open
+	{title}
+	width="editor-sidebar-{width}"
+	{stacked}
+	{headerActions}
+	footer={footerContent ? footerStrip : undefined}
+	{onclose}
+>
 	{@render children()}
-	{#snippet footer()}
-		<footer class="editor-sidebar-footer" data-testid="editor-sidebar-footer">
-			{@render footerContent()}
-		</footer>
-	{/snippet}
 </SlideOver>
 
 <style>

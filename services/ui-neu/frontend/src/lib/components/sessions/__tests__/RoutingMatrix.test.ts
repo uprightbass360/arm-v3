@@ -130,6 +130,9 @@ describe('RoutingMatrix layout', () => {
 		deleteSessionRoute.mockResolvedValue(undefined);
 		await renderMatrix([isoRoute]);
 		expect(screen.getByText('Other routes')).toBeInTheDocument();
+		const row = screen.getByText('ISO / Any disc:').closest('li') as HTMLElement;
+		expect(row).toHaveTextContent('ISO / Any disc: Movie to Plex');
+		expect(row.textContent).not.toContain('\u2192');
 		await fireEvent.click(screen.getByRole('button', { name: /clear iso \/ any disc route/i }));
 		await waitFor(() => expect(deleteSessionRoute).toHaveBeenCalledWith('srt_iso'));
 		await waitFor(() => expect(screen.queryByText('Other routes')).not.toBeInTheDocument());

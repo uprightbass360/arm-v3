@@ -116,7 +116,27 @@
 	}
 </script>
 
-<EditorSidebar bind:open title={sidebarTitle(mode)} width="wide" stacked {onclose}>
+{#snippet footer()}
+	{#if note}<p class="preset-sidebar-note">{note}</p>{/if}
+	<div class="preset-sidebar-actions">
+		<span class="preset-sidebar-usage">{usageLabel(usage)}</span>
+		<button type="button" class="btn btn-ghost" onclick={onclose}>{readonly ? 'Close' : 'Cancel'}</button>
+		{#if !readonly}
+			<button type="button" class="btn btn-primary" disabled={!canSave} onclick={save}
+				>{submitting ? 'Saving...' : 'Save preset'}</button
+			>
+		{/if}
+	</div>
+{/snippet}
+
+<EditorSidebar
+	bind:open
+	title={sidebarTitle(mode)}
+	width="wide"
+	stacked
+	footer={importing ? undefined : footer}
+	{onclose}
+>
 	{#snippet headerActions()}
 		<button type="button" class="btn btn-sm" disabled={readonly || importing} onclick={() => (importing = true)}
 			>Import HandBrake preset</button
@@ -189,21 +209,6 @@
 			{/if}
 		</div>
 	{/if}
-
-	{#snippet footer()}
-		{#if !importing}
-			{#if note}<p class="preset-sidebar-note">{note}</p>{/if}
-			<div class="preset-sidebar-actions">
-				<span class="preset-sidebar-usage">{usageLabel(usage)}</span>
-				<button type="button" class="btn btn-ghost" onclick={onclose}>{readonly ? 'Close' : 'Cancel'}</button>
-				{#if !readonly}
-					<button type="button" class="btn btn-primary" disabled={!canSave} onclick={save}
-						>{submitting ? 'Saving...' : 'Save preset'}</button
-					>
-				{/if}
-			</div>
-		{/if}
-	{/snippet}
 </EditorSidebar>
 
 <style>

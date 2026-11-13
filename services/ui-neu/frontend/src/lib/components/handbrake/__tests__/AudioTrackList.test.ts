@@ -100,6 +100,14 @@ describe('AudioTrackList', () => {
 		expect((within(row(1)).getByLabelText('Encoder') as HTMLSelectElement).disabled).toBe(true);
 	});
 
+	it('draws the row actions as small buttons with their short labels', () => {
+		mount({ value: [{}, {}] });
+		const up = screen.getByRole('button', { name: 'Move track 2 up' });
+		expect(up).toHaveTextContent('Move up');
+		expect(up).toHaveClass('btn', 'btn-sm');
+		expect(screen.getByRole('button', { name: 'Remove track 1' })).toHaveClass('btn', 'btn-sm');
+	});
+
 	it('renders just the Add track button for an empty list', () => {
 		mount({ value: [] });
 		expect(screen.getByRole('button', { name: 'Add track' })).toBeTruthy();

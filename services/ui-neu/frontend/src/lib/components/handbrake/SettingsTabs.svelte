@@ -1,7 +1,7 @@
 <script lang="ts">
 	// The sidebar's tab strip: filter box and "Changed only" above it, a count
 	// per tab (stored values, or matches while filtering), a warning glyph on
-	// tabs with an issue, dimmed tabs with a count of zero. The body renders through children, handed the current filter.
+	// tabs with an issue, a count of zero dimmed. The body renders through children, handed the current filter.
 	import type { Snippet } from 'svelte';
 	import type { HandbrakeSchemaSlimView, HandbrakeSettings, SettingIssue } from '$lib/types/api.gen';
 	import Glyph from '$lib/components/Glyph.svelte';
@@ -53,15 +53,11 @@
 	</div>
 	<div role="tablist" class="settings-tabs-strip">
 		{#each TABS as t (t.id)}
-			<button
-				type="button"
-				role="tab"
-				aria-selected={tab === t.id}
-				class={counts[t.id] === 0 ? 'settings-tab settings-tab-dim' : 'settings-tab'}
-				onclick={() => ontab(t.id)}
-			>
+			<button type="button" role="tab" aria-selected={tab === t.id} class="settings-tab" onclick={() => ontab(t.id)}>
 				{String(t.label)}
-				{#if counts[t.id] > 0}<span class="settings-tab-count">{counts[t.id]}</span>{/if}
+				<span class={counts[t.id] === 0 ? 'settings-tab-count settings-tab-count-zero' : 'settings-tab-count'}
+					>{counts[t.id]}</span
+				>
 				{#if issueTabs.has(t.id)}<Glyph name="warning" label="Has issues" class="h-3 w-3" />{/if}
 			</button>
 		{/each}
@@ -107,13 +103,13 @@
 		color: var(--color-text);
 		font-weight: 600;
 	}
-	.settings-tab-dim {
-		opacity: 0.45;
-	}
 	.settings-tab-count {
 		color: var(--color-primary-text);
 		font-size: 0.6875rem;
 		font-variant-numeric: tabular-nums;
+	}
+	.settings-tab-count-zero {
+		opacity: 0.45;
 	}
 	/* :global because the warning svg is rendered inside the Glyph component. */
 	.settings-tab :global(svg) {

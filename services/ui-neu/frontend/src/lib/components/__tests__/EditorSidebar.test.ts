@@ -53,3 +53,9 @@ it('works without header actions', () => {
 	renderComponent(EditorSidebarHarness, { props: { withActions: false } });
 	expect(screen.queryByRole('button', { name: 'Header action' })).not.toBeInTheDocument();
 });
+
+it('draws no footer strip when the footer is omitted', () => {
+	renderComponent(EditorSidebarHarness, { props: { withFooter: false } });
+	expect(screen.getByTestId('body')).toBeInTheDocument();
+	expect(screen.queryByTestId('editor-sidebar-footer')).not.toBeInTheDocument();
+});

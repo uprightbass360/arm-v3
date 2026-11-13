@@ -42,21 +42,21 @@
 					<div class="audio-track-actions">
 						<button
 							type="button"
-							class="btn-link"
+							class="btn btn-sm"
 							aria-label={`Move track ${i + 1} up`}
 							disabled={i === 0}
 							onclick={() => onchange(moveTrack(value, i, -1))}>Move up</button
 						>
 						<button
 							type="button"
-							class="btn-link"
+							class="btn btn-sm"
 							aria-label={`Move track ${i + 1} down`}
 							disabled={i === value.length - 1}
 							onclick={() => onchange(moveTrack(value, i, 1))}>Move down</button
 						>
 						<button
 							type="button"
-							class="btn-link"
+							class="btn btn-sm"
 							aria-label={`Remove track ${i + 1}`}
 							onclick={() => onchange(removeTrack(value, i))}>Remove</button
 						>
@@ -104,7 +104,7 @@
 	}
 	.audio-track-head {
 		display: flex;
-		align-items: baseline;
+		align-items: center;
 		justify-content: space-between;
 		gap: 0.5rem;
 	}
@@ -114,7 +114,7 @@
 	}
 	.audio-track-actions {
 		display: flex;
-		gap: 0.75rem;
+		gap: 0.375rem;
 	}
 	.audio-track-fields {
 		display: grid;

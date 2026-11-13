@@ -461,8 +461,16 @@ describe('import', () => {
 	async function openImport() {
 		await ready();
 		await fireEvent.click(screen.getByRole('button', { name: 'Import HandBrake preset' }));
-		await fireEvent.input(screen.getByLabelText('Or paste the export JSON'), { target: { value: '{}' } });
+		await fireEvent.input(screen.getByLabelText('HandBrake preset JSON'), { target: { value: '{}' } });
 	}
+
+	it('draws no footer strip while importing, and brings it back after Cancel', async () => {
+		mount({});
+		await openImport();
+		expect(screen.queryByTestId('editor-sidebar-footer')).not.toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(await screen.findByTestId('editor-sidebar-footer')).toBeInTheDocument();
+	});
 
 	it('Cancel on step 1 returns to the tabs unchanged', async () => {
 		mount({});

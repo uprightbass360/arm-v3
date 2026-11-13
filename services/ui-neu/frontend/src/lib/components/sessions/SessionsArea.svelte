@@ -229,7 +229,7 @@
 <div class="stack stack-lg">
 	<!-- Header -->
 	<div class="sessions-area-header">
-		<div>
+		<div class="sessions-area-heading">
 			<h2 class="sessions-area-title" data-page-section-title>Sessions</h2>
 			<p class="sessions-area-lede">
 				Sessions bundle a rip preset, an optional transcode preset, and an output-path template into a reusable recipe.
@@ -383,6 +383,13 @@
 	}
 	/* page.css's .page-title is 1.5rem/700 for a top-level H1; this is a
 	   sub-tab section H2 (text-lg font-semibold, 1.125rem/1.75rem). */
+	/* Takes the room the view switch leaves, so the switch sits top right
+	   and only wraps below the text when the window is too narrow for both. */
+	.sessions-area-heading {
+		flex: 1 1 28rem;
+		min-width: 0;
+		max-width: 56rem;
+	}
 	.sessions-area-title {
 		font-size: 1.125rem;
 		line-height: 1.75rem;

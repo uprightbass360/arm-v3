@@ -103,7 +103,7 @@
 	<!-- Search + filter container: same structure as the Sessions root -->
 	<div class="panel panel-compact preset-library-bar" data-testid="preset-action-bar">
 		<!-- Top row: search + inline REFINE dropdown -->
-		<div class="cluster">
+		<div class="cluster preset-library-filters">
 			<input
 				type="search"
 				placeholder="Search {noun} by name..."
@@ -189,9 +189,17 @@
 	.preset-library-bar {
 		padding: 0.75rem 1rem;
 	}
+	/* search, REFINE and the select share one row, as on the Sessions view */
+	.preset-library-filters {
+		flex-wrap: nowrap;
+	}
 	.preset-library-search {
 		min-width: 0;
 		flex: 1 1 0%;
+	}
+	.preset-library-source {
+		flex: none;
+		width: auto;
 	}
 	/* the divider's own border-primary/15 maps to --color-border; hr's
 	   default border-top plus browser margin is overridden to the original's

@@ -21,6 +21,7 @@
 	import { TimedFeedback } from '$lib/components/settings/timedFeedback.svelte';
 	import FeedbackAlert from '$lib/components/settings/FeedbackAlert.svelte';
 	import MediaPill from './MediaPill.svelte';
+	import { humanizeMediaType } from '$lib/utils/preset-labels';
 
 	let routes = $state<SessionRouteView[]>([]);
 	let sessions = $state<SessionView[]>([]);
@@ -134,12 +135,11 @@
 				<h4 class="eyebrow">Other routes</h4>
 				<ul class="stack stack-sm routing-other-list">
 					{#each others as route (route.id)}
-						{@const label = `${route.media_type} / ${discLabel(route.disc_type)}`}
+						{@const label = `${humanizeMediaType(route.media_type)} / ${discLabel(route.disc_type)}`}
 						{@const name = sessionNameFor(sessions, route.session_id)}
 						<li class="routing-other-row">
 							<span class="routing-other-label">
-								<span class="routing-other-key">{label}</span>
-								<span class="routing-other-arrow">&rarr;</span>
+								<span class="routing-other-key">{label}:</span>
 								{name}
 							</span>
 							{#if $isAdmin}
@@ -249,8 +249,5 @@
 	}
 	.routing-other-key {
 		font-weight: 500;
-	}
-	.routing-other-arrow {
-		color: var(--color-text-faint);
 	}
 </style>

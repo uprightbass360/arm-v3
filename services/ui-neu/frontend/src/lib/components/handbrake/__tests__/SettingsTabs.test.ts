@@ -32,12 +32,13 @@ describe('SettingsTabs', () => {
 		expect(ontab).toHaveBeenCalledWith('filters');
 	});
 
-	it('shows stored counts without a filter and no count for empty tabs', () => {
+	it('shows stored counts without a filter, dimming only the zero counts', () => {
 		mount({ settings: { common: { PictureWidth: 1, PictureHeight: 2 }, encoders: {} } });
 		expect(tab('Dimensions')).toHaveTextContent('2');
-		expect(tab('Audio').textContent).not.toMatch(/\d/);
-		expect(tab('Audio')).toHaveClass('settings-tab-dim');
-		expect(tab('Dimensions')).not.toHaveClass('settings-tab-dim');
+		expect(tab('Audio')).toHaveTextContent('0');
+		expect(tab('Audio').querySelector('.settings-tab-count')).toHaveClass('settings-tab-count-zero');
+		expect(tab('Dimensions').querySelector('.settings-tab-count')).not.toHaveClass('settings-tab-count-zero');
+		expect(tab('Audio')).not.toHaveClass('settings-tab-dim');
 	});
 
 	it('shows a warning glyph on a tab with an issue', () => {
@@ -52,12 +53,12 @@ describe('SettingsTabs', () => {
 		expect(within(tab('Dimensions')).getByRole('img', { name: 'Has issues' })).toBeInTheDocument();
 	});
 
-	it('counts matches per tab, dims tabs with none and jumps to the first match', async () => {
+	it('counts matches per tab, dims the count of tabs with none and jumps to the first match', async () => {
 		const { ontab } = mount({ tab: 'summary' });
 		await fireEvent.input(screen.getByPlaceholderText('Filter settings'), { target: { value: 'PictureWidth' } });
 		expect(tab('Dimensions')).toHaveTextContent('1');
-		expect(tab('Video')).toHaveClass('settings-tab-dim');
-		expect(tab('Dimensions')).not.toHaveClass('settings-tab-dim');
+		expect(tab('Video').querySelector('.settings-tab-count')).toHaveClass('settings-tab-count-zero');
+		expect(tab('Dimensions').querySelector('.settings-tab-count')).not.toHaveClass('settings-tab-count-zero');
 		expect(ontab).toHaveBeenCalledWith('dimensions');
 	});
 
