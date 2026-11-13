@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from '../../../sessions/session-form';
+import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from '../session-form';
 
 const form: SessionForm = {
 	name: 'Movies',
