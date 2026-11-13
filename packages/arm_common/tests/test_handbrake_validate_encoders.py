@@ -196,6 +196,10 @@ def test_rule_11_advanced_options_off_x264(hb_schema):
         ("x264UseAdvancedOptions", "not_supported_by_encoder")
     ]
     assert check(hb_schema, blocks(x264={"x264UseAdvancedOptions": True})) == []
+    assert check(hb_schema, blocks(x265={"x264Option": "ref=4"}), "cpu_h265") == [
+        ("x264Option", "not_supported_by_encoder")
+    ]
+    assert check(hb_schema, blocks(x264={"x264Option": "ref=4"})) == []
 
 
 def test_rule_10_rate_control(hb_schema):

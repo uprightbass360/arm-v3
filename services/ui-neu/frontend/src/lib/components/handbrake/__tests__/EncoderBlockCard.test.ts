@@ -65,6 +65,7 @@ describe('EncoderBlockCard', () => {
 		expect(screen.getByLabelText('Multi-pass encoding')).toBeTruthy();
 		expect(screen.getByLabelText('Turbo first pass')).toBeTruthy();
 		expect(screen.getByLabelText('Use x264 advanced options')).toBeTruthy();
+		expect(screen.getByLabelText('x264 advanced options')).toBeTruthy();
 		expect(screen.getByLabelText('Extra encoder options')).toBeTruthy();
 	});
 
@@ -73,6 +74,7 @@ describe('EncoderBlockCard', () => {
 		expect(screen.queryByLabelText('Multi-pass encoding')).toBeNull();
 		expect(screen.queryByLabelText('Turbo first pass')).toBeNull();
 		expect(screen.queryByLabelText('Use x264 advanced options')).toBeNull();
+		expect(screen.queryByLabelText('x264 advanced options')).toBeNull();
 	});
 
 	it('labels the quality field with the scale and range', () => {
@@ -202,6 +204,7 @@ describe('EncoderBlockCard', () => {
 	it('keeps x264 advanced options off the x265 card', () => {
 		mount('x265');
 		expect(screen.queryByLabelText('Use x264 advanced options')).toBeNull();
+		expect(screen.queryByLabelText('x264 advanced options')).toBeNull();
 	});
 
 	it('labels the quality field with the scale and range per encoder', () => {

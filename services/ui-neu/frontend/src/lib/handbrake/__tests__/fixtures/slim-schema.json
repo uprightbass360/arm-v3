@@ -2537,6 +2537,7 @@
 		"VideoQualitySlider",
 		"VideoTune",
 		"VideoTurboMultiPass",
+		"x264Option",
 		"x264UseAdvancedOptions"
 	]
 }

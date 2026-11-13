@@ -123,6 +123,13 @@ def test_preset_encoder_uses_base_family_block_without_encoder_flag(hb_schema):
     assert one(result)["VideoEncoder"] == hb_schema.builtin_presets[BASE]["VideoEncoder"]
 
 
+def test_x264_option_written_into_file_from_the_x264_block(hb_schema):
+    settings = HandbrakeSettings(encoders={"x264": {"x264Option": "ref=4"}})
+    result = materialise(hb_schema, None, settings, "x264", MKV)
+    assert one(result)["x264Option"] == "ref=4"
+    assert "ref=4" not in result.flags
+
+
 def test_block_scalars_written_into_file(hb_schema):
     block = {"VideoQualitySlider": 22, "VideoMultiPass": True, "VideoPreset": "fast"}
     result = materialise(hb_schema, None, HandbrakeSettings(encoders={"x264": block}), "x264", MKV)

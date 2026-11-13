@@ -230,11 +230,12 @@ describe('which settings show', () => {
 		await ready();
 		await openTab('Video');
 		await screen.findByRole('region', { name: 'x264' });
-		const found = screen.getAllByLabelText('Use x264 advanced options');
-		expect(found).toHaveLength(1);
-		expect(within(screen.getByRole('region', { name: 'x264' })).getByLabelText('Use x264 advanced options')).toBe(
-			found[0]
-		);
+		for (const label of ['Use x264 advanced options', 'x264 advanced options']) {
+			const found = screen.getAllByLabelText(label);
+			expect(found).toHaveLength(1);
+			expect(within(screen.getByRole('region', { name: 'x264' })).getByLabelText(label)).toBe(found[0]);
+			expect(within(screen.getByRole('region', { name: 'NVIDIA H.264' })).queryByLabelText(label)).toBeNull();
+		}
 	});
 
 	it('an expanded card shows the encoder default as inherited', async () => {

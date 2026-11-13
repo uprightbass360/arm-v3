@@ -43,6 +43,7 @@ ENCODER_SPECIFIC_KEYS: frozenset[str] = frozenset(
         "VideoMultiPass",
         "VideoTurboMultiPass",
         "x264UseAdvancedOptions",
+        "x264Option",
     }
 )
 

@@ -318,6 +318,7 @@ _FLAG_SUPPORT: dict[str, Callable[[EncoderFamily], bool]] = {
     "VideoMultiPass": lambda family: family.multipass,
     "VideoTurboMultiPass": lambda family: family.turbo,
     "x264UseAdvancedOptions": lambda family: family.name == "x264",
+    "x264Option": lambda family: family.name == "x264",
 }
 
 

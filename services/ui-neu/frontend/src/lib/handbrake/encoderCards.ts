@@ -65,8 +65,7 @@ function cardFor(family: string, anyCodec: boolean, availability: EncoderAvailab
 	return { family, label, state: isCpu ? 'cpu-fallback' : 'collapsed', device: null };
 }
 
-const STATUS_LINES: Record<CardState, string> = {
-	verified: '',
+const STATUS_LINES: Record<Exclude<CardState, 'verified'>, string> = {
 	'cpu-fallback': 'Fallback when no GPU is free',
 	collapsed: 'No verified device',
 	open: ''
@@ -100,7 +99,8 @@ export function encoderCards(
 const FAMILY_GATES: Record<string, (family: SlimFamily) => boolean> = {
 	VideoMultiPass: (f) => f.multipass,
 	VideoTurboMultiPass: (f) => f.turbo,
-	x264UseAdvancedOptions: (f) => f.name === 'x264'
+	x264UseAdvancedOptions: (f) => f.name === 'x264',
+	x264Option: (f) => f.name === 'x264'
 };
 // Display order only; which keys are block keys comes from the schema. A key not listed here follows the rest.
 const DISPLAY_RANK = [
@@ -112,6 +112,7 @@ const DISPLAY_RANK = [
 	'VideoMultiPass',
 	'VideoTurboMultiPass',
 	'x264UseAdvancedOptions',
+	'x264Option',
 	'VideoOptionExtra'
 ];
 

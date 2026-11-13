@@ -106,7 +106,7 @@ def _unused_flags(schema: HandbrakeSchema, family: str) -> set[str]:
     if not spec.turbo:
         unused.add("VideoTurboMultiPass")
     if family != "x264":
-        unused.add("x264UseAdvancedOptions")
+        unused |= {"x264UseAdvancedOptions", "x264Option"}
     return unused
 
 

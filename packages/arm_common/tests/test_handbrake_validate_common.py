@@ -32,6 +32,7 @@ def test_arm_owned_key_not_allowed(hb_schema):
 
 def test_encoder_specific_key_not_allowed_in_common(hb_schema):
     assert check(hb_schema, {"VideoPreset": "slow"}) == [("VideoPreset", "not_allowed_here")]
+    assert check(hb_schema, {"x264Option": "ref=4"}) == [("x264Option", "not_allowed_here")]
 
 
 def test_bool_is_strict(hb_schema):

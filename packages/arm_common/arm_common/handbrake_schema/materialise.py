@@ -22,7 +22,13 @@ _FILE_FORMATS: dict[ContainerFormat, str] = {
     ContainerFormat.WEBM: "av_webm",
 }
 # Keys whose meaning differs per encoder and which HandBrake does not clear on an encoder switch.
-_BLOCK_SCALARS = ("VideoQualitySlider", "VideoMultiPass", "VideoTurboMultiPass", "x264UseAdvancedOptions")
+_BLOCK_SCALARS = (
+    "VideoQualitySlider",
+    "VideoMultiPass",
+    "VideoTurboMultiPass",
+    "x264UseAdvancedOptions",
+    "x264Option",
+)
 
 
 @dataclass(frozen=True)

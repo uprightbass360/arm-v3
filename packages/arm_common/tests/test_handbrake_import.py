@@ -168,6 +168,15 @@ def test_x264_keeps_its_own_flags(hb_schema, plex_export):
     assert p.not_imported == []
 
 
+def test_x264_option_is_an_x264_block_key(hb_schema, plex_export):
+    p = _only(hb_schema, _export(plex_export, VideoEncoder="x264", x264Option="ref=4"))
+    assert p.proposal.handbrake_settings.encoders["x264"]["x264Option"] == "ref=4"
+    assert "x264Option" not in p.proposal.handbrake_settings.common
+    p = _only(hb_schema, _export(plex_export, VideoEncoder="x265", x264Option="ref=4"))
+    assert "x264Option" in p.not_imported
+    assert "x264Option" not in p.proposal.handbrake_settings.common
+
+
 def test_empty_encoder_strings_are_not_stored(hb_schema, plex_export):
     block = _only(hb_schema, _export(plex_export, VideoEncoder="x264", VideoTune="")).proposal.handbrake_settings
     assert "VideoTune" not in block.encoders["x264"] and "VideoOptionExtra" not in block.encoders["x264"]

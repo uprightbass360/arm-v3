@@ -89,6 +89,7 @@ describe('blockFields', () => {
 			'VideoMultiPass',
 			'VideoTurboMultiPass',
 			'x264UseAdvancedOptions',
+			'x264Option',
 			'VideoOptionExtra'
 		]);
 	});
@@ -107,6 +108,7 @@ describe('blockFields', () => {
 	it('gives x265 turbo but no advanced options', () => {
 		expect(names('x265')).toContain('VideoTurboMultiPass');
 		expect(names('x265')).not.toContain('x264UseAdvancedOptions');
+		expect(names('x265')).not.toContain('x264Option');
 	});
 
 	it('skips a key the schema lacks', () => {

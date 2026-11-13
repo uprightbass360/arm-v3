@@ -152,6 +152,7 @@ def test_overlay_constants():
         "VideoMultiPass",
         "VideoTurboMultiPass",
         "x264UseAdvancedOptions",
+        "x264Option",
     }
     assert FLAG_KEYS["VideoOptionExtra"] == "--encopts"
     assert TURBO_FAMILIES == {"x264", "x265"}
