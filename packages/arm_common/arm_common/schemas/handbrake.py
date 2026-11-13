@@ -131,3 +131,6 @@ class HandbrakeSchemaSlimView(BaseModel):
     audio_mixdowns_by_encoder: dict[str, list[str]]
     filters: dict[str, SlimFilter]
     builtin_names: list[str]
+    static_enums: dict[str, list[Any]]
+    source_extras: dict[str, list[Any]]
+    selector_filter_aliases: dict[str, str]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from arm_common.handbrake_schema.overlay import SELECTOR_FILTER_ALIASES, SOURCE_EXTRAS, STATIC_ENUMS
 from arm_common.handbrake_schema.types import (
     EncoderFamily,
     EncoderVariant,
@@ -75,6 +76,14 @@ def _slim_mixdowns(lists: dict[str, Any]) -> dict[str, list[str]]:
     return {encoder: list(names) for encoder, names in lists[_MIXDOWNS_LIST].items()}
 
 
+def _slim_static_enums() -> dict[str, list[Any]]:
+    return {name: list(values) for name, values in STATIC_ENUMS.items()}
+
+
+def _slim_source_extras() -> dict[str, list[Any]]:
+    return {name: list(values) for name, values in SOURCE_EXTRAS.items()}
+
+
 def _version_string(version: tuple[int, int, int]) -> str:
     return ".".join(str(part) for part in version)
 
@@ -91,4 +100,7 @@ def slim_view(schema: HandbrakeSchema) -> HandbrakeSchemaSlimView:
         audio_mixdowns_by_encoder=_slim_mixdowns(schema.lists),
         filters={name: _slim_filter(f) for name, f in schema.filters.items()},
         builtin_names=list(schema.builtin_presets),
+        static_enums=_slim_static_enums(),
+        source_extras=_slim_source_extras(),
+        selector_filter_aliases=dict(SELECTOR_FILTER_ALIASES),
     )

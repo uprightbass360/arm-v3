@@ -11506,6 +11506,29 @@
             },
             "type": "array",
             "title": "Builtin Names"
+          },
+          "static_enums": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Static Enums"
+          },
+          "source_extras": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Source Extras"
+          },
+          "selector_filter_aliases": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Selector Filter Aliases"
           }
         },
         "type": "object",
@@ -11519,7 +11542,10 @@
           "lists",
           "audio_mixdowns_by_encoder",
           "filters",
-          "builtin_names"
+          "builtin_names",
+          "static_enums",
+          "source_extras",
+          "selector_filter_aliases"
         ],
         "title": "HandbrakeSchemaSlimView",
         "description": "What the UI needs to render the settings sidebar; no built-in preset values."

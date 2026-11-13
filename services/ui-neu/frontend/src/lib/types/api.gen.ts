@@ -1919,6 +1919,24 @@ export type HandbrakeSchemaSlimView = {
      * Builtin Names
      */
     builtin_names: Array<string>;
+    /**
+     * Static Enums
+     */
+    static_enums: {
+        [key: string]: Array<unknown>;
+    };
+    /**
+     * Source Extras
+     */
+    source_extras: {
+        [key: string]: Array<unknown>;
+    };
+    /**
+     * Selector Filter Aliases
+     */
+    selector_filter_aliases: {
+        [key: string]: string;
+    };
 };
 
 /**

@@ -34,3 +34,17 @@ def test_slim_mirrors_the_schema(hb_schema):
     assert "audio_mixdowns_by_encoder" not in view.lists
     assert set(view.filters) == set(hb_schema.filters)
     assert all(isinstance(f.rate_controls, list) for f in view.families)
+
+
+def test_slim_carries_static_enums_and_source_extras(hb_schema):
+    view = slim_view(hb_schema)
+    assert view.static_enums["AudioTrackSelectionBehavior"] == ["none", "first", "all"]
+    assert "VideoFramerateMode" in view.static_enums
+    assert "auto" in view.source_extras["AudioSamplerate"]
+    assert view.source_extras["AudioBitrate"] == [-1]
+    used = {k.source.ref for k in view.keys if k.source and k.source.kind == "static"}
+    assert used <= set(view.static_enums)
+
+
+def test_slim_carries_selector_filter_aliases(hb_schema):
+    assert slim_view(hb_schema).selector_filter_aliases == {"deinterlace": "yadif"}
