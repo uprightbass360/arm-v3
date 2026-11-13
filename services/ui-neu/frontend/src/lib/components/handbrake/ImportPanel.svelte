@@ -5,6 +5,7 @@
 	import { parseHandbrakeImport } from '$lib/api/transcodePresets';
 	import { TABS } from '$lib/handbrake/fields';
 	import { defaultPick, reviewRows } from '$lib/handbrake/importReview';
+	import { importPanelView, presetPickView } from '$lib/handbrake/importPanelView';
 	import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, ImportedPresetView } from '$lib/types/api.gen';
 
 	interface Props {
@@ -23,6 +24,8 @@
 	let pick = $state<number | null>(null);
 
 	const picked = $derived(presets !== null && pick !== null ? presets[pick] : null);
+	const presetList = $derived(presets ?? []);
+	const view = $derived(importPanelView({ presets, schema, text, loading }));
 	const review = $derived(picked && schema ? reviewRows(picked, schema, availability) : null);
 
 	async function chooseFile(event: Event) {
@@ -46,11 +49,11 @@
 </script>
 
 <div class="import-panel">
-	{#if presets === null}
+	{#if view.step === 1}
 		<h3 class="import-title">Import a HandBrake preset</h3>
 		<p class="import-steps">1. Import &gt; 2. Review</p>
-		{#if schema}
-			<p class="field-help">The file is checked against HandBrake {schema.handbrake_tag}, then discarded.</p>
+		{#if view.showVersionLine}
+			<p class="field-help">The file is checked against HandBrake {view.versionTag}, then discarded.</p>
 		{/if}
 		<p>Choose a preset file exported from the HandBrake app (Presets, Export), or paste its JSON.</p>
 		<div class="import-field">
@@ -71,25 +74,25 @@
 		<p class="field-help">Nothing changes in the preset until you finish the review.</p>
 		<div class="import-actions">
 			<button type="button" class="btn btn-ghost" onclick={oncancel}>Cancel</button>
-			<button type="button" class="btn btn-primary" disabled={text.trim() === '' || loading} onclick={readFile}
-				>{loading ? 'Reading...' : 'Read file'}</button
+			<button type="button" class="btn btn-primary" disabled={!view.canRead} onclick={readFile}>{view.readLabel}</button
 			>
 		</div>
 	{:else}
 		<h3 class="import-title">Review the import</h3>
-		{#if presets.length > 1}
+		{#if view.showPicks}
 			<fieldset class="import-picks">
 				<legend class="field-label">Preset in the file</legend>
-				{#each presets as p, i (i)}
+				{#each presetList as p, i (i)}
+					{@const pickView = presetPickView(p)}
 					<label class="import-pick">
-						<input type="radio" name="import-pick" value={i} bind:group={pick} disabled={!p.importable} />
-						<span>{[...p.path, p.name].join(' / ')}</span>
-						{#if !p.importable && p.reason}<span class="field-help">{p.reason}</span>{/if}
+						<input type="radio" name="import-pick" value={i} bind:group={pick} disabled={pickView.disabled} />
+						<span>{pickView.label}</span>
+						{#if pickView.reason}<span class="field-help">{pickView.reason}</span>{/if}
 					</label>
 				{/each}
 			</fieldset>
-		{:else if presets[0] && !presets[0].importable}
-			<p class="field-error">{presets[0].reason}</p>
+		{:else if view.showSingleReason}
+			<p class="field-error">{view.singleReason}</p>
 		{/if}
 
 		{#if review}

@@ -9,11 +9,12 @@
 	import {
 		DISC_SCOPES,
 		MEDIA_TYPES,
-		discLabel,
+		otherRouteView,
 		otherRoutes,
+		routeCellView,
 		routeFor,
 		rowKey,
-		sessionNameFor,
+		sessionOptionLabel,
 		sessionsFor,
 		withRoute
 	} from '$lib/utils/session-routes';
@@ -21,7 +22,6 @@
 	import { TimedFeedback } from '$lib/components/settings/timedFeedback.svelte';
 	import FeedbackAlert from '$lib/components/settings/FeedbackAlert.svelte';
 	import MediaPill from '../MediaPill.svelte';
-	import { humanizeMediaType } from '$lib/utils/preset-labels';
 
 	let routes = $state<SessionRouteView[]>([]);
 	let sessions = $state<SessionView[]>([]);
@@ -109,17 +109,18 @@
 							{#each DISC_SCOPES as scope (scope.key ?? 'any')}
 								{@const route = routeFor(routes, mt.key, scope.key)}
 								{@const options = sessionsFor(sessions, mt.key, route)}
+								{@const cell = routeCellView(route, options.length, pending.has(rowKey(mt.key, scope.key)), $isAdmin)}
 								<td>
 									<select
 										aria-label="{mt.label}, {scope.label}"
-										class="routing-cell {route ? 'routing-cell-set' : 'routing-cell-empty'}"
-										value={route?.session_id ?? ''}
-										disabled={!$isAdmin || pending.has(rowKey(mt.key, scope.key)) || options.length === 0}
+										class={cell.className}
+										value={cell.value}
+										disabled={cell.disabled}
 										onchange={(e) => handleChange(mt.key, scope.key, e.currentTarget.value)}
 									>
 										<option value="">None</option>
 										{#each options as s (s.id)}
-											<option value={s.id}>{s.name}{s.is_builtin ? ' (built-in)' : ''}</option>
+											<option value={s.id}>{sessionOptionLabel(s)}</option>
 										{/each}
 									</select>
 								</td>
@@ -135,8 +136,7 @@
 				<h4 class="eyebrow">Other routes</h4>
 				<ul class="stack stack-sm routing-other-list">
 					{#each others as route (route.id)}
-						{@const label = `${humanizeMediaType(route.media_type)} / ${discLabel(route.disc_type)}`}
-						{@const name = sessionNameFor(sessions, route.session_id)}
+						{@const { label, name } = otherRouteView(route, sessions)}
 						<li class="routing-other-row">
 							<span class="routing-other-label">
 								<span class="routing-other-key">{label}:</span>

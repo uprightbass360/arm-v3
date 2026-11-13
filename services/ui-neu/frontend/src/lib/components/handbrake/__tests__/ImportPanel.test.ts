@@ -245,6 +245,21 @@ describe('a single unimportable preset', () => {
 	});
 });
 
+describe('when its props change', () => {
+	it('shows the version line once the schema arrives', async () => {
+		const oncancel = vi.fn();
+		const onuse = vi.fn();
+		const { rerender } = renderComponent(ImportPanel, {
+			props: { schema: null, availability: AVAILABILITY, oncancel, onuse }
+		});
+		expect(screen.queryByText(/is checked against HandBrake/)).toBeNull();
+		await rerender({ schema });
+		expect(
+			screen.getByText(`The file is checked against HandBrake ${schema.handbrake_tag}, then discarded.`)
+		).toBeInTheDocument();
+	});
+});
+
 describe('before the schema has loaded', () => {
 	it('still offers the picked preset without a review', async () => {
 		vi.mocked(parseHandbrakeImport).mockResolvedValue(PLEX);

@@ -159,6 +159,14 @@ describe('RoutingMatrix layout', () => {
 		expect(cd).toBeDisabled();
 	});
 
+	it('follows the role when it changes after the matrix has rendered', async () => {
+		await setRole('admin');
+		const cd = await renderMatrix([musicCd]);
+		expect(cd).not.toBeDisabled();
+		await setRole('user');
+		await waitFor(() => expect(cd).toBeDisabled());
+	});
+
 	it('disables a select that has no session to offer', async () => {
 		await renderMatrix([], [movie]);
 		expect(screen.getByLabelText('Music, DVD')).toBeDisabled();
