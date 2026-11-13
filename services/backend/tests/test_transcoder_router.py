@@ -527,3 +527,17 @@ def test_fail_409_when_not_in_progress() -> None:
         )
     assert r.status_code == 409
     assert "not in_progress" in r.json()["detail"]
+
+
+def test_register_returns_no_preset_when_session_has_none() -> None:
+    db = FakeSession()
+    _seed(db)
+    db.rows["sessions"][0].transcode_preset_id = None
+    with TestClient(_make_app(db)) as client:
+        r = client.post(
+            "/api/transcoder/register",
+            json={"task_id": "txt_1", "hostname": _HOSTNAME, "hw_caps": {"cpu_count": 4}},
+            headers=_SERVICE_AUTH,
+        )
+    assert r.status_code == 200, r.text
+    assert r.json()["transcode_preset"] is None
