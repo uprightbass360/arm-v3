@@ -4046,6 +4046,10 @@ export type RegisterTranscoderRequest = {
      */
     hostname: string;
     hw_caps: HardwareCaps;
+    /**
+     * Schema Hash
+     */
+    schema_hash?: string | null;
 };
 
 /**

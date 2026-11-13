@@ -15379,6 +15379,17 @@
           },
           "hw_caps": {
             "$ref": "#/components/schemas/HardwareCaps"
+          },
+          "schema_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Hash"
           }
         },
         "type": "object",
