@@ -154,8 +154,12 @@
 		if (await handleCloneRipPreset(p)) closeRipSidebar();
 	}
 
-	async function handleCloneTranscodePreset(p: TranscodePresetView) {
-		await reloadAfter(() => createTranscodePreset(transcodePresetCopy(p)), 'Clone failed');
+	function handleCloneTranscodePreset(p: TranscodePresetView): Promise<boolean> {
+		return reloadAfter(() => createTranscodePreset(transcodePresetCopy(p)), 'Clone failed');
+	}
+
+	async function cloneTranscodeFromSidebar(p: TranscodePresetView) {
+		if (await handleCloneTranscodePreset(p)) closeSidebar();
 	}
 
 	async function handleClonePreset(p: RipPresetView | TranscodePresetView) {
@@ -338,6 +342,7 @@
 		preset={sidebar.preset}
 		mode={sidebar.mode}
 		usage={sidebar.preset ? data.transcodeUsage(sidebar.preset.id) : 0}
+		onclone={cloneTranscodeFromSidebar}
 		onclose={closeSidebar}
 		onsaved={handleTranscodePresetSaved}
 	/>
@@ -381,8 +386,6 @@
 		justify-content: space-between;
 		gap: 1rem;
 	}
-	/* page.css's .page-title is 1.5rem/700 for a top-level H1; this is a
-	   sub-tab section H2 (text-lg font-semibold, 1.125rem/1.75rem). */
 	/* Takes the room the view switch leaves, so the switch sits top right
 	   and only wraps below the text when the window is too narrow for both. */
 	.sessions-area-heading {

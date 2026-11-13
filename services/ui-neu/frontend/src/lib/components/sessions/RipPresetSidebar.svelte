@@ -39,7 +39,7 @@
 		{/if}
 	{/snippet}
 
-	<RipPresetForm {preset} {onsaved} oncancel={onclose} formId={FORM_ID} onstatus={(s) => (status = s)} />
+	<RipPresetForm {preset} {onsaved} formId={FORM_ID} onstatus={(s) => (status = s)} />
 
 	{#snippet footer()}
 		<EditorFormFooter

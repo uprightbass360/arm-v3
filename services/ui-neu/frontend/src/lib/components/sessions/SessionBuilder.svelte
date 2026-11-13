@@ -13,11 +13,10 @@
 		oncreaterip: () => void;
 		oncreatetranscode: () => void;
 		onsaved: (s: SessionView) => void;
-		oncancel: () => void;
 		preselectRipId?: string;
 		preselectTranscodeId?: string;
-		/** Set when an EditorSidebar hosts the builder: the sidebar's footer owns the buttons and submits this form by id. */
-		formId?: string;
+		/** The hosting EditorSidebar's footer owns the buttons and submits this form by id. */
+		formId: string;
 		/** Reports the Save button's state to the hosting footer, whenever it changes. */
 		onstatus?: (status: EditorStatus) => void;
 	}
@@ -29,7 +28,6 @@
 		oncreaterip,
 		oncreatetranscode,
 		onsaved,
-		oncancel,
 		preselectRipId,
 		preselectTranscodeId,
 		formId,
@@ -237,31 +235,6 @@
 		{#if submitError}
 			<p class="field-error">{submitError}</p>
 		{/if}
-
-		{#if !formId}
-			<!-- Footer -->
-			<div class="session-builder-footer">
-				<div class="session-builder-footer-note">
-					{#if !tcId}
-						Rips only, no transcode step.
-					{/if}
-				</div>
-				<div class="cluster">
-					<button type="button" onclick={oncancel} class="btn">
-						{readOnly ? 'Close' : 'Cancel'}
-					</button>
-					{#if !readOnly}
-						<button
-							type="submit"
-							disabled={!canSubmit || submitting}
-							class="btn btn-primary session-builder-submit-btn"
-						>
-							{isEdit ? 'Save changes' : 'Create session'}
-						</button>
-					{/if}
-				</div>
-			</div>
-		{/if}
 	</form>
 </div>
 
@@ -336,27 +309,5 @@
 		line-height: 1rem;
 		font-weight: 500;
 		color: var(--color-text-secondary);
-	}
-	.session-builder-footer {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		border-top: 1px solid var(--color-border);
-		padding-top: 1rem;
-	}
-	.session-builder-footer-note {
-		font-size: 0.75rem;
-		line-height: 1rem;
-		color: var(--color-text-faint);
-	}
-	/* original submit button: rounded-md bg-primary ... - no border/ring class
-	   at all. .btn-primary's own 1px border is invisible (same colour as the
-	   fill) but still occupies 2px of layout height, and its default radius
-	   is --radius-lg, not the original's smaller --radius-md (Task 9/10
-	   finding: a bare fill button with no border class needs border: 0). */
-	.session-builder-submit-btn {
-		border: 0;
-		border-radius: var(--radius-md);
 	}
 </style>

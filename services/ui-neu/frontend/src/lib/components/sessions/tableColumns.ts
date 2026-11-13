@@ -11,28 +11,7 @@ import {
 } from '$lib/utils/preset-labels';
 import { encoderLabel } from '$lib/stores/encoders.svelte';
 import { settingsCount } from '$lib/handbrake/sidebarModel';
-
-export type BadgeTone = 'warn' | 'info' | 'neutral';
-
-export type PillTone = MediaType | 'custom' | 'builtin';
-
-export type CellContent = {
-	text: string;
-	/** Draw the cell as an uppercase pill: a media-type pill, or the Custom / Built-in tag. */
-	pill?: { tone: PillTone };
-	sub?: string;
-	muted?: boolean;
-	/** Draw the text in the monospace face (paths). */
-	mono?: boolean;
-	badges?: Array<{ text: string; tone: BadgeTone }>;
-};
-
-export interface TableColumn<R> {
-	id: string;
-	header: string;
-	align?: 'start' | 'end';
-	cell: (row: R) => CellContent;
-}
+import type { CellContent, TableColumn } from '$lib/components/dataTable';
 
 const NOT_USED: CellContent = { text: 'Not used', muted: true };
 const CPU_HERE = 'Encodes on CPU on this host';

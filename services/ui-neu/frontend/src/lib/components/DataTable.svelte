@@ -3,9 +3,9 @@
 	// snippet draws the last cell of every row. The wrapper scrolls sideways
 	// in a narrow window, never the page.
 	import type { Snippet } from 'svelte';
-	import MediaPill from '$lib/components/sessions/MediaPill.svelte';
+	import MediaPill from '$lib/components/MediaPill.svelte';
 	import type { MediaType } from '$lib/types/api.gen';
-	import type { BadgeTone, PillTone, TableColumn } from '$lib/components/sessions/tableColumns';
+	import type { BadgeTone, PillTone, TableColumn } from '$lib/components/dataTable';
 
 	interface Props {
 		columns: TableColumn<R>[];

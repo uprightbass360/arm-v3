@@ -348,7 +348,7 @@ describe('every editor opens a sidebar', () => {
 		await fireEvent.change(screen.getByLabelText(/transcode preset/i), { target: { value: '__create_tc__' } });
 		const sidebar = await screen.findByRole('dialog', { name: 'New transcode preset' });
 		expect(sidebar).toHaveTextContent('Import HandBrake preset');
-		expect(screen.getByRole('button', { name: 'Save preset' })).toBeInTheDocument();
+		expect(within(sidebar).getByRole('button', { name: 'Save' })).toBeInTheDocument();
 	});
 
 	it('Edit on a transcode preset opens the sidebar, not the dialog', async () => {
@@ -357,7 +357,7 @@ describe('every editor opens a sidebar', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
 		await fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
 		const sidebar = await screen.findByRole('dialog', { name: 'Edit transcode preset' });
-		expect(sidebar).toHaveTextContent('Save preset');
+		expect(sidebar).toHaveTextContent('Save');
 	});
 
 	it('a new rip preset opens the rip preset sidebar, not the old modal', async () => {
@@ -366,7 +366,7 @@ describe('every editor opens a sidebar', () => {
 		await fireEvent.click(screen.getByRole('tab', { name: /rip presets/i }));
 		await fireEvent.click(screen.getByRole('button', { name: /new rip preset/i }));
 		const dialog = await screen.findByRole('dialog', { name: 'New rip preset' });
-		expect(dialog).not.toHaveTextContent('Save preset');
+		expect(dialog).not.toHaveTextContent('Import HandBrake preset');
 		expect(dialog).toHaveAttribute('data-stacked', 'false');
 		expect(document.querySelector('.sessions-area-inline-modal')).toBeNull();
 	});
@@ -460,9 +460,9 @@ describe('creating a preset from the session sidebar keeps the session form', ()
 		await screen.findByText('ses Alpha');
 		await typeSessionName();
 		await fireEvent.change(screen.getByLabelText(/transcode preset/i), { target: { value: '__create_tc__' } });
-		await screen.findByRole('dialog', { name: 'New transcode preset' });
+		const tcDialog = await screen.findByRole('dialog', { name: 'New transcode preset' });
 		await fireEvent.input(screen.getByTestId('tp-name'), { target: { value: 'tc new' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
+		await fireEvent.click(within(tcDialog).getByRole('button', { name: 'Save' }));
 		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New transcode preset' })).not.toBeInTheDocument());
 		await waitFor(() => expect(screen.getByLabelText(/transcode preset/i)).toHaveValue('t2'));
 		expect(screen.getByLabelText(/session name/i)).toHaveValue('Keep me');

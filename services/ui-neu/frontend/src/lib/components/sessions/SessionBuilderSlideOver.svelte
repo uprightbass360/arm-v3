@@ -51,7 +51,6 @@
 		{oncreaterip}
 		{oncreatetranscode}
 		{onsaved}
-		{oncancel}
 		{preselectRipId}
 		{preselectTranscodeId}
 		formId={FORM_ID}

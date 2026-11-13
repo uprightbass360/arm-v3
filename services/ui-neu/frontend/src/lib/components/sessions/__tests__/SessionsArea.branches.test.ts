@@ -301,7 +301,29 @@ describe('presets, opening', () => {
 		const dialog = await screen.findByRole('dialog', { name: 'View transcode preset' });
 		expect(within(dialog).getByTestId('tp-name')).toHaveValue('tc t1');
 		expect(within(dialog).getByTestId('tp-name')).toBeDisabled();
-		expect(within(dialog).queryByRole('button', { name: 'Save preset' })).not.toBeInTheDocument();
+		expect(within(dialog).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+	});
+
+	it('Clone in the read-only transcode sidebar copies the preset and closes the sidebar', async () => {
+		vi.mocked(fetchTranscodePresets).mockResolvedValue([{ ...makeTranscode(), is_builtin: true }]);
+		vi.mocked(createTranscodePreset).mockResolvedValue(makeTranscode('t2', 'tc t1 (copy)') as any);
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'View transcode preset' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Clone' }));
+		await waitFor(() => expect(createTranscodePreset).toHaveBeenCalled());
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+	});
+
+	it('a failed Clone in the read-only transcode sidebar keeps the sidebar open', async () => {
+		vi.mocked(fetchTranscodePresets).mockResolvedValue([{ ...makeTranscode(), is_builtin: true }]);
+		vi.mocked(createTranscodePreset).mockRejectedValue(new Error('no room'));
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'View transcode preset' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Clone' }));
+		await expectToast('Clone failed', 'no room');
+		expect(screen.getByRole('dialog', { name: 'View transcode preset' })).toBeInTheDocument();
 	});
 
 	it('the sidebar shows how many sessions use the preset', async () => {
@@ -587,9 +609,9 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		const select = await openBuilderTranscodeSelect();
 		vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode(), makeTranscode('t2', 'tc new')]);
 		await fireEvent.change(select, { target: { value: '__create_tc__' } });
-		await screen.findByRole('dialog', { name: 'New transcode preset' });
+		const tcDialog = await screen.findByRole('dialog', { name: 'New transcode preset' });
 		await fireEvent.input(screen.getByTestId('tp-name'), { target: { value: 'tc new' } });
-		await fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
+		await fireEvent.click(within(tcDialog).getByRole('button', { name: 'Save' }));
 		await waitFor(() => expect(createTranscodePreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New transcode preset' })).not.toBeInTheDocument());
 		await waitFor(() => expect(select.value).toBe('t2'));
@@ -600,7 +622,7 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		await renderPresetTab(/transcode presets/i, 'tc t1');
 		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
 		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
-		await fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		await waitFor(() => expect(updateTranscodePreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchTranscodePresets).toHaveBeenCalledTimes(2));

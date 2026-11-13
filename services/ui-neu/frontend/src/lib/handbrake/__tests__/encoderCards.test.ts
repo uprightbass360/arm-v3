@@ -197,6 +197,10 @@ describe('blockDefault', () => {
 		expect(blockDefault(key('VideoPreset'), x264, { VideoEncoder: 'x264', VideoPreset: 'bogus' })).toBe('medium');
 	});
 
+	it('has no default when the variant offers no values for the list', () => {
+		expect(blockDefault(key('VideoPreset'), { ...x264, presets: [] }, null)).toBeNull();
+	});
+
 	it('has no default for a key that is not a variant list', () => {
 		expect(blockDefault(key('VideoQualitySlider'), x264, null)).toBeNull();
 	});

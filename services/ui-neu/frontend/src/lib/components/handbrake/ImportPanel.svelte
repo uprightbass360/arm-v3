@@ -65,7 +65,7 @@
 		</div>
 		<div class="import-field">
 			<label class="field-label" for="import-json">HandBrake preset JSON</label>
-			<textarea id="import-json" class="input import-json" rows="8" bind:value={text}></textarea>
+			<textarea id="import-json" class="field-control import-json" rows="8" bind:value={text}></textarea>
 		</div>
 		{#if error}<p class="field-error" role="alert">{error}</p>{/if}
 		<p class="field-help">Nothing changes in the preset until you finish the review.</p>

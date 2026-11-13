@@ -4,6 +4,7 @@
 	// both. Built-in presets open read-only.
 	import { onMount } from 'svelte';
 	import EditorSidebar from '$lib/components/EditorSidebar.svelte';
+	import EditorFormFooter from '$lib/components/EditorFormFooter.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import PresetBlock from './PresetBlock.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
@@ -43,11 +44,15 @@
 		preset: TranscodePresetView | null;
 		mode: SidebarMode;
 		usage: number;
+		/** Makes an editable copy; offered on a read-only preset. */
+		onclone?: (p: TranscodePresetView) => void;
 		onclose: () => void;
 		onsaved: (p: TranscodePresetView) => void;
 	}
 
-	let { preset, mode, usage, onclose, onsaved }: Props = $props();
+	let { preset, mode, usage, onclone, onclose, onsaved }: Props = $props();
+
+	const FORM_ID = 'transcode-preset-sidebar-form';
 
 	let open = $state(true);
 	let draft = $state(initialDraft(preset));
@@ -102,7 +107,8 @@
 		return createTranscodePreset(draftToCreate(draft));
 	}
 
-	async function save() {
+	async function save(event: SubmitEvent) {
+		event.preventDefault();
 		submitting = true;
 		failure = null;
 		try {
@@ -118,15 +124,14 @@
 
 {#snippet footer()}
 	{#if note}<p class="preset-sidebar-note">{note}</p>{/if}
-	<div class="preset-sidebar-actions">
-		<span class="preset-sidebar-usage">{usageLabel(usage)}</span>
-		<button type="button" class="btn btn-ghost" onclick={onclose}>{readonly ? 'Close' : 'Cancel'}</button>
-		{#if !readonly}
-			<button type="button" class="btn btn-primary" disabled={!canSave} onclick={save}
-				>{submitting ? 'Saving...' : 'Save preset'}</button
-			>
-		{/if}
-	</div>
+	<EditorFormFooter
+		note={usageLabel(usage)}
+		readOnly={readonly}
+		formId={FORM_ID}
+		canSubmit={canSave}
+		{submitting}
+		{onclose}
+	/>
 {/snippet}
 
 <EditorSidebar
@@ -138,6 +143,9 @@
 	{onclose}
 >
 	{#snippet headerActions()}
+		{#if readonly && preset && onclone}
+			<button type="button" class="btn btn-sm" onclick={() => onclone(preset)}>Clone</button>
+		{/if}
 		<button type="button" class="btn btn-sm" disabled={readonly || importing} onclick={() => (importing = true)}
 			>Import HandBrake preset</button
 		>
@@ -146,7 +154,7 @@
 	{#if importing}
 		<ImportPanel {schema} availability={encodersStore.list} oncancel={() => (importing = false)} onuse={useImported} />
 	{:else}
-		<div class="preset-sidebar">
+		<form id={FORM_ID} class="preset-sidebar" onsubmit={save}>
 			{#if failure}
 				<div class="alert alert-danger preset-sidebar-banner" role="alert">
 					<span>{failure.message}</span>
@@ -207,7 +215,7 @@
 			{:else if draft.tool === 'handbrake'}
 				<p class="field-help">{VAAPI_NOTE}</p>
 			{/if}
-		</div>
+		</form>
 	{/if}
 </EditorSidebar>
 
@@ -235,16 +243,5 @@
 	.preset-sidebar-note {
 		font-size: 0.875rem;
 		color: var(--color-text-secondary);
-	}
-	.preset-sidebar-actions {
-		display: flex;
-		align-items: center;
-		justify-content: flex-end;
-		gap: 0.75rem;
-	}
-	.preset-sidebar-usage {
-		margin-right: auto;
-		font-size: 0.875rem;
-		color: var(--color-text-muted);
 	}
 </style>

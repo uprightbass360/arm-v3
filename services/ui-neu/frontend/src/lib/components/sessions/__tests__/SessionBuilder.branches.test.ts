@@ -6,7 +6,7 @@ vi.mock('$lib/api/sessions', () => ({
 	previewTemplate: vi.fn().mockResolvedValue({ expansion: 'p' })
 }));
 import { createSession, updateSession, previewTemplate } from '$lib/api/sessions';
-import SessionBuilder from '../SessionBuilder.svelte';
+import SessionBuilder from './SessionBuilderHarness.svelte';
 
 // Branch pins for SessionBuilder, beside SessionBuilder.svelte.test.ts. Two
 // branches cannot be reached from the rendered component, so nothing here
@@ -25,7 +25,6 @@ const props = (over = {}) => ({
 	oncreaterip: vi.fn(),
 	oncreatetranscode: vi.fn(),
 	onsaved: vi.fn(),
-	oncancel: vi.fn(),
 	...over
 });
 
@@ -47,7 +46,7 @@ async function fillRequired() {
 
 const setOverrides = (value: string) =>
 	fireEvent.input(screen.getByLabelText(/overrides json/i), { target: { value } });
-const submit = () => fireEvent.click(screen.getByRole('button', { name: /create session/i }));
+const submit = () => fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 
 beforeEach(() => {
 	vi.mocked(createSession).mockReset();
@@ -115,7 +114,7 @@ describe('SessionBuilder save', () => {
 	it('edit sends the fields without media_type', async () => {
 		vi.mocked(updateSession).mockResolvedValue({ id: 'ses1' } as any);
 		renderComponent(SessionBuilder, props({ session: editSession }));
-		await fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+		await fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 		await waitFor(() =>
 			expect(updateSession).toHaveBeenCalledWith('ses1', {
 				name: 'My Session',
@@ -159,7 +158,7 @@ describe('SessionBuilder save', () => {
 		vi.mocked(createSession).mockReturnValue(new Promise((res) => (finish = res)));
 		renderComponent(SessionBuilder, props());
 		await fillRequired();
-		const button = screen.getByRole('button', { name: /create session/i }) as HTMLButtonElement;
+		const button = screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement;
 		expect(button.disabled).toBe(false);
 		await fireEvent.click(button);
 		await waitFor(() => expect(button.disabled).toBe(true));

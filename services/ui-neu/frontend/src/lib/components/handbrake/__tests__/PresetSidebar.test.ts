@@ -85,7 +85,7 @@ async function openTab(name: string) {
 }
 
 function save() {
-	return fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
+	return fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 }
 
 beforeEach(() => {
@@ -128,7 +128,7 @@ describe('view mode', () => {
 		const { onclose } = mount({ mode: 'view', preset: preset({ is_builtin: true }) });
 		await ready();
 		expect(screen.getByTestId('tp-name')).toBeDisabled();
-		expect(screen.queryByRole('button', { name: 'Save preset' })).not.toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
 		expect(screen.getByText(/built-in preset and can't be edited/)).toBeInTheDocument();
 		await openTab('Chapters');
 		expect(screen.getByLabelText('Create chapter markers')).toBeDisabled();
@@ -301,7 +301,7 @@ describe('editing and saving', () => {
 
 	it('disables Save without a name', async () => {
 		mount({});
-		expect(screen.getByRole('button', { name: 'Save preset' })).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
 	});
 
 	it('sends handbrake_settings null once every value is reset (Review Focus 2)', async () => {
@@ -480,7 +480,7 @@ describe('import', () => {
 		expect(screen.getByLabelText('Name')).toHaveValue('');
 	});
 
-	it('Use these settings fills the draft without saving, and Save preset then creates it', async () => {
+	it('Use these settings fills the draft without saving, and Save then creates it', async () => {
 		vi.mocked(parseHandbrakeImport).mockResolvedValue(plexImport as never);
 		vi.mocked(createTranscodePreset).mockResolvedValue(preset());
 		const { onsaved } = mount({});

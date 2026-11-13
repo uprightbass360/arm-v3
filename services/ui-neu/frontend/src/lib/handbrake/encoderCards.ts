@@ -145,7 +145,9 @@ export function blockDefault(key: SlimKey, variant: SlimVariant, base: Record<st
 	if (!list) return null;
 	const values = variant[list] as string[];
 	const fromBase = base?.VideoEncoder === variant.encoder ? base[key.name] : undefined;
-	return [fromBase, key.default].find((v): v is string => typeof v === 'string' && values.includes(v)) ?? values[0];
+	return (
+		[fromBase, key.default].find((v): v is string => typeof v === 'string' && values.includes(v)) ?? values[0] ?? null
+	);
 }
 
 export function showsAmdNote(encoderId: string, availability: EncoderAvailabilityView[]): boolean {

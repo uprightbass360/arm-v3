@@ -148,4 +148,5 @@ it('says no sessions match inside the table area when filters leave nothing', as
 	renderComponent(SessionsHub, props());
 	await fireEvent.input(screen.getByPlaceholderText(/search/i), { target: { value: 'zzz' } });
 	expect(screen.queryByRole('table')).not.toBeInTheDocument();
+	expect(screen.getByText('No sessions match your filters.')).toBeInTheDocument();
 });
