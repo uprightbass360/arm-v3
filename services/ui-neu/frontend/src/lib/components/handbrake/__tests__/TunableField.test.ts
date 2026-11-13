@@ -146,3 +146,18 @@ describe('TunableField', () => {
 		expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
 	});
 });
+
+describe('TunableField idPrefix and range', () => {
+	afterEach(() => cleanup());
+
+	it('prefixes the control id', () => {
+		mount('VideoPreset', { idPrefix: 'x264-' });
+		expect(document.getElementById('x264-tunable-VideoPreset')).not.toBeNull();
+	});
+
+	it('applies a range and step to a number field', () => {
+		mount('VideoQualitySlider', { range: { min: 1, max: 51, step: 0.5 } });
+		const input = document.getElementById('tunable-VideoQualitySlider') as HTMLInputElement;
+		expect([input.min, input.max, input.step]).toEqual(['1', '51', '0.5']);
+	});
+});

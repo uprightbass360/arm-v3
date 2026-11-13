@@ -14,17 +14,34 @@
 		issue?: SettingIssue;
 		disabled?: boolean;
 		hint?: string;
+		// Prefixes the control id so one key in two cards stays unique.
+		idPrefix?: string;
+		// A range and step the schema key does not carry (a quality scale).
+		range?: { min: number; max: number; step: number };
 		onchange: (v: unknown) => void;
 		onreset: () => void;
 	}
 
-	let { key, value, inherited, stored, options, issue, disabled = false, hint, onchange, onreset }: Props = $props();
+	let {
+		key,
+		value,
+		inherited,
+		stored,
+		options,
+		issue,
+		disabled = false,
+		hint,
+		idPrefix = '',
+		range,
+		onchange,
+		onreset
+	}: Props = $props();
 
 	const kind = $derived(fieldKind(key));
 	const limits = $derived(numberLimits(key));
 	const choices = $derived(options ?? []);
 	const shown = $derived(stored ? value : inherited);
-	const id = $derived(`tunable-${key.name}`);
+	const id = $derived(`${idPrefix}tunable-${key.name}`);
 	const text = $derived(shown == null ? '' : String(shown));
 
 	function onSelect(e: Event) {
@@ -65,8 +82,9 @@
 			type="number"
 			class="field-control"
 			value={text}
-			min={limits?.min}
-			max={limits?.max}
+			min={range?.min ?? limits?.min}
+			max={range?.max ?? limits?.max}
+			step={range?.step}
 			{disabled}
 			onchange={onNumber}
 		/>
