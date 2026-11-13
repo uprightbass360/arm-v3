@@ -120,8 +120,9 @@ describe('TunableField', () => {
 	});
 
 	it('renders no control of its own for the audio track list', () => {
-		mount('AudioList');
-		expect(screen.queryByRole('textbox')).toBeNull();
+		const { container } = mount('AudioList');
+		expect(container.querySelector('.tunable-field')).toBeNull();
+		expect(screen.queryByText(key('AudioList').label)).toBeNull();
 	});
 
 	it('shows Reset only when stored, and calls onreset', async () => {

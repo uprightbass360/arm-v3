@@ -54,61 +54,64 @@
 	}
 </script>
 
-<div class="tunable-field" data-stored={stored}>
-	<div class="tunable-field-head">
-		<label class="field-label" for={id}>{key.label}</label>
-		{#if stored}
-			<button type="button" class="btn-link tunable-field-reset" {disabled} onclick={onreset}>Reset</button>
+<!-- The audio track list has its own editor (AudioTrackList); this field draws nothing for it. -->
+{#if kind !== 'audio-list'}
+	<div class="tunable-field" data-stored={stored}>
+		<div class="tunable-field-head">
+			<label class="field-label" for={id}>{key.label}</label>
+			{#if stored}
+				<button type="button" class="btn-link tunable-field-reset" {disabled} onclick={onreset}>Reset</button>
+			{/if}
+		</div>
+		{#if kind === 'checkbox'}
+			<input
+				{id}
+				type="checkbox"
+				checked={shown === true}
+				{disabled}
+				onchange={(e) => onchange(e.currentTarget.checked)}
+			/>
+		{:else if kind === 'select'}
+			<select {id} class="field-control" {disabled} onchange={onSelect}>
+				{#if shown == null}<option value="" selected></option>{/if}
+				{#each choices as option (option)}
+					<option selected={String(option) === String(shown)}>{String(option)}</option>
+				{/each}
+			</select>
+		{:else if kind === 'number'}
+			<input
+				{id}
+				type="number"
+				class="field-control"
+				value={text}
+				min={range?.min ?? limits?.min}
+				max={range?.max ?? limits?.max}
+				step={range?.step}
+				{disabled}
+				onchange={onNumber}
+			/>
+		{:else if kind === 'chips'}
+			<ChipPicker
+				{id}
+				values={Array.isArray(shown) ? shown.map(String) : []}
+				{options}
+				{disabled}
+				onchange={(v) => onchange(v)}
+			/>
+		{:else}
+			<input
+				{id}
+				type="text"
+				class="field-control"
+				value={text}
+				{disabled}
+				onchange={(e) => onchange(e.currentTarget.value)}
+			/>
 		{/if}
+		{#if issue}<p class="field-error" role="alert">{issue.message}</p>{/if}
+		{#if hint}<p class="field-help">{hint}</p>{/if}
 	</div>
-	{#if kind === 'checkbox'}
-		<input
-			{id}
-			type="checkbox"
-			checked={shown === true}
-			{disabled}
-			onchange={(e) => onchange(e.currentTarget.checked)}
-		/>
-	{:else if kind === 'select'}
-		<select {id} class="field-control" {disabled} onchange={onSelect}>
-			{#if shown == null}<option value="" selected></option>{/if}
-			{#each choices as option (option)}
-				<option selected={String(option) === String(shown)}>{String(option)}</option>
-			{/each}
-		</select>
-	{:else if kind === 'number'}
-		<input
-			{id}
-			type="number"
-			class="field-control"
-			value={text}
-			min={range?.min ?? limits?.min}
-			max={range?.max ?? limits?.max}
-			step={range?.step}
-			{disabled}
-			onchange={onNumber}
-		/>
-	{:else if kind === 'chips'}
-		<ChipPicker
-			{id}
-			values={Array.isArray(shown) ? shown.map(String) : []}
-			{options}
-			{disabled}
-			onchange={(v) => onchange(v)}
-		/>
-	{:else if kind === 'text'}
-		<input
-			{id}
-			type="text"
-			class="field-control"
-			value={text}
-			{disabled}
-			onchange={(e) => onchange(e.currentTarget.value)}
-		/>
-	{/if}
-	{#if issue}<p class="field-error" role="alert">{issue.message}</p>{/if}
-	{#if hint}<p class="field-help">{hint}</p>{/if}
-</div>
+{/if}
 
 <style>
 	.tunable-field {
