@@ -1,5 +1,7 @@
 """Transcode preset CRUD. Built-in protection mirrors sessions.py and rip_presets.py."""
 
+from typing import Any
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,9 +9,13 @@ from sqlmodel import col, select
 
 from arm_backend.auth import require_jwt, require_writer
 from arm_backend.db import get_session
-from arm_common import ContainerFormat, MediaType, Session, TranscodePreset, TranscodeTool, User
+from arm_backend.handbrake_schema_store import SchemaStore, get_schema_store
+from arm_backend.preset_views import normalise_settings, preset_view
+from arm_common import ContainerFormat, Gpu, MediaType, Session, TranscodePreset, TranscodeTool, User
 from arm_common.encoders import encoder_allowed_for_tool, encoder_supports_container, get_encoder
+from arm_common.handbrake_schema.validate import validate_settings
 from arm_common.schemas import (
+    HandbrakeSettings,
     TranscodePresetCreateRequest,
     TranscodePresetUpdateRequest,
     TranscodePresetView,
@@ -41,17 +47,48 @@ def _validate_encoder(encoder: str, tool: TranscodeTool, container: ContainerFor
         )
 
 
+def _check_settings(
+    store: SchemaStore,
+    *,
+    tool: TranscodeTool,
+    encoder: str,
+    preset_ref: str | None,
+    settings: dict[str, Any] | None,
+) -> None:
+    """422 with the issue list unless the settings a row will hold are valid; 503 when there are settings and
+    no schema to check them against. A row without settings needs neither."""
+    parsed = HandbrakeSettings.model_validate(settings) if settings else None
+    if parsed is None or parsed.is_empty():
+        return
+    schema = store.current()
+    if schema is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No HandBrake schema loaded yet")
+    issues = validate_settings(schema, tool=tool, encoder_id=encoder, preset_ref=preset_ref, settings=parsed)
+    if issues:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            {"issues": [issue.model_dump(mode="json") for issue in issues]},
+        )
+
+
+async def _load_gpus(db: AsyncSession) -> list[Gpu]:
+    return list((await db.execute(select(Gpu))).scalars().all())
+
+
 @router.get("", response_model=list[TranscodePresetView])
 async def list_transcode_presets(
     media_type: MediaType | None = Query(default=None),
     _: User = Depends(require_jwt),
     db: AsyncSession = Depends(get_session),
-) -> list[TranscodePreset]:
+    store: SchemaStore = Depends(get_schema_store),
+) -> list[TranscodePresetView]:
     stmt = select(TranscodePreset).order_by(col(TranscodePreset.name).asc())
     if media_type is not None:
         stmt = stmt.where(col(TranscodePreset.media_type) == media_type)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    gpus = await _load_gpus(db)
+    schema = store.current()
+    return [preset_view(row, schema, gpus) for row in result.scalars().all()]
 
 
 @router.get("/{preset_id}", response_model=TranscodePresetView)
@@ -59,11 +96,12 @@ async def get_transcode_preset(
     preset_id: str,
     _: User = Depends(require_jwt),
     db: AsyncSession = Depends(get_session),
-) -> TranscodePreset:
+    store: SchemaStore = Depends(get_schema_store),
+) -> TranscodePresetView:
     row = (await db.execute(select(TranscodePreset).where(col(TranscodePreset.id) == preset_id))).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown transcode_preset_id: {preset_id}")
-    return row
+    return preset_view(row, store.current(), await _load_gpus(db))
 
 
 @router.post("", response_model=TranscodePresetView, status_code=status.HTTP_201_CREATED)
@@ -71,15 +109,18 @@ async def create_transcode_preset(
     req: TranscodePresetCreateRequest,
     user: User = Depends(require_writer),
     db: AsyncSession = Depends(get_session),
-) -> TranscodePreset:
+    store: SchemaStore = Depends(get_schema_store),
+) -> TranscodePresetView:
     _validate_encoder(req.encoder, req.tool, req.container)
+    settings = normalise_settings(req.handbrake_settings)
+    _check_settings(store, tool=req.tool, encoder=req.encoder, preset_ref=req.preset_ref, settings=settings)
     row = TranscodePreset(
         name=req.name,
         media_type=req.media_type,
         is_builtin=False,
         tool=req.tool,
         preset_ref=req.preset_ref,
-        handbrake_settings=req.handbrake_settings.model_dump() if req.handbrake_settings else None,
+        handbrake_settings=settings,
         container=req.container,
         encoder=req.encoder,
         extra_args=req.extra_args,
@@ -88,7 +129,7 @@ async def create_transcode_preset(
     db.add(row)
     await db.commit()
     await db.refresh(row)
-    return row
+    return preset_view(row, store.current(), await _load_gpus(db))
 
 
 @router.patch("/{preset_id}", response_model=TranscodePresetView)
@@ -97,7 +138,8 @@ async def update_transcode_preset(
     req: TranscodePresetUpdateRequest,
     _: User = Depends(require_writer),
     db: AsyncSession = Depends(get_session),
-) -> TranscodePreset:
+    store: SchemaStore = Depends(get_schema_store),
+) -> TranscodePresetView:
     row = (await db.execute(select(TranscodePreset).where(col(TranscodePreset.id) == preset_id))).scalar_one_or_none()
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown transcode_preset_id: {preset_id}")
@@ -117,12 +159,21 @@ async def update_transcode_preset(
             req.tool if req.tool is not None else row.tool,
             req.container if req.container is not None else row.container,
         )
+    if "handbrake_settings" in fields:
+        fields["handbrake_settings"] = normalise_settings(req.handbrake_settings)
+    _check_settings(
+        store,
+        tool=fields.get("tool", row.tool),
+        encoder=fields.get("encoder", row.encoder),
+        preset_ref=fields.get("preset_ref", row.preset_ref),
+        settings=fields.get("handbrake_settings", row.handbrake_settings),
+    )
 
     for key, value in fields.items():
         setattr(row, key, value)
     await db.commit()
     await db.refresh(row)
-    return row
+    return preset_view(row, store.current(), await _load_gpus(db))
 
 
 @router.delete("/{preset_id}", status_code=status.HTTP_204_NO_CONTENT)

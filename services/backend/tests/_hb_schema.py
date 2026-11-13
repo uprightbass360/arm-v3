@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -28,3 +29,12 @@ def fixture_raw() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def fixture_schema() -> HandbrakeSchema:
     return load_schema(fixture_raw())
+
+
+def schema_without_nvenc_h264_preset(name: str) -> HandbrakeSchema:
+    """The fixture schema with `name` removed from the nvenc_h264 VideoPreset list."""
+    raw = copy.deepcopy(fixture_raw())
+    for encoder in raw["video_encoders"]:
+        if encoder["name"] == "nvenc_h264":
+            encoder["presets"] = [p for p in encoder["presets"] if p != name]
+    return load_schema(raw)
