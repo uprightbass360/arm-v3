@@ -20,6 +20,7 @@ from arm_common.handbrake_schema.overlay import (
     SOURCE_EXTRAS,
     STATIC_ENUMS,
 )
+from arm_common.handbrake_schema.materialise import resolve_depth
 from arm_common.handbrake_schema.reach import reachable_families
 from arm_common.handbrake_schema.types import EncoderFamily, EncoderVariant, HandbrakeSchema, KeySpec
 from arm_common.schemas.handbrake import HandbrakeSettings, IssueCode, SettingIssue
@@ -195,7 +196,6 @@ def validate_common(schema: HandbrakeSchema, preset_ref: str | None, common: dic
 # Rules 6 to 11: the per-encoder blocks. Each rule takes a _Block and returns its issues.
 # ---------------------------------------------------------------------------------------------------------------
 
-_DEFAULT_DEPTH = 8
 _WHOLE = "handbrake_settings"
 
 
@@ -214,13 +214,9 @@ def _block_issue(name: str, key: str, code: IssueCode, message: str) -> SettingI
     return SettingIssue(key=key, encoder=name, code=code, message=message)
 
 
-def _block_depth(block: dict[str, Any]) -> Any:
-    return block.get("bit_depth", _DEFAULT_DEPTH)
-
-
 def _variant(ctx: _Block) -> EncoderVariant | None:
     """The family's variant at the block's depth; None when the depth is not one the family has."""
-    depth = _block_depth(ctx.block)
+    depth = resolve_depth(ctx.schema, ctx.family.name, ctx.preset_ref, ctx.block)
     for have, variant in ctx.family.variants.items():
         if have == depth and not isinstance(depth, bool):
             return variant

@@ -28,7 +28,8 @@ def _any_codec(schema: HandbrakeSchema, spec: EncoderSpec, preset_ref: str | Non
     return [*families, *_handbrake_family(cpu_encoder_for(spec.codec or ""))]
 
 
-def _family_of_variant(schema: HandbrakeSchema, encoder: str) -> list[str]:
+def family_of_variant(schema: HandbrakeSchema, encoder: str) -> list[str]:
+    """Names of the families that have a variant whose HandBrake encoder is ``encoder`` (e.g. ``x265_10bit``)."""
     return [f.name for f in schema.families.values() if any(v.encoder == encoder for v in f.variants.values())]
 
 
@@ -37,7 +38,7 @@ def _from_base(schema: HandbrakeSchema, spec: EncoderSpec, preset_ref: str | Non
     encoder = base_preset(schema, preset_ref).get("VideoEncoder")
     if encoder is None:
         return []
-    return _family_of_variant(schema, encoder)
+    return family_of_variant(schema, encoder)
 
 
 _REACHABLE: dict[str, Callable[[HandbrakeSchema, EncoderSpec, str | None], list[str]]] = {
