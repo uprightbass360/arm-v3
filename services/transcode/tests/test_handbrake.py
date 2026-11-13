@@ -396,3 +396,14 @@ def test_build_handbrake_command_with_preset_file_imports_arm_preset() -> None:
         "--foo",
         "1",
     ]
+
+
+def test_build_handbrake_command_without_preset_file_or_ref_raises() -> None:
+    with pytest.raises(RuntimeError, match="needs a preset_ref"):
+        build_handbrake_command(
+            input_path=Path("/in/a.mkv"),
+            output_path=Path("/out/a.mkv"),
+            preset_ref=None,
+            extra_args=None,
+            encoder_args=[],
+        )

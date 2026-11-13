@@ -67,7 +67,8 @@ def _preset_args(preset_ref: str | None, preset_file: Path | None) -> list[str]:
     if preset_file is not None:
         return ["--preset-import-file", str(preset_file), "--preset", "arm"]
     # Only a settings run may lack a base preset; `main._encode` refuses the rest.
-    assert preset_ref is not None, "a HandBrake encode without settings needs a preset_ref"
+    if preset_ref is None:
+        raise RuntimeError("a HandBrake encode without settings needs a preset_ref")
     return ["--preset", preset_ref]
 
 

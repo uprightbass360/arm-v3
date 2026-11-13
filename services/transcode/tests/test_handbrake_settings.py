@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import functools
 import json
 from pathlib import Path
@@ -253,3 +254,37 @@ def test_write_preset_file_writes_arm_preset_json(tmp_path) -> None:
     path = write_preset_file(tmp_path, {"PresetList": [{"PresetName": "arm"}]})
     assert path == tmp_path / "arm-preset.json"
     assert json.loads(path.read_text()) == {"PresetList": [{"PresetName": "arm"}]}
+
+
+def _stale_schema() -> HandbrakeSchema:
+    """The baked schema of an image that predates `PictureWidth` (spec 4.10 version skew)."""
+    schema = _schema()
+    keys = {name: spec for name, spec in schema.keys.items() if name != "PictureWidth"}
+    return dataclasses.replace(schema, keys=keys)
+
+
+@pytest.mark.asyncio
+async def test_common_key_unknown_to_the_baked_schema_is_rejected(monkeypatch, tmp_path, spawns) -> None:
+    """M5: libhb would drop the key silently (spike run 5); the transcoder fails the task naming it."""
+    monkeypatch.setattr(handbrake_preset_file, "load_baked_schema", _stale_schema)
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "cpu_h264")
+    with pytest.raises(SettingsRejected, match=r"^HandBrake settings rejected: .*PictureWidth"):
+        await _run(tmp_path, _preset(preset_ref=None, encoder="cpu_h264", handbrake_settings=PLEX))
+    assert spawns.argvs == []
+
+
+@pytest.mark.asyncio
+async def test_common_and_block_issues_are_joined(monkeypatch, tmp_path, spawns) -> None:
+    monkeypatch.setattr(handbrake_preset_file, "load_baked_schema", _stale_schema)
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "nvenc_h264")
+    bad = PLEX.model_copy(update={"encoders": {"nvenc_h264": {"VideoPreset": "bogus"}}})
+    with pytest.raises(SettingsRejected, match=r"^HandBrake settings rejected: .*PictureWidth.*; .*bogus"):
+        await _run(tmp_path, _preset(preset_ref=None, encoder="nvenc_h264", handbrake_settings=bad))
+    assert spawns.argvs == []
+
+
+@pytest.mark.asyncio
+async def test_valid_common_and_block_launch(monkeypatch, tmp_path, spawns, baked) -> None:
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "nvenc_h264")
+    await _run(tmp_path, _preset(preset_ref=None, encoder="nvenc_h264", handbrake_settings=PLEX))
+    assert len(spawns.argvs) == 1

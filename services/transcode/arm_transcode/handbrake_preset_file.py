@@ -14,7 +14,7 @@ from typing import Any
 from arm_common.encoders import EncoderSpec
 from arm_common.handbrake_schema.materialise import Materialised, materialise
 from arm_common.handbrake_schema.types import HandbrakeSchema
-from arm_common.handbrake_schema.validate import validate_family
+from arm_common.handbrake_schema.validate import validate_common, validate_family
 from arm_common.schemas import TranscodePresetView
 from arm_common.schemas.handbrake import HandbrakeSettings, SettingIssue
 
@@ -25,15 +25,16 @@ NO_SCHEMA_MESSAGE = "this transcode image has no HandBrake schema; rebuild or pu
 
 
 class SettingsRejected(RuntimeError):
-    """The preset's settings are invalid for the resolved encoder family; raised before HandBrake launches."""
+    """The preset's settings are invalid against this image's schema; raised before HandBrake launches."""
 
     def __init__(self, issues: list[SettingIssue]) -> None:
         super().__init__("HandBrake settings rejected: " + "; ".join(issue.message for issue in issues))
 
 
-def has_settings(preset: TranscodePresetView) -> bool:
-    """True when the preset carries any HandBrake settings, so it runs from a materialised preset file."""
-    return preset.handbrake_settings is not None and not preset.handbrake_settings.is_empty()
+def settings_of(preset: TranscodePresetView) -> HandbrakeSettings | None:
+    """The preset's HandBrake settings when it carries any (it then runs from a materialised file); else None."""
+    settings = preset.handbrake_settings
+    return None if settings is None or settings.is_empty() else settings
 
 
 def family_of(spec: EncoderSpec | None) -> str | None:
@@ -49,26 +50,38 @@ def require_baked_schema() -> HandbrakeSchema:
     return schema
 
 
-def check_family(
+def _family_issues(
+    schema: HandbrakeSchema, family: str | None, preset_ref: str | None, settings: HandbrakeSettings
+) -> list[SettingIssue]:
+    """Rules for the resolved family's block; none for the preset's own encoder (no family)."""
+    if family is None:
+        return []
+    return validate_family(schema, family=family, preset_ref=preset_ref, settings=settings)
+
+
+def check_settings(
     schema: HandbrakeSchema, family: str | None, preset_ref: str | None, settings: HandbrakeSettings
 ) -> None:
-    """M5: raise `SettingsRejected` when the settings are invalid for `family`. No family (preset encoder): no check."""
-    if family is None:
-        return
-    issues = validate_family(schema, family=family, preset_ref=preset_ref, settings=settings)
+    """M5: raise `SettingsRejected` when `common` or the family's block is invalid against this image's schema.
+
+    `UnknownBasePreset` from either check propagates unchanged.
+    """
+    issues = validate_common(schema, preset_ref, settings.common)
+    issues += _family_issues(schema, family, preset_ref, settings)
     if issues:
         raise SettingsRejected(issues)
 
 
-def materialise_for_encode(preset: TranscodePresetView, spec: EncoderSpec | None) -> Materialised:
-    """Validate the preset's settings for the resolved family, then build the preset file and encoder flags.
+def materialise_for_encode(
+    preset: TranscodePresetView, settings: HandbrakeSettings, spec: EncoderSpec | None
+) -> Materialised:
+    """Validate `settings` for the resolved family, then build the preset file and encoder flags.
 
     Raises `SettingsRejected`, `UnknownBasePreset`, or `RuntimeError` when the image has no schema.
     """
-    settings = preset.handbrake_settings or HandbrakeSettings()
     schema = require_baked_schema()
     family = family_of(spec)
-    check_family(schema, family, preset.preset_ref, settings)
+    check_settings(schema, family, preset.preset_ref, settings)
     return materialise(schema, preset.preset_ref, settings, family, preset.container)
 
 
