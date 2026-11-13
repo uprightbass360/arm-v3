@@ -183,3 +183,34 @@ def test_map_preset_is_pure_per_entry(hb_schema, plex_export):
     before = copy.deepcopy(preset)
     view = map_preset(hb_schema, ("A",), preset)
     assert view.path == ["A"] and preset == before
+
+
+@pytest.mark.parametrize("children", [[1, "x", None], "x", 5, None, {"a": 1}])
+def test_malformed_folder_children_are_ignored(hb_schema, children):
+    body = {"PresetList": [{"Folder": True, "PresetName": "F", "ChildrenArray": children}]}
+    with pytest.raises(ExportNotRecognised, match="no presets"):
+        import_export(hb_schema, body)
+
+
+def test_malformed_children_keep_valid_siblings(hb_schema, plex_export):
+    leaf = plex_export["PresetList"][0]
+    body = {"PresetList": [{"Folder": True, "PresetName": "F", "ChildrenArray": [1, leaf]}]}
+    assert [p.path for p in import_export(hb_schema, body).presets] == [["F"]]
+
+
+@pytest.mark.parametrize("fmt", [["av_mkv"], {"a": 1}, 5, None])
+def test_non_string_file_format_falls_back_to_mkv(hb_schema, plex_export, fmt):
+    p = _only(hb_schema, _export(plex_export, FileFormat=fmt))
+    assert p.proposal.container == ContainerFormat.MKV and len(p.warnings) == 1
+
+
+@pytest.mark.parametrize("encoder", [["x264"], {"a": 1}, 5, None])
+def test_non_string_encoder_is_not_importable(hb_schema, plex_export, encoder):
+    p = _only(hb_schema, _export(plex_export, VideoEncoder=encoder))
+    assert not p.importable and p.reason.startswith("The encoder ")
+
+
+@pytest.mark.parametrize("name", [["a"], {"a": 1}, 5, None])
+def test_non_string_preset_name_becomes_text(hb_schema, plex_export, name):
+    p = _only(hb_schema, _export(plex_export, PresetName=name))
+    assert p.importable and p.name == str(name)

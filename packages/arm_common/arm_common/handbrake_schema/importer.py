@@ -55,7 +55,12 @@ def parse_export(body: Any) -> tuple[list[dict[str, Any]], tuple[int, int, int] 
         entries = [body]
     else:
         raise ExportNotRecognised("The file is not a HandBrake preset export")
-    return [e for e in entries if isinstance(e, dict)], _version_of(body)
+    return _dict_entries(entries), _version_of(body)
+
+
+def _dict_entries(value: Any) -> list[dict[str, Any]]:
+    """The dict items of a list; anything else is empty."""
+    return [e for e in value if isinstance(e, dict)] if isinstance(value, list) else []
 
 
 def flatten_presets(
@@ -65,7 +70,8 @@ def flatten_presets(
     found: list[tuple[tuple[str, ...], dict[str, Any]]] = []
     for entry in entries:
         if entry.get("Folder"):
-            found.extend(flatten_presets(entry.get("ChildrenArray") or [], (*path, str(entry.get("PresetName", "")))))
+            children = _dict_entries(entry.get("ChildrenArray"))
+            found.extend(flatten_presets(children, (*path, str(entry.get("PresetName", "")))))
         else:
             found.append((path, entry))
     return found
@@ -87,7 +93,7 @@ def _codec_of(family: str) -> str | None:
 
 
 def _map_container(file_format: Any) -> tuple[ContainerFormat, list[str]]:
-    container = _CONTAINERS.get(file_format)
+    container = _CONTAINERS.get(file_format) if isinstance(file_format, str) else None
     if container is not None:
         return container, []
     return ContainerFormat.MKV, [f"File format {file_format} has no ARM container; the preset uses mkv."]
