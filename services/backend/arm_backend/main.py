@@ -284,6 +284,7 @@ class _BackendServices:
             docker_client=docker_client,
             hub=self._app.state.ws_hub,
             docker_client_factory=_make_docker_client if capable else None,
+            schema_store=self._app.state.handbrake_schema_store,
         )
 
     def _start_transcode_dispatcher(self) -> None:
