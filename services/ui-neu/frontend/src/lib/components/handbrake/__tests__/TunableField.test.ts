@@ -55,7 +55,7 @@ describe('TunableField', () => {
 	it('falls back to the raw text when the option list lacks it, and tolerates no options', async () => {
 		const { onchange } = mount('AudioBitrate', { options: null });
 		const select = screen.getByLabelText(key('AudioBitrate').label) as HTMLSelectElement;
-		expect(select.options).toHaveLength(0);
+		expect(select.options).toHaveLength(1);
 		select.add(new Option('x', 'x'));
 		await fireEvent.change(select, { target: { value: 'x' } });
 		expect(onchange).toHaveBeenCalledWith('x');
@@ -91,12 +91,32 @@ describe('TunableField', () => {
 		expect(onchange).toHaveBeenCalledWith('xyz');
 	});
 
-	it('renders a list of strings as comma separated text and emits an array', async () => {
-		const { onchange } = mount('AudioLanguageList', { inherited: ['eng', 'fra'] });
-		const input = screen.getByLabelText(key('AudioLanguageList').label) as HTMLInputElement;
-		expect(input.value).toBe('eng, fra');
-		await fireEvent.change(input, { target: { value: 'deu, , spa' } });
-		expect(onchange).toHaveBeenCalledWith(['deu', 'spa']);
+	it('renders a list of strings as chips and emits string[]', async () => {
+		const { onchange } = mount('AudioLanguageList', { inherited: ['eng'] });
+		expect(screen.getByText('eng')).toBeInTheDocument();
+		await fireEvent.input(screen.getByLabelText('Add value'), { target: { value: 'fra' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Add' }));
+		expect(onchange).toHaveBeenCalledWith(['eng', 'fra']);
+	});
+
+	it('treats a non-list value as no chips', () => {
+		mount('AudioLanguageList', { inherited: null });
+		expect(screen.queryByRole('button', { name: /^Remove/ })).toBeNull();
+	});
+
+	it('offers a select for a list key with options', async () => {
+		const { onchange } = mount('AudioCopyMask', {
+			value: ['copy:aac'],
+			stored: true,
+			options: ['copy:aac', 'copy:ac3']
+		});
+		await fireEvent.change(screen.getByLabelText('Add value'), { target: { value: 'copy:ac3' } });
+		expect(onchange).toHaveBeenCalledWith(['copy:aac', 'copy:ac3']);
+	});
+
+	it('shows an empty placeholder in a select with no value', () => {
+		mount('AudioBitrate', { options: [128, 192] });
+		expect((screen.getByLabelText(key('AudioBitrate').label) as HTMLSelectElement).value).toBe('');
 	});
 
 	it('renders no control of its own for the audio track list', () => {

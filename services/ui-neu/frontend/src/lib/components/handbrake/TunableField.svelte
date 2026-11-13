@@ -2,6 +2,7 @@
 	// One schema-rendered field: the control for the key's kind, its issue, and
 	// a Reset link once the preset stores a value. No "set here" labelling.
 	import type { SettingIssue, SlimKey } from '$lib/types/api.gen';
+	import ChipPicker from './ChipPicker.svelte';
 	import { fieldKind, numberLimits } from '$lib/handbrake/fields';
 
 	interface Props {
@@ -24,7 +25,7 @@
 	const choices = $derived(options ?? []);
 	const shown = $derived(stored ? value : inherited);
 	const id = $derived(`tunable-${key.name}`);
-	const text = $derived(shown == null ? '' : Array.isArray(shown) ? shown.join(', ') : String(shown));
+	const text = $derived(shown == null ? '' : String(shown));
 
 	function onSelect(e: Event) {
 		const raw = (e.currentTarget as HTMLSelectElement).value;
@@ -33,15 +34,6 @@
 	function onNumber(e: Event) {
 		const raw = (e.currentTarget as HTMLInputElement).value;
 		if (raw !== '' && Number.isFinite(Number(raw))) onchange(Number(raw));
-	}
-	function onChips(e: Event) {
-		const raw = (e.currentTarget as HTMLInputElement).value;
-		onchange(
-			raw
-				.split(',')
-				.map((s) => s.trim())
-				.filter(Boolean)
-		);
 	}
 </script>
 
@@ -62,6 +54,7 @@
 		/>
 	{:else if kind === 'select'}
 		<select {id} class="field-control" {disabled} onchange={onSelect}>
+			{#if shown == null}<option value="" selected></option>{/if}
 			{#each choices as option (option)}
 				<option selected={String(option) === String(shown)}>{String(option)}</option>
 			{/each}
@@ -78,7 +71,13 @@
 			onchange={onNumber}
 		/>
 	{:else if kind === 'chips'}
-		<input {id} type="text" class="field-control" value={text} {disabled} onchange={onChips} />
+		<ChipPicker
+			{id}
+			values={Array.isArray(shown) ? shown.map(String) : []}
+			{options}
+			{disabled}
+			onchange={(v) => onchange(v)}
+		/>
 	{:else if kind === 'text'}
 		<input
 			{id}

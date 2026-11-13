@@ -27,9 +27,14 @@
 	const tabByKey = $derived(new Map([...schema.keys, ...schema.audio_item_keys].map((k) => [k.name, k.tab])));
 	const issueTabs = $derived(new Set(issues.map((i) => tabByKey.get(i.key))));
 
+	// Only while filtering: clearing the box leaves the user where they are.
+	function jumpToMatch() {
+		if (text.trim() === '') return;
+		ontab(firstTabWithMatch(tabMatchCounts(schema, settings, text, changedOnly), tab));
+	}
 	function onfilter(e: Event) {
 		text = (e.currentTarget as HTMLInputElement).value;
-		ontab(firstTabWithMatch(tabMatchCounts(schema, settings, text, changedOnly), tab));
+		jumpToMatch();
 	}
 </script>
 
@@ -43,7 +48,9 @@
 			value={text}
 			oninput={onfilter}
 		/>
-		<label class="settings-tabs-changed"><input type="checkbox" bind:checked={changedOnly} /> Changed only</label>
+		<label class="settings-tabs-changed"
+			><input type="checkbox" bind:checked={changedOnly} onchange={jumpToMatch} /> Changed only</label
+		>
 	</div>
 	<div role="tablist" class="settings-tabs-strip">
 		{#each TABS as t (t.id)}

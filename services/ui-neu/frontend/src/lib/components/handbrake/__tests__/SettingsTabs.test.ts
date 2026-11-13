@@ -74,4 +74,27 @@ describe('SettingsTabs', () => {
 		expect(Number(tab('Dimensions').textContent!.replace(/\D/g, ''))).toBe(1);
 		expect(all).toBeGreaterThan(1);
 	});
+
+	it('does not move the tab when the filter is cleared', async () => {
+		const { ontab } = mount({ tab: 'summary' });
+		const box = screen.getByPlaceholderText('Filter settings');
+		await fireEvent.input(box, { target: { value: 'PictureWidth' } });
+		expect(ontab).toHaveBeenCalledTimes(1);
+		await fireEvent.input(box, { target: { value: '' } });
+		expect(ontab).toHaveBeenCalledTimes(1);
+	});
+
+	it('re-runs the jump when Changed only is toggled with text', async () => {
+		const { ontab } = mount({ tab: 'summary', settings: { common: { PictureWidth: 1 }, encoders: {} } });
+		await fireEvent.input(screen.getByPlaceholderText('Filter settings'), { target: { value: 'Picture' } });
+		ontab.mockClear();
+		await fireEvent.click(screen.getByLabelText('Changed only'));
+		expect(ontab).toHaveBeenCalledWith('dimensions');
+	});
+
+	it('does not jump when Changed only is toggled without text', async () => {
+		const { ontab } = mount();
+		await fireEvent.click(screen.getByLabelText('Changed only'));
+		expect(ontab).not.toHaveBeenCalled();
+	});
 });
