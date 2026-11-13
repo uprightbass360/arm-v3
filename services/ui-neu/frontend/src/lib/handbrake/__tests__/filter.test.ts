@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { HandbrakeSchemaSlimView, SlimKey } from '$lib/types/api.gen';
 import fixture from './fixtures/slim-schema.json';
 import { firstTabWithMatch, matchesKeyFilter, tabMatchCounts } from '../filter';
-import { storedCount } from '../settingsEdit';
+import { storedCount } from '../settings-edit';
 import { TABS, type TabId } from '../fields';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;

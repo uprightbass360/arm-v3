@@ -9,11 +9,11 @@
 	import PresetBlock from './PresetBlock.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import ImportPanel from './ImportPanel.svelte';
-	import { fetchBuiltinPreset } from '$lib/api/handbrakeSchema';
-	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcodePresets';
-	import { handbrakeSchema } from '$lib/stores/handbrakeSchema.svelte';
+	import { fetchBuiltinPreset } from '$lib/api/handbrake-schema';
+	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcode-presets';
+	import { handbrakeSchema } from '$lib/stores/handbrake-schema.svelte';
 	import { encodersStore } from '$lib/stores/encoders.svelte';
-	import { presetSidebarView } from '$lib/handbrake/panelView';
+	import { presetSidebarView } from '$lib/handbrake/panel-view';
 	import {
 		VAAPI_NOTE,
 		footerNote,
@@ -26,7 +26,7 @@
 	import { applyField, onBaseChange, type Bases } from '$lib/handbrake/draft-rules';
 	import { draftToCreate, draftToUpdate, initialDraft, type PresetField } from '$lib/handbrake/draft';
 	import { saveFailure, type SaveFailure } from '$lib/api/save-failure';
-	import { applyProposal } from '$lib/handbrake/importReview';
+	import { applyProposal } from '$lib/handbrake/import-review';
 	import type {
 		HandbrakeSchemaSlimView,
 		ImportedPresetView,

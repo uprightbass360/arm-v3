@@ -3,7 +3,7 @@
 
 import type { HandbrakeSchemaSlimView, HandbrakeSettings, SlimKey } from '$lib/types/api.gen';
 import { TABS, type TabId } from './fields';
-import { storedCount } from './settingsEdit';
+import { storedCount } from './settings-edit';
 
 type Candidate = { name: string; label: string; tab: TabId; stored: boolean };
 

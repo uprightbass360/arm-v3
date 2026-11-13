@@ -9,7 +9,7 @@ import {
 	perEncoderLine,
 	showsAmdNote,
 	type EncoderCard
-} from '../encoderCards';
+} from '../encoder-cards';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const family = (name: string): SlimFamily => schema.families.find((f) => f.name === name)!;

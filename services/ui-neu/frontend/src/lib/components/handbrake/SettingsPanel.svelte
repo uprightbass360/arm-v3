@@ -10,9 +10,9 @@
 		SlimKey
 	} from '$lib/types/api.gen';
 	import { fieldOptions, type TabId } from '$lib/handbrake/fields';
-	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine } from '$lib/handbrake/encoderCards';
-	import { keyRow, settingsPanelView } from '$lib/handbrake/panelView';
-	import { resetBlock, resetCommon, setBlock, setCommon } from '$lib/handbrake/settingsEdit';
+	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine } from '$lib/handbrake/encoder-cards';
+	import { keyRow, settingsPanelView } from '$lib/handbrake/panel-view';
+	import { resetBlock, resetCommon, setBlock, setCommon } from '$lib/handbrake/settings-edit';
 	import { AMD_NOTE, issuesFor } from '$lib/handbrake/display';
 	import {
 		audioListValue,

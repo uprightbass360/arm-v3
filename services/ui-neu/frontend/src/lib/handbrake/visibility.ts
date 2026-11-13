@@ -2,7 +2,7 @@
 // Pure functions.
 
 import type { HandbrakeSchemaSlimView, SlimFamily, SlimKey } from '$lib/types/api.gen';
-import { blockFields, type EncoderCard } from './encoderCards';
+import { blockFields, type EncoderCard } from './encoder-cards';
 import { keysForTab, type TabId } from './fields';
 import { matchesKeyFilter } from './filter';
 

@@ -1,11 +1,11 @@
 <script lang="ts">
 	import { errorMessage } from '$lib/utils/errors';
 	import type { MediaType, SessionView, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
-	import type { JoinedSession } from './sessionsData.svelte';
+	import type { JoinedSession } from '../../sessions/sessions-data.svelte';
 	import { createSession, updateSession } from '$lib/api/sessions';
-	import type { EditorStatus } from '$lib/components/editorStatus';
+	import type { EditorStatus } from '$lib/components/editor-status';
 	import OutputPathField from './OutputPathField.svelte';
-	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from './sessionForm';
+	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from '../../sessions/session-form';
 
 	interface Props {
 		session?: JoinedSession | null;

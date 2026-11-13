@@ -14,7 +14,7 @@ import {
 	rowOptions,
 	samplerates,
 	setTrackField
-} from '../audioTracks';
+} from '../audio-tracks';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const itemKey = (name: string) => schema.audio_item_keys.find((k) => k.name === name)!;
