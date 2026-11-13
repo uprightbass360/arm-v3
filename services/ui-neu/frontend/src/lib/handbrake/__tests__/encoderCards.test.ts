@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, SlimFamily } from '$lib/types/api.gen';
 import fixture from './fixtures/slim-schema.json';
-import { blockFields, encoderCards, showsAmdNote } from '../encoderCards';
+import {
+	blockDefault,
+	blockFields,
+	cardStatusLine,
+	encoderCards,
+	perEncoderLine,
+	showsAmdNote,
+	type EncoderCard
+} from '../encoderCards';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const family = (name: string): SlimFamily => schema.families.find((f) => f.name === name)!;
@@ -130,5 +138,64 @@ describe('showsAmdNote', () => {
 	it('hides without an AMD device or for pinned ids', () => {
 		expect(showsAmdNote('any_h264', [nvidia])).toBe(false);
 		expect(showsAmdNote('cpu_h264', [amd])).toBe(false);
+	});
+});
+
+describe('cardStatusLine', () => {
+	const card = (state: EncoderCard['state'], device: string | null = null): EncoderCard => ({
+		family: 'x',
+		label: 'X',
+		state,
+		device
+	});
+
+	it('names the verified device', () => {
+		expect(cardStatusLine(card('verified', 'nvidia://0'))).toBe('Verified on nvidia://0');
+	});
+
+	it('says the CPU card is the fallback', () => {
+		expect(cardStatusLine(card('cpu-fallback'))).toBe('Fallback when no GPU is free');
+	});
+
+	it('says a GPU family with no verified device has none', () => {
+		expect(cardStatusLine(card('collapsed'))).toBe('No verified device');
+	});
+
+	it('has nothing to report for a card with no hardware state', () => {
+		expect(cardStatusLine(card('open'))).toBe('');
+	});
+});
+
+describe('perEncoderLine', () => {
+	it('names the preset encoder and why each card keeps its own values', () => {
+		expect(perEncoderLine('Any GPU H.264')).toBe(
+			'Any GPU H.264 can land on the encoders below. Each keeps its own speed preset, profile, level and quality, because the values differ between them.'
+		);
+	});
+});
+
+describe('blockDefault', () => {
+	const key = (name: string) => schema.keys.find((k) => k.name === name)!;
+	const x264 = family('x264').variants[0];
+
+	it("takes the schema default when it is one of the variant's values", () => {
+		expect(blockDefault(key('VideoPreset'), x264, null)).toBe('medium');
+	});
+
+	it("falls back to the variant's first value when the default is not offered", () => {
+		expect(blockDefault(key('VideoTune'), x264, null)).toBe('none');
+	});
+
+	it("takes the base preset's value when it names this variant's encoder", () => {
+		expect(blockDefault(key('VideoPreset'), x264, { VideoEncoder: 'x264', VideoPreset: 'slow' })).toBe('slow');
+	});
+
+	it('ignores the base value when it is for another encoder or not offered', () => {
+		expect(blockDefault(key('VideoPreset'), x264, { VideoEncoder: 'x265', VideoPreset: 'slow' })).toBe('medium');
+		expect(blockDefault(key('VideoPreset'), x264, { VideoEncoder: 'x264', VideoPreset: 'bogus' })).toBe('medium');
+	});
+
+	it('has no default for a key that is not a variant list', () => {
+		expect(blockDefault(key('VideoQualitySlider'), x264, null)).toBeNull();
 	});
 });

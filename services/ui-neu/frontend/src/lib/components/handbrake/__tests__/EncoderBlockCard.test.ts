@@ -22,6 +22,7 @@ function baseProps(name: string, over: Record<string, unknown> = {}) {
 		family: family(name),
 		card: card({ family: name, label: name }),
 		block: {},
+		base: null,
 		inheritedDepth: 8,
 		depthSource: 'default',
 		qualityType: 1,
@@ -42,6 +43,7 @@ function mount(name: string, over: Record<string, unknown> = {}) {
 			family: family(name),
 			card: card({ family: name, label: name }),
 			block: {},
+			base: null,
 			inheritedDepth: 8,
 			depthSource: 'default',
 			qualityType: 1,
@@ -75,7 +77,7 @@ describe('EncoderBlockCard', () => {
 
 	it('labels the quality field with the scale and range', () => {
 		mount('x264');
-		expect(screen.getByLabelText('RF, 0 to 51')).toBeTruthy();
+		expect(screen.getByLabelText('Quality (RF, 0 to 51)')).toBeTruthy();
 	});
 
 	it('disables multi-pass and turbo with a hint under constant quality', () => {
@@ -195,5 +197,47 @@ describe('EncoderBlockCard', () => {
 	it('opens a collapsed card that already stores values', () => {
 		mount('qsv_h264', { card: card({ family: 'qsv_h264', state: 'collapsed' }), block: { VideoPreset: 'quality' } });
 		expect(screen.getByLabelText('Encoder preset')).toBeTruthy();
+	});
+
+	it('keeps x264 advanced options off the x265 card', () => {
+		mount('x265');
+		expect(screen.queryByLabelText('Use x264 advanced options')).toBeNull();
+	});
+
+	it('labels the quality field with the scale and range per encoder', () => {
+		mount('nvenc_h264');
+		expect(screen.getByLabelText('Quality (CQ, 1 to 51)')).toBeTruthy();
+	});
+
+	it('shows the encoder defaults as inherited when the block stores none', () => {
+		mount('x264');
+		expect((screen.getByLabelText('Encoder preset') as HTMLSelectElement).value).toBe('medium');
+		expect((screen.getByLabelText('Encoder tune') as HTMLSelectElement).value).toBe('none');
+		expect((screen.getByLabelText('Encoder profile') as HTMLSelectElement).value).toBe('auto');
+		expect((screen.getByLabelText('Encoder level') as HTMLSelectElement).value).toBe('auto');
+	});
+
+	it("shows the base preset's value as inherited when the base runs this encoder", () => {
+		mount('x264', { base: { VideoEncoder: 'x264', VideoPreset: 'slow' } });
+		expect((screen.getByLabelText('Encoder preset') as HTMLSelectElement).value).toBe('slow');
+	});
+
+	it('shows a stored value over the inherited default', () => {
+		mount('x264', { block: { VideoPreset: 'fast' } });
+		expect((screen.getByLabelText('Encoder preset') as HTMLSelectElement).value).toBe('fast');
+	});
+
+	it('puts the status line under a collapsed title, beside a link-styled button', () => {
+		mount('qsv_h264', { card: card({ family: 'qsv_h264', label: 'Intel QSV H.264', state: 'collapsed' }) });
+		expect(screen.getByRole('heading', { name: 'Intel QSV H.264' })).toBeTruthy();
+		expect(screen.getByText('No verified device')).toBeTruthy();
+		const button = screen.getByRole('button', { name: 'Set values anyway' });
+		expect(button.classList.contains('btn-link')).toBe(true);
+		expect(button.closest('h4')).toBeNull();
+	});
+
+	it('shows no status badge on a card with no hardware state', () => {
+		mount('x264');
+		expect(document.querySelector('.encoder-card-badge')).toBeNull();
 	});
 });

@@ -2,7 +2,13 @@
 // which fields each card holds. Mirrors the backend's reachable_families so the
 // card order is the claim order. Pure functions; no I/O.
 
-import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, SlimFamily, SlimKey } from '$lib/types/api.gen';
+import type {
+	EncoderAvailabilityView,
+	HandbrakeSchemaSlimView,
+	SlimFamily,
+	SlimKey,
+	SlimVariant
+} from '$lib/types/api.gen';
 
 // 'open' is a card with no hardware state to report: a pinned or base-preset family.
 export type CardState = 'verified' | 'cpu-fallback' | 'collapsed' | 'open';
@@ -59,6 +65,24 @@ function cardFor(family: string, anyCodec: boolean, availability: EncoderAvailab
 	return { family, label, state: isCpu ? 'cpu-fallback' : 'collapsed', device: null };
 }
 
+const STATUS_LINES: Record<CardState, string> = {
+	verified: '',
+	'cpu-fallback': 'Fallback when no GPU is free',
+	collapsed: 'No verified device',
+	open: ''
+};
+
+// The card's hardware status, shown beside its title. '' when it has none to report.
+export function cardStatusLine(card: EncoderCard): string {
+	return card.state === 'verified' ? `Verified on ${card.device}` : STATUS_LINES[card.state];
+}
+
+export const ALL_ENCODERS_LINE = 'These apply whichever device runs the encode.';
+
+export function perEncoderLine(encoderLabel: string): string {
+	return `${encoderLabel} can land on the encoders below. Each keeps its own speed preset, profile, level and quality, because the values differ between them.`;
+}
+
 export function encoderCards(
 	encoderId: string,
 	presetRef: string | null,
@@ -103,6 +127,24 @@ export function blockFields(schema: HandbrakeSchemaSlimView, family: SlimFamily)
 		.map((name) => schema.keys.find((k) => k.name === name))
 		.filter((k): k is SlimKey => k !== undefined)
 		.sort((a, b) => rank(a.name) - rank(b.name));
+}
+
+// The block keys whose choices come from the encoder variant, and which variant list holds them.
+export const VARIANT_LISTS: Record<string, keyof SlimVariant> = {
+	VideoPreset: 'presets',
+	VideoTune: 'tunes',
+	VideoProfile: 'profiles',
+	VideoLevel: 'levels'
+};
+
+// What a variant-list key resolves to when the block stores nothing: the base preset's value when the base
+// runs this variant, else the schema default if the variant offers it, else the variant's first value.
+export function blockDefault(key: SlimKey, variant: SlimVariant, base: Record<string, unknown> | null): string | null {
+	const list = VARIANT_LISTS[key.name];
+	if (!list) return null;
+	const values = variant[list] as string[];
+	const fromBase = base?.VideoEncoder === variant.encoder ? base[key.name] : undefined;
+	return [fromBase, key.default].find((v): v is string => typeof v === 'string' && values.includes(v)) ?? values[0];
 }
 
 export function showsAmdNote(encoderId: string, availability: EncoderAvailabilityView[]): boolean {

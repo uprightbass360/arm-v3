@@ -205,6 +205,46 @@ describe('which settings show', () => {
 		).toBeInTheDocument();
 	});
 
+	it('the Video tab sections each carry a line saying what they hold', async () => {
+		mount({ mode: 'edit', preset: preset() });
+		await ready();
+		await openTab('Video');
+		expect(screen.getByText('These apply whichever device runs the encode.')).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'any_h264 can land on the encoders below. Each keeps its own speed preset, profile, level and quality, because the values differ between them.'
+			)
+		).toBeInTheDocument();
+	});
+
+	it('names the preset as This preset when the encoder is not in the catalog', async () => {
+		encoders.list = [];
+		mount({ mode: 'edit', preset: preset({ encoder: 'nvenc_h264' }) });
+		await ready();
+		await openTab('Video');
+		expect(screen.getByText(/^This preset can land on the encoders below/)).toBeInTheDocument();
+	});
+
+	it('x264 advanced options appear on the x264 card only', async () => {
+		mount({ mode: 'edit', preset: preset() });
+		await ready();
+		await openTab('Video');
+		await screen.findByRole('region', { name: 'x264' });
+		const found = screen.getAllByLabelText('Use x264 advanced options');
+		expect(found).toHaveLength(1);
+		expect(within(screen.getByRole('region', { name: 'x264' })).getByLabelText('Use x264 advanced options')).toBe(
+			found[0]
+		);
+	});
+
+	it('an expanded card shows the encoder default as inherited', async () => {
+		mount({ mode: 'edit', preset: preset() });
+		await ready();
+		await openTab('Video');
+		const card = await screen.findByRole('region', { name: 'x264' });
+		expect((within(card).getByLabelText('Encoder preset') as HTMLSelectElement).value).toBe('medium');
+	});
+
 	it('Changed only hides fields and cards with nothing stored', async () => {
 		mount({
 			mode: 'edit',

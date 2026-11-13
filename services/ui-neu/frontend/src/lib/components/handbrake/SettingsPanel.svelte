@@ -10,7 +10,7 @@
 		SlimKey
 	} from '$lib/types/api.gen';
 	import { fieldKind, fieldOptions, type TabId } from '$lib/handbrake/fields';
-	import { encoderCards, showsAmdNote } from '$lib/handbrake/encoderCards';
+	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine, showsAmdNote } from '$lib/handbrake/encoderCards';
 	import { resetBlock, resetCommon, setBlock, setCommon } from '$lib/handbrake/settingsEdit';
 	import {
 		AMD_NOTE,
@@ -54,6 +54,7 @@
 	// Selects whose options hang off another key (a filter's presets) read the value in effect.
 	const context = $derived({ ...base, ...common });
 	const qualityType = $derived(effectiveQualityType(settings, base, schema));
+	const encoderLabel = $derived(availability.find((a) => a.id === encoder)?.label ?? 'This preset');
 	const cards = $derived(
 		cardFamilies(encoderCards(encoder, presetRef, schema, availability, baseVideoEncoder(base)), schema)
 	);
@@ -62,9 +63,15 @@
 <SettingsTabs {schema} {settings} {issues} {tab} ontab={(t) => (tab = t)}>
 	{#snippet children(f: FilterState)}
 		{#if tab === 'video'}
-			<h4 class="settings-panel-heading">All encoders</h4>
+			<div class="settings-panel-section">
+				<h4 class="settings-panel-heading">All encoders</h4>
+				<p class="settings-panel-line">{ALL_ENCODERS_LINE}</p>
+			</div>
 			{@render fields(commonKeys(schema, 'video'), f)}
-			<h4 class="settings-panel-heading">Per encoder</h4>
+			<div class="settings-panel-section settings-panel-divided">
+				<h4 class="settings-panel-heading">Per encoder</h4>
+				<p class="settings-panel-line">{perEncoderLine(encoderLabel)}</p>
+			</div>
 			{#if showsAmdNote(encoder, availability)}<p class="field-help">{AMD_NOTE}</p>{/if}
 			<div class="settings-panel-cards">
 				{#each cards as { card, family } (card.family)}
@@ -76,6 +83,7 @@
 							{family}
 							{card}
 							{block}
+							{base}
 							inheritedDepth={depth.depth}
 							depthSource={depth.source}
 							{qualityType}
@@ -127,11 +135,26 @@
 {/snippet}
 
 <style>
+	.settings-panel-section {
+		margin-top: 0.75rem;
+	}
+	.settings-panel-divided {
+		padding-top: 1rem;
+		border-top: 1px solid var(--color-border);
+	}
 	.settings-panel-heading {
-		margin: 0.75rem 0 0.5rem;
-		font-size: 0.875rem;
-		font-weight: 600;
-		color: var(--color-text);
+		margin: 0;
+		font-size: 0.625rem;
+		font-weight: 700;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--color-text-secondary);
+	}
+	.settings-panel-line {
+		margin: 0.1875rem 0 0.5rem;
+		font-size: 0.8125rem;
+		line-height: 1.45;
+		color: var(--color-text-secondary);
 	}
 	.settings-panel-grid {
 		display: grid;
