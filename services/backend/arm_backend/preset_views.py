@@ -51,6 +51,4 @@ def _issues(preset: TranscodePreset, schema: HandbrakeSchema | None) -> list[Set
 def preset_view(preset: TranscodePreset, schema: HandbrakeSchema | None, gpus: Sequence[Gpu]) -> TranscodePresetView:
     """The wire view of a stored preset, with its issues against `schema` (none without one) and its host note."""
     view = TranscodePresetView.model_validate(preset)
-    view.issues = _issues(preset, schema)
-    view.host_notes = host_notes(preset, gpus)  # type: ignore[assignment]
-    return view
+    return view.model_copy(update={"issues": _issues(preset, schema), "host_notes": host_notes(preset, gpus)})

@@ -29,6 +29,8 @@ router = APIRouter(prefix="/api/transcode-presets", tags=["transcode-presets"])
 
 _NO_SCHEMA = "No HandBrake schema loaded yet"
 _MAX_IMPORT_BYTES = 1_048_576
+# A patch touching one of these can change what the settings mean, so it re-validates them.
+_SETTINGS_INPUTS = frozenset({"handbrake_settings", "tool", "encoder", "preset_ref"})
 
 # NOT NULL columns (name, tool, container, encoder): the update schema lets a
 # client send null for them, which means "leave it as is".
@@ -92,7 +94,7 @@ def _decode_export(raw: bytes) -> Any:
         raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "The file is larger than 1 MB")
     try:
         return json.loads(raw)
-    except ValueError as exc:
+    except (ValueError, RecursionError) as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The file is not valid JSON") from exc
 
 
@@ -201,13 +203,14 @@ async def update_transcode_preset(
         )
     if "handbrake_settings" in fields:
         fields["handbrake_settings"] = normalise_settings(req.handbrake_settings)
-    _check_settings(
-        store,
-        tool=fields.get("tool", row.tool),
-        encoder=fields.get("encoder", row.encoder),
-        preset_ref=fields.get("preset_ref", row.preset_ref),
-        settings=fields.get("handbrake_settings", row.handbrake_settings),
-    )
+    if fields.keys() & _SETTINGS_INPUTS:
+        _check_settings(
+            store,
+            tool=fields.get("tool", row.tool),
+            encoder=fields.get("encoder", row.encoder),
+            preset_ref=fields.get("preset_ref", row.preset_ref),
+            settings=fields.get("handbrake_settings", row.handbrake_settings),
+        )
 
     for key, value in fields.items():
         setattr(row, key, value)

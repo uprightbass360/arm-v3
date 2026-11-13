@@ -87,6 +87,12 @@ def test_a_body_that_is_not_json_is_422() -> None:
     assert r.json() == {"detail": "The file is not valid JSON"}  # type: ignore[attr-defined]
 
 
+def test_a_deeply_nested_body_is_422_not_500() -> None:
+    r = _post("[" * 200_000)
+    assert r.status_code == 422  # type: ignore[attr-defined]
+    assert r.json() == {"detail": "The file is not valid JSON"}  # type: ignore[attr-defined]
+
+
 def test_no_schema_is_503() -> None:
     r = _post(json.dumps(plex_export()), loaded=False)
     assert r.status_code == 503  # type: ignore[attr-defined]

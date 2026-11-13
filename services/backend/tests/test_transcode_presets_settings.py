@@ -262,13 +262,34 @@ def test_patch_with_a_bad_value_is_422_and_leaves_the_row(signing_key: bytes) ->
     assert db.rows["transcode_presets"][0].handbrake_settings == _GOOD
 
 
-def test_patch_of_a_preset_with_settings_and_no_schema_is_503(signing_key: bytes) -> None:
+def test_patch_of_the_encoder_of_a_preset_with_settings_and_no_schema_is_503(signing_key: bytes) -> None:
+    db = FakeSession()
+    app, headers = _make_app(signing_key, db, store=_empty_store())
+    db.rows["transcode_presets"] = [_stored_h264(_GOOD)]
+    with TestClient(app) as client:
+        r = client.patch("/api/transcode-presets/tpr_s", json={"encoder": "any_h265"}, headers=headers)
+    assert r.status_code == 503
+
+
+def test_rename_with_no_schema_skips_validation(signing_key: bytes) -> None:
     db = FakeSession()
     app, headers = _make_app(signing_key, db, store=_empty_store())
     db.rows["transcode_presets"] = [_stored_h264(_GOOD)]
     with TestClient(app) as client:
         r = client.patch("/api/transcode-presets/tpr_s", json={"name": "renamed"}, headers=headers)
-    assert r.status_code == 503
+    assert r.status_code == 200 and r.json()["name"] == "renamed"
+
+
+def test_rename_of_a_preset_with_stale_settings_still_saves_and_lists_the_issue(signing_key: bytes) -> None:
+    db = FakeSession()
+    store = SchemaStore()
+    store.replace(schema_without_nvenc_h264_preset("slower"))
+    app, headers = _make_app(signing_key, db, store=store)
+    db.rows["transcode_presets"] = [_stored_h264(_GOOD)]
+    with TestClient(app) as client:
+        r = client.patch("/api/transcode-presets/tpr_s", json={"name": "renamed"}, headers=headers)
+    assert r.status_code == 200
+    assert [(i["key"], i["code"]) for i in r.json()["issues"]] == [("VideoPreset", "not_in_list")]
 
 
 def test_read_reports_issues_against_the_current_schema(signing_key: bytes) -> None:
