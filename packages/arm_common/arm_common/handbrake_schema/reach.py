@@ -33,12 +33,16 @@ def family_of_variant(schema: HandbrakeSchema, encoder: str) -> list[str]:
     return [f.name for f in schema.families.values() if any(v.encoder == encoder for v in f.variants.values())]
 
 
-def _from_base(schema: HandbrakeSchema, spec: EncoderSpec, preset_ref: str | None) -> list[str]:
-    """The family of the base built-in's own encoder; none without a base."""
+def base_families(schema: HandbrakeSchema, preset_ref: str | None) -> list[str]:
+    """The family of the base built-in's own encoder; none without a base. Raises UnknownBasePreset."""
     encoder = base_preset(schema, preset_ref).get("VideoEncoder")
     if encoder is None:
         return []
     return family_of_variant(schema, encoder)
+
+
+def _from_base(schema: HandbrakeSchema, spec: EncoderSpec, preset_ref: str | None) -> list[str]:
+    return base_families(schema, preset_ref)
 
 
 _REACHABLE: dict[str, Callable[[HandbrakeSchema, EncoderSpec, str | None], list[str]]] = {

@@ -58,13 +58,28 @@ def _apply_block_scalars(preset: dict[str, Any], block: dict[str, Any]) -> None:
     preset.update({key: block[key] for key in _BLOCK_SCALARS if key in block})
 
 
-def _encoder_flags(schema: HandbrakeSchema, family: str, preset_ref: str | None, block: dict[str, Any]) -> list[str]:
+def _encoder_flag(schema: HandbrakeSchema, family: str, preset_ref: str | None, block: dict[str, Any]) -> list[str]:
+    """``--encoder`` and the family's variant at the resolved bit depth."""
     depth = resolve_depth(schema, family, preset_ref, block)
-    flags = ["--encoder", schema.families[family].variants[depth].encoder]
+    return ["--encoder", schema.families[family].variants[depth].encoder]
+
+
+def _block_flags(block: dict[str, Any]) -> list[str]:
+    """The block's encoder keys as ``--encoder-*`` / ``--encopts`` flags."""
+    flags: list[str] = []
     for key, flag in FLAG_KEYS.items():
         if key in block:
             flags += [flag, str(block[key])]
     return flags
+
+
+def _flags(
+    schema: HandbrakeSchema, family: str | None, preset_ref: str | None, block: dict[str, Any], emit_encoder: bool
+) -> list[str]:
+    if family is None:
+        return []
+    encoder = _encoder_flag(schema, family, preset_ref, block) if emit_encoder else []
+    return encoder + _block_flags(block)
 
 
 def materialise(
@@ -73,10 +88,14 @@ def materialise(
     settings: HandbrakeSettings,
     family: str | None,
     container: ContainerFormat,
+    *,
+    emit_encoder: bool = True,
 ) -> Materialised:
-    """The one-preset file and ``--encoder*`` flags for ``family`` (None: the ``preset`` encoder, no flags).
+    """The one-preset file and ``--encoder*`` flags for ``family``'s block (None: no block, no flags).
 
-    Does not validate; callers validate first.
+    ``emit_encoder=False`` (the ``preset`` encoder, ``family`` being its base's) keeps the base's own
+    encoder: the block is written and flagged, but no ``--encoder`` is emitted. Does not validate;
+    callers validate first.
     """
     block = settings.encoders.get(family, {}) if family is not None else {}
     preset = _start_from_base(schema, preset_ref)
@@ -85,5 +104,4 @@ def materialise(
     _apply_block_scalars(preset, block)
     major, minor, micro = schema.preset_version
     preset_file = {"PresetList": [preset], "VersionMajor": major, "VersionMinor": minor, "VersionMicro": micro}
-    flags = [] if family is None else _encoder_flags(schema, family, preset_ref, block)
-    return Materialised(preset_file, flags)
+    return Materialised(preset_file, _flags(schema, family, preset_ref, block, emit_encoder))

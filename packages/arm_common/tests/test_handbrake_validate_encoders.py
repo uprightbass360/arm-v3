@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from arm_common.enums import TranscodeTool
-from arm_common.handbrake_schema.reach import reachable_families
+from arm_common.handbrake_schema.reach import base_families, reachable_families
 from arm_common.handbrake_schema.effective import UnknownBasePreset
 from arm_common.handbrake_schema.types import HandbrakeSchema
 from arm_common.handbrake_schema.validate import validate_family, validate_settings
@@ -45,6 +45,11 @@ def test_pinned_and_cpu(hb_schema):
 def test_preset_encoder_uses_base_family(hb_schema):
     assert reachable_families(hb_schema, "preset", "H.265 MKV 1080p30") == ["x265"]
     assert reachable_families(hb_schema, "preset", None) == []
+
+
+def test_base_families(hb_schema):
+    assert base_families(hb_schema, "H.265 MKV 1080p30") == ["x265"]
+    assert base_families(hb_schema, None) == []
 
 
 def test_preset_encoder_with_base_lacking_encoder(hb_schema):

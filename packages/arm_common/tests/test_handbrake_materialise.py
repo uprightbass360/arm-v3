@@ -106,10 +106,21 @@ def test_missing_block_only_encoder_flag(hb_schema):
     assert materialise(hb_schema, None, HandbrakeSettings(), "x264", MKV).flags == ["--encoder", "x264"]
 
 
-def test_preset_encoder_no_encoder_flag(hb_schema, plex_settings):
-    result = materialise(hb_schema, BASE, plex_settings, None, MKV)
+def test_no_family_no_flags(hb_schema, plex_settings):
+    """No family (the ``preset`` encoder without a base): no block, no flags."""
+    result = materialise(hb_schema, None, plex_settings, None, MKV, emit_encoder=False)
     assert result.flags == []
-    assert "VideoQualitySlider" not in set(one(result)) - set(hb_schema.builtin_presets[BASE])
+    assert "VideoQualitySlider" not in one(result)
+
+
+def test_preset_encoder_uses_base_family_block_without_encoder_flag(hb_schema):
+    """Ruling 24: the base family's block is written and flagged, but the base's own encoder is kept."""
+    block = {"VideoPreset": "slow", "VideoQualitySlider": 20}
+    settings = HandbrakeSettings(encoders={"x265": block})
+    result = materialise(hb_schema, BASE, settings, "x265", MKV, emit_encoder=False)
+    assert result.flags == ["--encoder-preset", "slow"]
+    assert one(result)["VideoQualitySlider"] == 20
+    assert one(result)["VideoEncoder"] == hb_schema.builtin_presets[BASE]["VideoEncoder"]
 
 
 def test_block_scalars_written_into_file(hb_schema):

@@ -211,6 +211,37 @@ async def test_preset_encoder_runs_without_encoder_flag(monkeypatch, tmp_path, s
 
 
 @pytest.mark.asyncio
+async def test_preset_encoder_applies_the_base_family_block_without_encoder_flag(
+    monkeypatch, tmp_path, spawns, baked
+) -> None:
+    """Ruling 24: the base's x265 block is written and flagged; the base keeps its own encoder."""
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "preset")
+    settings = HandbrakeSettings(encoders={"x265": {"VideoPreset": "slow", "VideoQualitySlider": 20}})
+    await _run(tmp_path, _preset(encoder="preset", handbrake_settings=settings))
+    assert spawns.argvs == [_import_argv(tmp_path, _launched_preset_file(spawns), "--encoder-preset", "slow")]
+    [preset] = spawns.preset_files[0]["PresetList"]
+    assert preset["VideoQualitySlider"] == 20
+    assert preset["VideoEncoder"] == "x265_10bit"
+
+
+@pytest.mark.asyncio
+async def test_preset_encoder_without_base_has_no_block_flags(monkeypatch, tmp_path, spawns, baked) -> None:
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "preset")
+    settings = HandbrakeSettings(encoders={"x265": {"VideoPreset": "slow"}})
+    await _run(tmp_path, _preset(preset_ref=None, encoder="preset", handbrake_settings=settings))
+    assert spawns.argvs == [_import_argv(tmp_path, _launched_preset_file(spawns))]
+
+
+@pytest.mark.asyncio
+async def test_preset_encoder_invalid_base_family_block_is_rejected(monkeypatch, tmp_path, spawns, baked) -> None:
+    monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "preset")
+    bad = HandbrakeSettings(encoders={"x265": {"VideoPreset": "bogus"}})
+    with pytest.raises(SettingsRejected, match="bogus"):
+        await _run(tmp_path, _preset(encoder="preset", handbrake_settings=bad))
+    assert spawns.argvs == []
+
+
+@pytest.mark.asyncio
 async def test_preset_file_is_written_to_a_temp_work_dir_and_removed(monkeypatch, tmp_path, spawns, baked) -> None:
     monkeypatch.setenv("ARM_TRANSCODE_ENCODER", "cpu_h264")
     await _run(tmp_path, _preset(preset_ref=None, encoder="cpu_h264", handbrake_settings=PLEX))

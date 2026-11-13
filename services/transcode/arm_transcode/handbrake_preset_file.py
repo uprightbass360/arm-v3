@@ -13,6 +13,7 @@ from typing import Any
 
 from arm_common.encoders import EncoderSpec
 from arm_common.handbrake_schema.materialise import Materialised, materialise
+from arm_common.handbrake_schema.reach import base_families
 from arm_common.handbrake_schema.types import HandbrakeSchema
 from arm_common.handbrake_schema.validate import validate_common, validate_family
 from arm_common.schemas import TranscodePresetView
@@ -37,9 +38,14 @@ def settings_of(preset: TranscodePresetView) -> HandbrakeSettings | None:
     return None if settings is None or settings.is_empty() else settings
 
 
-def family_of(spec: EncoderSpec | None) -> str | None:
-    """The HandBrake encoder family the resolved spec runs; None for the preset's own encoder."""
-    return None if spec is None else spec.engine_encoder
+def family_of(schema: HandbrakeSchema, spec: EncoderSpec | None, preset_ref: str | None) -> str | None:
+    """The family whose block applies: the resolved spec's; for the preset's own encoder (no spec), its base's.
+
+    None for the preset's own encoder without a base. Raises `UnknownBasePreset` for a bad `preset_ref`.
+    """
+    if spec is not None:
+        return spec.engine_encoder
+    return next(iter(base_families(schema, preset_ref)), None)
 
 
 def require_baked_schema() -> HandbrakeSchema:
@@ -53,7 +59,7 @@ def require_baked_schema() -> HandbrakeSchema:
 def _family_issues(
     schema: HandbrakeSchema, family: str | None, preset_ref: str | None, settings: HandbrakeSettings
 ) -> list[SettingIssue]:
-    """Rules for the resolved family's block; none for the preset's own encoder (no family)."""
+    """Rules for the resolved family's block; none without a family (the preset's own encoder, no base)."""
     if family is None:
         return []
     return validate_family(schema, family=family, preset_ref=preset_ref, settings=settings)
@@ -80,9 +86,10 @@ def materialise_for_encode(
     Raises `SettingsRejected`, `UnknownBasePreset`, or `RuntimeError` when the image has no schema.
     """
     schema = require_baked_schema()
-    family = family_of(spec)
+    family = family_of(schema, spec, preset.preset_ref)
     check_settings(schema, family, preset.preset_ref, settings)
-    return materialise(schema, preset.preset_ref, settings, family, preset.container)
+    # The preset's own encoder (no spec) keeps the base's encoder: no --encoder.
+    return materialise(schema, preset.preset_ref, settings, family, preset.container, emit_encoder=spec is not None)
 
 
 def write_preset_file(work_dir: Path, preset_file: dict[str, Any]) -> Path:
