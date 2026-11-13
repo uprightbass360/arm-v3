@@ -7,7 +7,8 @@
 	import { encodersStore, PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';
 	import { encoderGroups } from '$lib/utils/encoder-groups';
 	import { presetBlockView } from '$lib/handbrake/panelView';
-	import { CLEARED_NOTE, isVaapiEncoder, issuesFor, type Draft, type PresetField } from '$lib/handbrake/sidebarModel';
+	import { CLEARED_NOTE, issuesFor } from '$lib/handbrake/display';
+	import { isVaapiEncoder, type Draft, type PresetField } from '$lib/handbrake/draft';
 	import type { SettingIssue } from '$lib/types/api.gen';
 
 	interface Props {

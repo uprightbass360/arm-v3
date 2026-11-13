@@ -16,22 +16,16 @@
 	import { presetSidebarView } from '$lib/handbrake/panelView';
 	import {
 		VAAPI_NOTE,
-		applyField,
-		draftToCreate,
-		draftToUpdate,
 		footerNote,
-		initialDraft,
-		onBaseChange,
-		saveFailure,
 		schemaLoadError,
 		sidebarTitle,
 		unplacedIssues,
 		usageLabel,
-		type Bases,
-		type PresetField,
-		type SaveFailure,
 		type SidebarMode
-	} from '$lib/handbrake/sidebarModel';
+	} from '$lib/handbrake/display';
+	import { applyField, onBaseChange, type Bases } from '$lib/handbrake/draft-rules';
+	import { draftToCreate, draftToUpdate, initialDraft, type PresetField } from '$lib/handbrake/draft';
+	import { saveFailure, type SaveFailure } from '$lib/api/save-failure';
 	import { applyProposal } from '$lib/handbrake/importReview';
 	import type {
 		HandbrakeSchemaSlimView,

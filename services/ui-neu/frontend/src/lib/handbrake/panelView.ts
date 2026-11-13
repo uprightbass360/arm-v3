@@ -5,16 +5,10 @@ import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, SlimKey } from '
 import { availabilityLabel } from './encoder-availability';
 import { showsAmdNote } from './encoderCards';
 import { fieldKind, type TabId } from './fields';
-import {
-	clearsSettings,
-	isVaapiEncoder,
-	keyShown,
-	showTabs,
-	type Draft,
-	type FilterState,
-	type SaveFailure,
-	type SidebarMode
-} from './sidebarModel';
+import { clearsSettings, isVaapiEncoder, showTabs, type Draft } from './draft';
+import { keyShown, type FilterState } from './visibility';
+import type { SaveFailure } from '$lib/api/save-failure';
+import type { SidebarMode } from './display';
 
 export interface SettingsPanelInput {
 	tab: TabId;

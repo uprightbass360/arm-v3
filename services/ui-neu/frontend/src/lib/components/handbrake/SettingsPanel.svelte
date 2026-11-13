@@ -13,22 +13,18 @@
 	import { ALL_ENCODERS_LINE, encoderCards, perEncoderLine } from '$lib/handbrake/encoderCards';
 	import { keyRow, settingsPanelView } from '$lib/handbrake/panelView';
 	import { resetBlock, resetCommon, setBlock, setCommon } from '$lib/handbrake/settingsEdit';
+	import { AMD_NOTE, issuesFor } from '$lib/handbrake/display';
 	import {
-		AMD_NOTE,
 		audioListValue,
 		baseVideoEncoder,
 		blockOf,
-		cardFamilies,
-		cardShown,
-		commonKeys,
 		commonOf,
 		effectiveQualityType,
 		inheritedDepth,
 		inheritedValue,
-		issuesFor,
-		type BaseValues,
-		type FilterState
-	} from '$lib/handbrake/sidebarModel';
+		type BaseValues
+	} from '$lib/handbrake/base-values';
+	import { cardFamilies, cardShown, commonKeys, type FilterState } from '$lib/handbrake/visibility';
 	import SettingsTabs from './SettingsTabs.svelte';
 	import TunableField from './TunableField.svelte';
 	import EncoderBlockCard from './EncoderBlockCard.svelte';

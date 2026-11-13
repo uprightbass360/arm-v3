@@ -10,7 +10,7 @@ import {
 	type PresetBlockInput,
 	type PresetSidebarInput
 } from '../panelView';
-import { initialDraft, type Draft } from '../sidebarModel';
+import { initialDraft, type Draft } from '../draft';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const key = (name: string): SlimKey => {
