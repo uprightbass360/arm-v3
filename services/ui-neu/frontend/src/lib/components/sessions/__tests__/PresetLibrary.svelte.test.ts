@@ -126,9 +126,9 @@ it('derives chip counts from the active kind only', () => {
 	expect(screen.getByRole('button', { name: /movie.*1/i })).toBeInTheDocument();
 });
 
-it('includes the reusable-note text', () => {
+it('leaves the reusable-note to the page header', () => {
 	renderComponent(PresetLibrary, defaultProps({ kind: 'rip' }));
-	expect(screen.getByText(/reusable|preset.*reused|used by multiple/i)).toBeInTheDocument();
+	expect(screen.queryByText(/reusable building blocks/i)).not.toBeInTheDocument();
 });
 
 it('has the same action bar as the Sessions root: search, source refine, type chips, New button', async () => {

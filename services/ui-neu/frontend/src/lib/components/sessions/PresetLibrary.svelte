@@ -100,12 +100,6 @@
 {/snippet}
 
 <div class="stack stack-lg">
-	<!-- Reusable note -->
-	<p class="preset-library-note">
-		Presets are reusable building blocks: each preset can be used by multiple sessions, and changing one affects every
-		session that references it.
-	</p>
-
 	<!-- Search + filter container: same structure as the Sessions root -->
 	<div class="panel panel-compact preset-library-bar" data-testid="preset-action-bar">
 		<!-- Top row: search + inline REFINE dropdown -->
@@ -190,11 +184,6 @@
 </div>
 
 <style>
-	.preset-library-note {
-		font-size: 0.875rem;
-		line-height: 1.25rem;
-		color: var(--color-text-muted);
-	}
 	/* the original bar was px-4 py-3 (1rem/0.75rem); .panel-compact is
 	   0.75rem all round, close but not identical on the horizontal axis. */
 	.preset-library-bar {

@@ -4,6 +4,7 @@
 	import { copyName, isRipPreset, ripPresetCopy, transcodePresetCopy } from './sessionPresets';
 	import SessionsHub from './SessionsHub.svelte';
 	import PresetLibrary from './PresetLibrary.svelte';
+	import RoutingMatrix from './RoutingMatrix.svelte';
 	import SessionBuilderSlideOver from './SessionBuilderSlideOver.svelte';
 	import InlinePresetDialog from './InlinePresetDialog.svelte';
 	import PresetSidebar from '$lib/components/handbrake/PresetSidebar.svelte';
@@ -34,14 +35,23 @@
 	);
 	const shownTypeCounts = $derived($transcoderEnabled ? data.typeCounts() : countByMediaType(shownSessions));
 
-	// Active sub-tab: sessions hub, or one of the two preset libraries
-	let view = $state<'sessions' | 'rip' | 'transcode'>('sessions');
+	// Active view: the sessions hub, one of the two preset libraries, or routing
+	type View = 'sessions' | 'rip' | 'transcode' | 'routing';
+	let view = $state<View>('sessions');
 
-	const TABS: Array<{ key: 'sessions' | 'rip' | 'transcode'; label: string }> = [
+	const TABS: Array<{ key: View; label: string }> = [
 		{ key: 'sessions', label: 'Sessions' },
 		{ key: 'rip', label: 'Rip presets' },
-		{ key: 'transcode', label: 'Transcode presets' }
+		{ key: 'transcode', label: 'Transcode presets' },
+		{ key: 'routing', label: 'Routing' }
 	];
+
+	// Each list view's count, shown on its tab; Routing has none.
+	const tabCounts = $derived<Partial<Record<View, number>>>({
+		sessions: shownSessions.length,
+		rip: data.ripPresets().length,
+		transcode: shownTranscodePresets.length
+	});
 
 	// Builder slide-over
 	let builderOpen = $state(false);
@@ -225,9 +235,13 @@
 				Sessions bundle a rip preset, an optional transcode preset, and an output-path template into a reusable recipe.
 				Choose a session when inserting a disc.
 			</p>
+			<p class="sessions-area-lede sessions-area-presets-note">
+				Presets are reusable building blocks: each preset can be used by multiple sessions, and changing one affects
+				every session that references it.
+			</p>
 		</div>
 
-		<!-- Sub-tab bar: Sessions / Rip presets / Transcode presets -->
+		<!-- View switch: Sessions / Rip presets / Transcode presets / Routing -->
 		<div class="sessions-area-tabs-box">
 			<div class="tabs tabs-pills sessions-area-tabs" role="tablist" aria-label="Sessions sections">
 				{#each TABS as tab (tab.key)}
@@ -241,6 +255,9 @@
 						class="tabs-tab"
 					>
 						{tab.label}
+						{#if tabCounts[tab.key] !== undefined}
+							<span class="sessions-area-tab-count">{tabCounts[tab.key]}</span>
+						{/if}
 					</button>
 				{/each}
 			</div>
@@ -266,6 +283,8 @@
 			onclone={handleCloneSession}
 			ondelete={handleDeleteSession}
 		/>
+	{:else if view === 'routing'}
+		<RoutingMatrix />
 	{:else}
 		<PresetLibrary
 			kind={view}
@@ -367,6 +386,14 @@
 		font-size: 0.875rem;
 		line-height: 1.25rem;
 		color: var(--color-text-muted);
+	}
+	.sessions-area-presets-note {
+		margin-top: 0.875rem;
+	}
+	.sessions-area-tab-count {
+		margin-left: 0.375rem;
+		font-variant-numeric: tabular-nums;
+		opacity: 0.7;
 	}
 	/* the pills sit in a bordered/shadowed box (rounded-lg border bg-surface
 	   p-1 shadow-xs) that tabs-pills itself does not draw - tabs-pills is

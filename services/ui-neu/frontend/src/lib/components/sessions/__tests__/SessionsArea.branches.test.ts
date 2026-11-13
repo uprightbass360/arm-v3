@@ -548,7 +548,7 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		await waitFor(() => expect(updateRipPreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchRipPresets).toHaveBeenCalledTimes(2));
-		await openTab(/^sessions$/i);
+		await openTab(/^sessions\b/i);
 		await fireEvent.click(screen.getByRole('button', { name: /new session/i }));
 		expect(screen.getByLabelText(/rip preset/i)).toHaveValue('');
 	});
@@ -577,7 +577,7 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		await waitFor(() => expect(updateTranscodePreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchTranscodePresets).toHaveBeenCalledTimes(2));
-		await openTab(/^sessions$/i);
+		await openTab(/^sessions\b/i);
 		const select = await openBuilderTranscodeSelect();
 		expect(select.value).toBe('');
 	});

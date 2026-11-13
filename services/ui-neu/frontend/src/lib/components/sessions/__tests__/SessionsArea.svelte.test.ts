@@ -10,6 +10,11 @@ vi.mock('$lib/api/sessions', () => ({
 	cloneSession: vi.fn(),
 	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null })
 }));
+vi.mock('$lib/api/sessionRoutes', () => ({
+	fetchSessionRoutes: vi.fn().mockResolvedValue([]),
+	upsertSessionRoute: vi.fn(),
+	deleteSessionRoute: vi.fn()
+}));
 vi.mock('$lib/api/ripPresets', () => ({
 	fetchRipPresets: vi.fn(),
 	createRipPreset: vi.fn(),
@@ -33,6 +38,7 @@ vi.mock('$lib/api/ws', () => ({
 }));
 
 import { fetchSessions } from '$lib/api/sessions';
+import { fetchSessionRoutes } from '$lib/api/sessionRoutes';
 import { fetchRipPresets, createRipPreset } from '$lib/api/ripPresets';
 import { fetchTranscodePresets, createTranscodePreset } from '$lib/api/transcodePresets';
 import { deleteSession, cloneSession } from '$lib/api/sessions';
@@ -130,7 +136,7 @@ it('tab switches back from a preset tab to sessions', async () => {
 	renderComponent(SessionsArea);
 	await screen.findByText(/ses /i);
 	await fireEvent.click(screen.getByRole('tab', { name: /rip presets/i }));
-	await fireEvent.click(screen.getByRole('tab', { name: /^sessions$/i }));
+	await fireEvent.click(screen.getByRole('tab', { name: /^sessions\b/i }));
 	expect(screen.getByText('ses Alpha')).toBeInTheDocument();
 });
 
@@ -376,5 +382,43 @@ describe('the sidebar stacked over the session slide-over', () => {
 		await fireEvent.click(scrim);
 		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New transcode preset' })).not.toBeInTheDocument());
 		expect(screen.getByRole('heading', { name: 'Create a session' })).toBeInTheDocument();
+	});
+});
+
+describe('the page header and view switch', () => {
+	it('holds the presets note in the header for every view', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		const note = /Presets are reusable building blocks: each preset can be used by multiple sessions/;
+		expect(screen.getByText(note)).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('tab', { name: /rip presets/i }));
+		expect(screen.getAllByText(note)).toHaveLength(1);
+	});
+
+	it('is a segmented control of four tabs, the list views showing their counts', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		const tabs = screen.getAllByRole('tab');
+		expect(tabs.map((t) => t.textContent?.replace(/\s+/g, ' ').trim())).toEqual([
+			'Sessions 1',
+			'Rip presets 1',
+			'Transcode presets 1',
+			'Routing'
+		]);
+		expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
+		expect(tabs[3]).toHaveAttribute('aria-selected', 'false');
+	});
+
+	it('Routing shows the matrix, with no search, source filter or type chips', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		expect(screen.getByRole('searchbox')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('tab', { name: 'Routing' }));
+		expect(screen.getByRole('tab', { name: 'Routing' })).toHaveAttribute('aria-selected', 'true');
+		expect(await screen.findByLabelText('Movie, Any disc')).toBeInTheDocument();
+		expect(fetchSessionRoutes).toHaveBeenCalled();
+		expect(screen.queryByRole('searchbox')).not.toBeInTheDocument();
+		expect(screen.queryByLabelText('Filter by source')).not.toBeInTheDocument();
+		expect(screen.queryByRole('table', { name: 'Sessions' })).not.toBeInTheDocument();
 	});
 });
