@@ -134,3 +134,6 @@ class HandbrakeSchemaSlimView(BaseModel):
     static_enums: dict[str, list[Any]]
     source_extras: dict[str, list[Any]]
     selector_filter_aliases: dict[str, str]
+    # Keys ARM sets itself (never stored as settings) and keys that live in a per-encoder block.
+    arm_owned_keys: list[str]
+    encoder_specific_keys: list[str]

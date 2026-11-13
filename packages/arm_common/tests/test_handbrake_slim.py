@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from arm_common.handbrake_schema.overlay import ARM_OWNED_KEYS, ENCODER_SPECIFIC_KEYS
 from arm_common.handbrake_schema.slim import slim_view
 
 
@@ -48,3 +49,11 @@ def test_slim_carries_static_enums_and_source_extras(hb_schema):
 
 def test_slim_carries_selector_filter_aliases(hb_schema):
     assert slim_view(hb_schema).selector_filter_aliases == {"deinterlace": "yadif"}
+
+
+def test_slim_carries_arm_owned_and_encoder_specific_keys(hb_schema):
+    view = slim_view(hb_schema)
+    assert view.arm_owned_keys == sorted(ARM_OWNED_KEYS)
+    assert view.encoder_specific_keys == sorted(ENCODER_SPECIFIC_KEYS)
+    assert "VideoHWDecode" in view.arm_owned_keys
+    assert "VideoQualitySlider" in view.encoder_specific_keys

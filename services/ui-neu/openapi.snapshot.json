@@ -11529,6 +11529,20 @@
             },
             "type": "object",
             "title": "Selector Filter Aliases"
+          },
+          "arm_owned_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Arm Owned Keys"
+          },
+          "encoder_specific_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Encoder Specific Keys"
           }
         },
         "type": "object",
@@ -11545,7 +11559,9 @@
           "builtin_names",
           "static_enums",
           "source_extras",
-          "selector_filter_aliases"
+          "selector_filter_aliases",
+          "arm_owned_keys",
+          "encoder_specific_keys"
         ],
         "title": "HandbrakeSchemaSlimView",
         "description": "What the UI needs to render the settings sidebar; no built-in preset values."

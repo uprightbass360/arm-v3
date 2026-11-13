@@ -1937,6 +1937,14 @@ export type HandbrakeSchemaSlimView = {
     selector_filter_aliases: {
         [key: string]: string;
     };
+    /**
+     * Arm Owned Keys
+     */
+    arm_owned_keys: Array<string>;
+    /**
+     * Encoder Specific Keys
+     */
+    encoder_specific_keys: Array<string>;
 };
 
 /**

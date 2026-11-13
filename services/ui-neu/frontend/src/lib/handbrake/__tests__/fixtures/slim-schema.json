@@ -2514,5 +2514,29 @@
 		"VideoQualityType": [1, 2]
 	},
 	"source_extras": { "VideoFramerate": ["auto"], "AudioSamplerate": ["auto"], "AudioBitrate": [-1] },
-	"selector_filter_aliases": { "deinterlace": "yadif" }
+	"selector_filter_aliases": { "deinterlace": "yadif" },
+	"arm_owned_keys": [
+		"ChildrenArray",
+		"Default",
+		"FileFormat",
+		"Folder",
+		"FolderOpen",
+		"PresetDescription",
+		"PresetDisabled",
+		"PresetName",
+		"Type",
+		"VideoEncoder",
+		"VideoHWDecode"
+	],
+	"encoder_specific_keys": [
+		"VideoLevel",
+		"VideoMultiPass",
+		"VideoOptionExtra",
+		"VideoPreset",
+		"VideoProfile",
+		"VideoQualitySlider",
+		"VideoTune",
+		"VideoTurboMultiPass",
+		"x264UseAdvancedOptions"
+	]
 }

@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from arm_common.handbrake_schema.overlay import SELECTOR_FILTER_ALIASES, SOURCE_EXTRAS, STATIC_ENUMS
+from arm_common.handbrake_schema.overlay import (
+    ARM_OWNED_KEYS,
+    ENCODER_SPECIFIC_KEYS,
+    SELECTOR_FILTER_ALIASES,
+    SOURCE_EXTRAS,
+    STATIC_ENUMS,
+)
 from arm_common.handbrake_schema.types import (
     EncoderFamily,
     EncoderVariant,
@@ -103,4 +109,6 @@ def slim_view(schema: HandbrakeSchema) -> HandbrakeSchemaSlimView:
         static_enums=_slim_static_enums(),
         source_extras=_slim_source_extras(),
         selector_filter_aliases=dict(SELECTOR_FILTER_ALIASES),
+        arm_owned_keys=sorted(ARM_OWNED_KEYS),
+        encoder_specific_keys=sorted(ENCODER_SPECIFIC_KEYS),
     )
