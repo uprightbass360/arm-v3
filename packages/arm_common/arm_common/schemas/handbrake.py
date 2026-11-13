@@ -68,3 +68,66 @@ class ImportedPresetView(BaseModel):
 class ImportParseResponse(BaseModel):
     handbrake_version: dict[str, str]
     presets: list[ImportedPresetView]
+
+
+class SlimSource(BaseModel):
+    kind: str
+    ref: str
+
+
+class SlimKey(BaseModel):
+    name: str
+    type: str
+    default: Any
+    tab: str
+    group: str
+    label: str
+    source: SlimSource | None
+    limits: tuple[float, float] | None
+    known: bool
+
+
+class SlimQuality(BaseModel):
+    name: str
+    low: float
+    high: float
+    step: float
+
+
+class SlimVariant(BaseModel):
+    encoder: str
+    depth: int
+    presets: list[str]
+    tunes: list[str]
+    profiles: list[str]
+    levels: list[str]
+    quality: SlimQuality
+
+
+class SlimFamily(BaseModel):
+    name: str
+    codec_id: int
+    multipass: bool
+    turbo: bool
+    rate_controls: list[int]
+    variants: list[SlimVariant]
+
+
+class SlimFilter(BaseModel):
+    presets: list[str]
+    tunes: list[str]
+
+
+class HandbrakeSchemaSlimView(BaseModel):
+    """What the UI needs to render the settings sidebar; no built-in preset values."""
+
+    handbrake_tag: str
+    preset_version: str
+    content_hash: str
+    keys: list[SlimKey]
+    audio_item_keys: list[SlimKey]
+    families: list[SlimFamily]
+    lists: dict[str, list[Any]]
+    audio_mixdowns_by_encoder: dict[str, list[str]]
+    filters: dict[str, SlimFilter]
+    builtin_names: list[str]
