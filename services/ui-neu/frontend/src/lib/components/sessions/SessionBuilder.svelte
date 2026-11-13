@@ -2,6 +2,7 @@
 	import type { MediaType, SessionView, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
 	import type { JoinedSession } from './sessionsData.svelte';
 	import { createSession, updateSession } from '$lib/api/sessions';
+	import type { EditorStatus } from '$lib/components/editorStatus';
 	import OutputPathField from './OutputPathField.svelte';
 	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from './sessionForm';
 
@@ -15,6 +16,10 @@
 		oncancel: () => void;
 		preselectRipId?: string;
 		preselectTranscodeId?: string;
+		/** Set when an EditorSidebar hosts the builder: the sidebar's footer owns the buttons and submits this form by id. */
+		formId?: string;
+		/** Reports the Save button's state to the hosting footer, whenever it changes. */
+		onstatus?: (status: EditorStatus) => void;
 	}
 
 	let {
@@ -26,7 +31,9 @@
 		onsaved,
 		oncancel,
 		preselectRipId,
-		preselectTranscodeId
+		preselectTranscodeId,
+		formId,
+		onstatus
 	}: Props = $props();
 
 	const MEDIA_TYPES: { value: MediaType; label: string }[] = [
@@ -68,6 +75,10 @@
 	// Built-in sessions are read-only — every field is locked, no save path.
 	const readOnly = $derived(session?.is_builtin ?? false);
 	const canSubmit = $derived(!readOnly && !!(name && ripId && template));
+
+	$effect(() => {
+		onstatus?.({ canSubmit, submitting, note: tcId ? '' : 'Rips only, no transcode step.' });
+	});
 
 	function switchMediaType(mt: MediaType) {
 		if (isEdit || readOnly) return; // immutable on edit / locked when built-in
@@ -127,8 +138,8 @@
 	}
 </script>
 
-<div role="dialog" aria-modal="true" aria-label={isEdit ? 'Edit session' : 'Create session'} class="stack stack-lg">
-	<form onsubmit={handleSubmit} class="stack stack-lg">
+<div class="stack stack-lg">
+	<form id={formId} onsubmit={handleSubmit} class="stack stack-lg">
 		{#if readOnly}
 			<div class="alert alert-warning" data-testid="sb-builtin-note" role="status">
 				This is a built-in session and can't be edited. Clone it to make an editable copy.
@@ -227,24 +238,30 @@
 			<p class="field-error">{submitError}</p>
 		{/if}
 
-		<!-- Footer -->
-		<div class="session-builder-footer">
-			<div class="session-builder-footer-note">
-				{#if !tcId}
-					Rips only, no transcode step.
-				{/if}
-			</div>
-			<div class="cluster">
-				<button type="button" onclick={oncancel} class="btn">
-					{readOnly ? 'Close' : 'Cancel'}
-				</button>
-				{#if !readOnly}
-					<button type="submit" disabled={!canSubmit || submitting} class="btn btn-primary session-builder-submit-btn">
-						{isEdit ? 'Save changes' : 'Create session'}
+		{#if !formId}
+			<!-- Footer -->
+			<div class="session-builder-footer">
+				<div class="session-builder-footer-note">
+					{#if !tcId}
+						Rips only, no transcode step.
+					{/if}
+				</div>
+				<div class="cluster">
+					<button type="button" onclick={oncancel} class="btn">
+						{readOnly ? 'Close' : 'Cancel'}
 					</button>
-				{/if}
+					{#if !readOnly}
+						<button
+							type="submit"
+							disabled={!canSubmit || submitting}
+							class="btn btn-primary session-builder-submit-btn"
+						>
+							{isEdit ? 'Save changes' : 'Create session'}
+						</button>
+					{/if}
+				</div>
 			</div>
-		</div>
+		{/if}
 	</form>
 </div>
 

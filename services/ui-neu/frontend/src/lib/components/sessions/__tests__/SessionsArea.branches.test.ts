@@ -216,7 +216,7 @@ describe('sessions', () => {
 		renderComponent(SessionsArea);
 		await screen.findByText('ses Alpha');
 		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
-		await fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 		await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit session' })).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchSessions).toHaveBeenCalledTimes(2));
 	});
@@ -259,12 +259,39 @@ describe('sessions', () => {
 });
 
 describe('presets, opening', () => {
-	it('View on a rip preset opens the rip form in the inline dialog', async () => {
+	it('View on a rip preset opens the read-only rip sidebar with its built-in note and a Clone button', async () => {
 		vi.mocked(fetchRipPresets).mockResolvedValue([{ ...makeRip(), is_builtin: true }]);
 		await renderPresetTab(/rip presets/i, 'rip r1');
 		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
-		const dialog = await screen.findByRole('dialog', { name: 'Edit rip preset' });
+		const dialog = await screen.findByRole('dialog', { name: 'View rip preset' });
 		expect(within(dialog).getByTestId('preset-name')).toHaveValue('rip r1');
+		expect(within(dialog).getByTestId('preset-name')).toBeDisabled();
+		expect(within(dialog).getByTestId('preset-builtin-note')).toBeInTheDocument();
+		expect(within(dialog).getByRole('button', { name: 'Clone' })).toBeInTheDocument();
+		expect(within(dialog).queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+		expect(document.querySelector('.sessions-area-inline-modal')).toBeNull();
+	});
+
+	it('Clone in the read-only rip sidebar copies the preset and closes the sidebar', async () => {
+		vi.mocked(fetchRipPresets).mockResolvedValue([{ ...makeRip(), is_builtin: true }]);
+		vi.mocked(createRipPreset).mockResolvedValue(makeRip('r2', 'rip r1 (copy)') as any);
+		await renderPresetTab(/rip presets/i, 'rip r1');
+		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'View rip preset' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Clone' }));
+		await waitFor(() => expect(createRipPreset).toHaveBeenCalled());
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+	});
+
+	it('a failed Clone in the read-only rip sidebar keeps the sidebar open', async () => {
+		vi.mocked(fetchRipPresets).mockResolvedValue([{ ...makeRip(), is_builtin: true }]);
+		vi.mocked(createRipPreset).mockRejectedValue(new Error('no room'));
+		await renderPresetTab(/rip presets/i, 'rip r1');
+		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'View rip preset' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Clone' }));
+		await expectToast('Clone failed', 'no room');
+		expect(screen.getByRole('dialog', { name: 'View rip preset' })).toBeInTheDocument();
 	});
 
 	it('View on a built-in transcode preset opens the sidebar read-only', async () => {
@@ -543,8 +570,8 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		vi.mocked(updateRipPreset).mockResolvedValue(makeRip() as any);
 		await renderPresetTab(/rip presets/i, 'rip r1');
 		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
-		await screen.findByRole('dialog', { name: 'Edit rip preset' });
-		await fireEvent.click(screen.getByTestId('preset-submit'));
+		const editor = await screen.findByRole('dialog', { name: 'Edit rip preset' });
+		await fireEvent.click(within(editor).getByRole('button', { name: 'Save' }));
 		await waitFor(() => expect(updateRipPreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchRipPresets).toHaveBeenCalledTimes(2));
@@ -586,7 +613,7 @@ describe('the inline dialog and the transcode preset sidebar', () => {
 		await renderPresetTab(/rip presets/i, 'rip r1');
 		await fireEvent.click(screen.getByRole('button', { name: /new rip preset/i }));
 		await screen.findByRole('dialog', { name: 'New rip preset' });
-		await fireEvent.click(screen.getByRole('button', { name: 'Close dialog' }));
+		await fireEvent.click(document.querySelector('.slide-over-scrim') as HTMLElement);
 		expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
 	});
 

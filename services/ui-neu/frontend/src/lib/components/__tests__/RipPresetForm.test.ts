@@ -242,3 +242,31 @@ describe('RipPresetForm', () => {
 		});
 	});
 });
+
+describe('RipPresetForm inside a sidebar (formId)', () => {
+	afterEach(cleanup);
+
+	it('takes the id, and leaves the title and the buttons to the sidebar', () => {
+		const { container } = renderComponent(RipPresetForm, {
+			props: { onsaved: vi.fn(), oncancel: vi.fn(), formId: 'f1' }
+		});
+		expect(container.querySelector('form#f1')).not.toBeNull();
+		expect(screen.queryByRole('heading')).toBeNull();
+		expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+		expect(screen.queryByTestId('preset-submit')).toBeNull();
+	});
+
+	it('submits from outside through the form attribute', async () => {
+		createRipPresetMock.mockResolvedValue(resultPreset());
+		const onsaved = vi.fn();
+		renderComponent(RipPresetForm, { props: { onsaved, oncancel: vi.fn(), formId: 'f1' } });
+		await fireEvent.input(screen.getByTestId('preset-name'), { target: { value: 'N' } });
+		const external = document.createElement('button');
+		external.type = 'submit';
+		external.setAttribute('form', 'f1');
+		document.body.appendChild(external);
+		await fireEvent.click(external);
+		await waitFor(() => expect(onsaved).toHaveBeenCalledWith(resultPreset()));
+		external.remove();
+	});
+});

@@ -3,7 +3,7 @@
 	// the schema-driven HandBrake settings below it, and one Save that writes
 	// both. Built-in presets open read-only.
 	import { onMount } from 'svelte';
-	import SlideOver from '$lib/components/SlideOver.svelte';
+	import EditorSidebar from '$lib/components/EditorSidebar.svelte';
 	import LoadState from '$lib/components/LoadState.svelte';
 	import PresetBlock from './PresetBlock.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
@@ -116,7 +116,7 @@
 	}
 </script>
 
-<SlideOver bind:open title={sidebarTitle(mode)} width="preset-sidebar-panel" stacked {onclose}>
+<EditorSidebar bind:open title={sidebarTitle(mode)} width="wide" stacked {onclose}>
 	{#snippet headerActions()}
 		<button type="button" class="btn btn-sm" disabled={readonly || importing} onclick={() => (importing = true)}
 			>Import HandBrake preset</button
@@ -187,29 +187,26 @@
 			{:else if draft.tool === 'handbrake'}
 				<p class="field-help">{VAAPI_NOTE}</p>
 			{/if}
-
-			<footer class="preset-sidebar-footer">
-				{#if note}<p class="preset-sidebar-note">{note}</p>{/if}
-				<div class="preset-sidebar-actions">
-					<span class="preset-sidebar-usage">{usageLabel(usage)}</span>
-					<button type="button" class="btn btn-ghost" onclick={onclose}>{readonly ? 'Close' : 'Cancel'}</button>
-					{#if !readonly}
-						<button type="button" class="btn btn-primary" disabled={!canSave} onclick={save}
-							>{submitting ? 'Saving...' : 'Save preset'}</button
-						>
-					{/if}
-				</div>
-			</footer>
 		</div>
 	{/if}
-</SlideOver>
+
+	{#snippet footer()}
+		{#if !importing}
+			{#if note}<p class="preset-sidebar-note">{note}</p>{/if}
+			<div class="preset-sidebar-actions">
+				<span class="preset-sidebar-usage">{usageLabel(usage)}</span>
+				<button type="button" class="btn btn-ghost" onclick={onclose}>{readonly ? 'Close' : 'Cancel'}</button>
+				{#if !readonly}
+					<button type="button" class="btn btn-primary" disabled={!canSave} onclick={save}
+						>{submitting ? 'Saving...' : 'Save preset'}</button
+					>
+				{/if}
+			</div>
+		{/if}
+	{/snippet}
+</EditorSidebar>
 
 <style>
-	/* :global because SlideOver renders the panel; 640 px instead of the block's 32rem. */
-	:global(.slide-over-panel.preset-sidebar-panel) {
-		width: 100%;
-		max-width: 40rem;
-	}
 	.preset-sidebar {
 		display: flex;
 		flex-direction: column;
@@ -229,17 +226,6 @@
 	.preset-sidebar-settings {
 		padding-top: 0.75rem;
 		border-top: 1px solid var(--color-border);
-	}
-	.preset-sidebar-footer {
-		position: sticky;
-		bottom: -1.5rem;
-		display: flex;
-		flex-direction: column;
-		gap: 0.5rem;
-		margin: 0 -1.5rem -1.5rem;
-		padding: 0.75rem 1.5rem;
-		border-top: 1px solid var(--color-border);
-		background: var(--color-surface);
 	}
 	.preset-sidebar-note {
 		font-size: 0.875rem;

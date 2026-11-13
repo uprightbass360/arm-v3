@@ -107,3 +107,16 @@ it('edit mode seeds overrides_json into the textarea', async () => {
 	const textarea = screen.getByLabelText(/overrides json/i) as HTMLTextAreaElement;
 	expect(textarea.value).toContain('"foo"');
 });
+
+it('inside a sidebar (formId) it keeps its own footer out of the body and submits by id', async () => {
+	const { container } = renderComponent(SessionBuilder, props({ formId: 'sf' }));
+	expect(container.querySelector('form#sf')).not.toBeNull();
+	expect(screen.queryByRole('button', { name: /cancel/i })).toBeNull();
+	expect(screen.queryByRole('button', { name: /create session/i })).toBeNull();
+});
+
+it('standalone, a built-in session offers Close and no save button', () => {
+	renderComponent(SessionBuilder, props({ session: { id: 's', name: 'b', media_type: 'movie', is_builtin: true } }));
+	expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+	expect(screen.queryByRole('button', { name: /create session|save changes/i })).toBeNull();
+});

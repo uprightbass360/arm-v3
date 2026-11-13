@@ -10,6 +10,8 @@
 		title: string;
 		/** Panel body. */
 		children: Snippet;
+		/** Optional footer, pinned below the scrolling body. */
+		footer?: Snippet;
 		/** Optional extra header content (right of the title, before the close button). */
 		headerActions?: Snippet;
 		/** Width utility for the panel (defaults to a comfortable form width). */
@@ -24,6 +26,7 @@
 		open = $bindable(false),
 		title,
 		children,
+		footer,
 		headerActions,
 		width = 'max-w-lg',
 		onclose,
@@ -39,7 +42,10 @@
 	$effect(() => {
 		if (!open) return;
 		function onKeydown(e: KeyboardEvent) {
-			if (e.key === 'Escape') close();
+			if (e.key !== 'Escape') return;
+			// Escape dismisses the topmost panel only: a lower one waits while a stacked one is open.
+			if (!stacked && document.querySelector('[role="dialog"][data-stacked="true"]')) return;
+			close();
 		}
 		document.addEventListener('keydown', onKeydown);
 		return () => document.removeEventListener('keydown', onKeydown);
@@ -72,6 +78,8 @@
 			<div class="flex-1 overflow-y-auto p-6">
 				{@render children()}
 			</div>
+
+			{#if footer}{@render footer()}{/if}
 		</div>
 	</div>
 {/if}

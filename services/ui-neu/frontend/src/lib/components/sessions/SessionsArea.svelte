@@ -6,7 +6,7 @@
 	import PresetLibrary from './PresetLibrary.svelte';
 	import RoutingMatrix from './RoutingMatrix.svelte';
 	import SessionBuilderSlideOver from './SessionBuilderSlideOver.svelte';
-	import InlinePresetDialog from './InlinePresetDialog.svelte';
+	import RipPresetSidebar from './RipPresetSidebar.svelte';
 	import PresetSidebar from '$lib/components/handbrake/PresetSidebar.svelte';
 	import type { SidebarMode } from '$lib/handbrake/sidebarModel';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
@@ -57,14 +57,13 @@
 	let builderOpen = $state(false);
 	let editing = $state<JoinedSession | null>(null);
 
-	// Rip presets: the inline-create / inline-edit stacked dialog, open while
-	// ripDialogOpen; ripPreset carries the preset to edit, null to create one.
-	let ripDialogOpen = $state(false);
-	let ripPreset = $state<RipPresetView | null>(null);
+	// Rip presets: the rip preset sidebar, open while set; its preset is the one
+	// to view or edit, null to create one.
+	let ripSidebar = $state<{ preset: RipPresetView | null } | null>(null);
 	// Transcode presets: the preset sidebar, open while set.
 	let sidebar = $state<{ preset: TranscodePresetView | null; mode: SidebarMode } | null>(null);
 	// The preset whose editor is open, highlighted in its table.
-	const activePresetId = $derived(sidebar?.preset?.id ?? ripPreset?.id ?? null);
+	const activePresetId = $derived(sidebar?.preset?.id ?? ripSidebar?.preset?.id ?? null);
 	// The session whose builder is open, highlighted in its table.
 	const activeSessionId = $derived(builderOpen ? (editing?.id ?? null) : null);
 	let preselectRipId = $state<string | undefined>(undefined);
@@ -136,20 +135,23 @@
 
 	// ── Preset library callbacks ───────────────────────────────────────────────
 
-	// View/Edit: a rip preset opens the stacked dialog, a transcode preset the
-	// sidebar (read-only for a built-in). PresetLibrary passes (preset); the
+	// View/Edit: each kind of preset opens its sidebar (read-only for a built-in). PresetLibrary passes (preset); the
 	// kind is inferred from the preset shape.
 	function openPresetForm(p: RipPresetView | TranscodePresetView) {
 		if (isRipPreset(p)) {
-			ripDialogOpen = true;
-			ripPreset = p;
+			ripSidebar = { preset: p };
 		} else {
 			sidebar = { preset: p, mode: p.is_builtin ? 'view' : 'edit' };
 		}
 	}
 
-	async function handleCloneRipPreset(p: RipPresetView) {
-		await reloadAfter(() => createRipPreset(ripPresetCopy(p)), 'Clone failed');
+	function handleCloneRipPreset(p: RipPresetView): Promise<boolean> {
+		return reloadAfter(() => createRipPreset(ripPresetCopy(p)), 'Clone failed');
+	}
+
+	// Cloning from the read-only sidebar leaves the original's sidebar once the copy exists.
+	async function cloneFromSidebar(p: RipPresetView) {
+		if (await handleCloneRipPreset(p)) closeRipSidebar();
 	}
 
 	async function handleCloneTranscodePreset(p: TranscodePresetView) {
@@ -180,16 +182,15 @@
 		// A failed delete keeps its editor open; a deleted preset has nothing left to edit.
 		if (deleted && target.id === activePresetId) {
 			closeSidebar();
-			closeRipDialog();
+			closeRipSidebar();
 		}
 	}
 
-	// ── Inline-create / inline-edit callbacks ─────────────────────────────────
+	// ── Preset sidebar callbacks ──────────────────────────────────────────────
 
-	// Opens an empty rip preset dialog.
+	// Opens the sidebar on a new rip preset.
 	function openNewRipPreset() {
-		ripDialogOpen = true;
-		ripPreset = null;
+		ripSidebar = { preset: null };
 	}
 
 	// Opens the sidebar on a new transcode preset.
@@ -197,9 +198,8 @@
 		sidebar = { preset: null, mode: 'new' };
 	}
 
-	function closeRipDialog() {
-		ripDialogOpen = false;
-		ripPreset = null;
+	function closeRipSidebar() {
+		ripSidebar = null;
 	}
 
 	function closeSidebar() {
@@ -207,8 +207,8 @@
 	}
 
 	async function handleRipPresetSaved(p: RipPresetView) {
-		const wasCreating = ripPreset === null;
-		closeRipDialog();
+		const wasCreating = ripSidebar?.preset === null;
+		closeRipSidebar();
 		await data.load();
 		// Only pre-select when creating a new preset (not when editing an existing one)
 		if (wasCreating) {
@@ -319,9 +319,17 @@
 	/>
 {/if}
 
-<!-- ── Rip preset: inline-create / inline-edit stacked dialog ────────── -->
-{#if ripDialogOpen}
-	<InlinePresetDialog preset={ripPreset} onsaved={handleRipPresetSaved} onclose={closeRipDialog} />
+<!-- ── Rip preset sidebar ─────────────────────────────────────────────── -->
+{#if ripSidebar}
+	<RipPresetSidebar
+		preset={ripSidebar.preset}
+		readOnly={ripSidebar.preset?.is_builtin ?? false}
+		stacked={builderOpen}
+		usage={ripSidebar.preset ? data.ripUsage(ripSidebar.preset.id) : 0}
+		onclone={cloneFromSidebar}
+		onsaved={handleRipPresetSaved}
+		onclose={closeRipSidebar}
+	/>
 {/if}
 
 <!-- ── Transcode preset sidebar ───────────────────────────────────────── -->
