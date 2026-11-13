@@ -66,6 +66,11 @@ export function fieldOptions(
 	return [...base, ...extras] as Array<string | number>;
 }
 
+// The label the schema gives an option value, else the value itself.
+export function optionLabel(key: SlimKey, value: string | number): string {
+	return key.option_labels?.[String(value)] ?? String(value);
+}
+
 export function keysForTab(schema: HandbrakeSchemaSlimView, tab: TabId): SlimKey[] {
 	return schema.keys.filter((k) => k.tab === tab);
 }

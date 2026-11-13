@@ -86,9 +86,16 @@ describe('TunableField', () => {
 	it('renders a text input and emits the text', async () => {
 		const { onchange } = mount('PresetName', { inherited: 'abc' });
 		const input = screen.getByLabelText(key('PresetName').label) as HTMLInputElement;
-		expect(input.value).toBe('abc');
+		expect(input.value).toBe('');
+		expect(input.placeholder).toBe('abc');
 		await fireEvent.change(input, { target: { value: 'xyz' } });
 		expect(onchange).toHaveBeenCalledWith('xyz');
+	});
+
+	it('shows a stored text value in the text input', () => {
+		mount('PresetName', { stored: true, value: 'mine', inherited: 'abc' });
+		const input = screen.getByLabelText(key('PresetName').label) as HTMLInputElement;
+		expect([input.value, input.placeholder]).toEqual(['mine', '']);
 	});
 
 	it('renders a list of strings as chips and emits string[]', async () => {
@@ -160,5 +167,59 @@ describe('TunableField idPrefix and range', () => {
 		mount('VideoQualitySlider', { range: { min: 1, max: 51, step: 0.5 } });
 		const input = document.getElementById('tunable-VideoQualitySlider') as HTMLInputElement;
 		expect([input.min, input.max, input.step]).toEqual(['1', '51', '0.5']);
+	});
+});
+
+describe('TunableField fidelity', () => {
+	afterEach(() => cleanup());
+	const labelled = (): SlimKey => ({
+		...key('VideoQualityType'),
+		option_labels: { '1': 'Average bitrate', '2': 'Constant quality' }
+	});
+
+	it('renders option labels, keeps raw values and emits numbers', async () => {
+		const { onchange } = mount('VideoQualityType', { key: labelled(), options: [1, 2], inherited: 1 });
+		const select = screen.getByLabelText(labelled().label) as HTMLSelectElement;
+		expect(screen.getByRole('option', { name: 'Constant quality' })).toHaveValue('2');
+		expect(select.value).toBe('1');
+		await fireEvent.change(select, { target: { value: '2' } });
+		expect(onchange).toHaveBeenCalledWith(2);
+	});
+
+	it('falls back to the value when an option has no label', () => {
+		mount('VideoQualityType', { key: labelled(), options: [1, 7], inherited: 7 });
+		expect(screen.getByRole('option', { name: '7' })).toHaveValue('7');
+	});
+
+	it('selects the inherited value of an unstored select', () => {
+		mount('VideoQualityType', { options: ['fast', 'medium'], inherited: 'medium' });
+		expect((screen.getByLabelText(key('VideoQualityType').label) as HTMLSelectElement).value).toBe('medium');
+	});
+
+	it('shows the inherited number as a placeholder with an empty value', () => {
+		mount('PictureWidth', { inherited: 1920 });
+		const input = screen.getByLabelText(key('PictureWidth').label) as HTMLInputElement;
+		expect([input.value, input.placeholder]).toEqual(['', '1920']);
+	});
+
+	it('keeps the checkbox and its label on one line', () => {
+		mount('ChapterMarkers');
+		const box = screen.getByRole('checkbox', { name: key('ChapterMarkers').label });
+		expect(box.closest('.tunable-field-inline')).toContainElement(screen.getByText(key('ChapterMarkers').label));
+	});
+
+	it('shows the key name under the control', () => {
+		mount('VideoQualityType', { options: [1, 2] });
+		expect(screen.getByText('VideoQualityType')).toHaveClass('tunable-field-key');
+	});
+
+	it('marks a stored field and offers Reset; an inherited one has neither', () => {
+		const stored = mount('PictureWidth', { stored: true, value: 1 });
+		expect(stored.container.querySelector('.tunable-field')).toHaveClass('tunable-field-stored');
+		expect(screen.getByRole('button', { name: 'Reset' })).toBeInTheDocument();
+		stored.unmount();
+		const inherited = mount('PictureWidth', { inherited: 2 });
+		expect(inherited.container.querySelector('.tunable-field')).not.toHaveClass('tunable-field-stored');
+		expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
 	});
 });

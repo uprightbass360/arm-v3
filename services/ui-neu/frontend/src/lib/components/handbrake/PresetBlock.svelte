@@ -74,9 +74,10 @@
 </script>
 
 <div class="preset-block">
-	<label class="field preset-block-wide">
-		<span class="field-label">Name</span>
+	<div class="field preset-block-wide">
+		<label class="field-label" for="tp-name">Name</label>
 		<input
+			id="tp-name"
 			data-testid="tp-name"
 			type="text"
 			required
@@ -84,11 +85,12 @@
 			disabled={readonly}
 			oninput={(e) => onfield('name', value(e))}
 		/>
-	</label>
+	</div>
 
-	<label class="field">
-		<span class="field-label">Media type</span>
+	<div class="field">
+		<label class="field-label" for="tp-media-type">Media type</label>
 		<select
+			id="tp-media-type"
 			data-testid="tp-media-type"
 			value={draft.media_type}
 			disabled={readonly || editing}
@@ -100,20 +102,27 @@
 			<option value="data">Data</option>
 			<option value="iso">ISO</option>
 		</select>
-	</label>
+	</div>
 
-	<label class="field">
-		<span class="field-label">Tool</span>
-		<select data-testid="tp-tool" value={draft.tool} disabled={readonly} onchange={(e) => onfield('tool', value(e))}>
+	<div class="field">
+		<label class="field-label" for="tp-tool">Tool</label>
+		<select
+			id="tp-tool"
+			data-testid="tp-tool"
+			value={draft.tool}
+			disabled={readonly}
+			onchange={(e) => onfield('tool', value(e))}
+		>
 			<option value="handbrake">HandBrake</option>
 			<option value="abcde">abcde</option>
 			<option value="none">None</option>
 		</select>
-	</label>
+	</div>
 
-	<label class="field">
-		<span class="field-label">Container</span>
+	<div class="field">
+		<label class="field-label" for="tp-container">Container</label>
 		<select
+			id="tp-container"
 			data-testid="tp-container"
 			value={draft.container}
 			disabled={readonly}
@@ -131,11 +140,12 @@
 		{#if usesFfmpegVaapi}
 			<p class="field-help" data-testid="tp-container-vaapi-note">AMD VAAPI encoders write MKV or MP4.</p>
 		{/if}
-	</label>
+	</div>
 
-	<label class="field">
-		<span class="field-label">Encoder</span>
+	<div class="field">
+		<label class="field-label" for="tp-encoder">Encoder</label>
 		<select
+			id="tp-encoder"
 			data-testid="tp-encoder"
 			value={draft.encoder}
 			disabled={readonly || encoderLocked || encodersStore.loading}
@@ -163,13 +173,14 @@
 		{#if encoderHint}
 			<p class="field-help" data-testid="tp-encoder-hint">{encoderHint}</p>
 		{/if}
-	</label>
+	</div>
 
 	<!-- The base preset is a select of HandBrake's built-ins once a schema is loaded; free text otherwise. -->
 	{#if draft.tool === 'handbrake' && builtinNames}
-		<label class="field">
-			<span class="field-label">Base preset</span>
+		<div class="field">
+			<label class="field-label" for="tp-preset-ref">Base preset</label>
 			<select
+				id="tp-preset-ref"
 				data-testid="tp-preset-ref"
 				value={draft.preset_ref ?? ''}
 				disabled={readonly}
@@ -181,11 +192,12 @@
 				{/each}
 			</select>
 			{@render refNotes()}
-		</label>
+		</div>
 	{:else}
-		<label class="field">
-			<span class="field-label">Preset ref</span>
+		<div class="field">
+			<label class="field-label" for="tp-preset-ref">Preset ref</label>
 			<input
+				id="tp-preset-ref"
 				data-testid="tp-preset-ref"
 				type="text"
 				value={draft.preset_ref ?? ''}
@@ -193,12 +205,13 @@
 				onchange={(e) => onfield('preset_ref', value(e))}
 			/>
 			{@render refNotes()}
-		</label>
+		</div>
 	{/if}
 
-	<label class="field">
-		<span class="field-label">{usesFfmpegVaapi ? 'ffmpeg arguments' : 'Extra args'}</span>
+	<div class="field">
+		<label class="field-label" for="tp-extra-args">{usesFfmpegVaapi ? 'ffmpeg arguments' : 'Extra args'}</label>
 		<input
+			id="tp-extra-args"
 			data-testid="tp-extra-args"
 			type="text"
 			value={draft.extra_args}
@@ -208,7 +221,7 @@
 		{#if showTabs(draft)}
 			<p class="field-help">Flags here are added last and override the settings below.</p>
 		{/if}
-	</label>
+	</div>
 
 	{#if clearsSettings(draft)}
 		<p class="alert alert-warning preset-block-wide" role="status">{CLEARED_NOTE}</p>

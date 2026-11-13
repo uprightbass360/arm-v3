@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderComponent, screen, cleanup } from '$lib/test-utils';
+import { renderComponent, screen, cleanup, within } from '$lib/test-utils';
 import { fireEvent } from '@testing-library/svelte';
 import type { HandbrakeSchemaSlimView, SettingIssue } from '$lib/types/api.gen';
 import fixture from '$lib/handbrake/__tests__/fixtures/slim-schema.json';
@@ -36,7 +36,8 @@ describe('SettingsTabs', () => {
 		mount({ settings: { common: { PictureWidth: 1, PictureHeight: 2 }, encoders: {} } });
 		expect(tab('Dimensions')).toHaveTextContent('2');
 		expect(tab('Audio').textContent).not.toMatch(/\d/);
-		expect(tab('Audio')).toHaveAttribute('data-dim', 'false');
+		expect(tab('Audio')).toHaveClass('settings-tab-dim');
+		expect(tab('Dimensions')).not.toHaveClass('settings-tab-dim');
 	});
 
 	it('shows a warning glyph on a tab with an issue', () => {
@@ -48,14 +49,15 @@ describe('SettingsTabs', () => {
 		expect(tab('Dimensions').querySelector('svg')).not.toBeNull();
 		expect(tab('Audio').querySelector('svg')).not.toBeNull();
 		expect(tab('Video').querySelector('svg')).toBeNull();
+		expect(within(tab('Dimensions')).getByRole('img', { name: 'Has issues' })).toBeInTheDocument();
 	});
 
 	it('counts matches per tab, dims tabs with none and jumps to the first match', async () => {
 		const { ontab } = mount({ tab: 'summary' });
 		await fireEvent.input(screen.getByPlaceholderText('Filter settings'), { target: { value: 'PictureWidth' } });
 		expect(tab('Dimensions')).toHaveTextContent('1');
-		expect(tab('Video')).toHaveAttribute('data-dim', 'true');
-		expect(tab('Dimensions')).toHaveAttribute('data-dim', 'false');
+		expect(tab('Video')).toHaveClass('settings-tab-dim');
+		expect(tab('Dimensions')).not.toHaveClass('settings-tab-dim');
 		expect(ontab).toHaveBeenCalledWith('dimensions');
 	});
 

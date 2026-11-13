@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { HandbrakeSchemaSlimView, SlimKey } from '$lib/types/api.gen';
 import fixture from './fixtures/slim-schema.json';
-import { TABS, fieldKind, fieldOptions, keysForTab, numberLimits } from '../fields';
+import { TABS, fieldKind, fieldOptions, keysForTab, numberLimits, optionLabel } from '../fields';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
 const key = (name: string): SlimKey => {
@@ -128,5 +128,20 @@ describe('tabs', () => {
 		const names = keysForTab(schema, 'chapters').map((k) => k.name);
 		expect(names).toEqual(['ChapterMarkers']);
 		expect(keysForTab(schema, 'filters').every((k) => k.tab === 'filters')).toBe(true);
+	});
+});
+
+describe('optionLabel', () => {
+	const key = {
+		name: 'VideoQualityType',
+		option_labels: { '1': 'Average bitrate', '2': 'Constant quality' }
+	} as unknown as SlimKey;
+
+	it('returns the schema label for a value', () => {
+		expect(optionLabel(key, 2)).toBe('Constant quality');
+	});
+	it('falls back to the value, with or without a label map', () => {
+		expect(optionLabel(key, 7)).toBe('7');
+		expect(optionLabel({ name: 'X' } as unknown as SlimKey, 'a')).toBe('a');
 	});
 });

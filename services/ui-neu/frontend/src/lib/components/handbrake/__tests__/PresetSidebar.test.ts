@@ -148,9 +148,9 @@ describe('base preset', () => {
 		await fireEvent.change(base, { target: { value: 'Fast 1080p30' } });
 		await waitFor(() => expect(fetchBuiltinPreset).toHaveBeenCalledWith('Fast 1080p30'));
 		await openTab('Dimensions');
-		await waitFor(() => expect(screen.getByLabelText('Maximum height')).toHaveValue(1080));
+		await waitFor(() => expect(screen.getByLabelText('Maximum height')).toHaveAttribute('placeholder', '1080'));
 		await fireEvent.change(base, { target: { value: '' } });
-		expect(screen.getByLabelText('Maximum height')).toHaveValue(0);
+		expect(screen.getByLabelText('Maximum height')).toHaveAttribute('placeholder', '0');
 		await fireEvent.change(base, { target: { value: 'Fast 1080p30' } });
 		expect(fetchBuiltinPreset).toHaveBeenCalledTimes(1);
 	});
@@ -161,7 +161,7 @@ describe('base preset', () => {
 		await ready();
 		await waitFor(() => expect(fetchBuiltinPreset).toHaveBeenCalledWith('Fast 480p30'));
 		await openTab('Dimensions');
-		expect(screen.getByLabelText('Maximum height')).toHaveValue(0);
+		expect(screen.getByLabelText('Maximum height')).toHaveAttribute('placeholder', '0');
 	});
 
 	it('does not fetch a profile name for abcde', async () => {

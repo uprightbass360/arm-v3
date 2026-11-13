@@ -260,3 +260,22 @@ describe('hardware hint', () => {
 		expect(screen.queryByTestId('tp-encoder-hint')).not.toBeInTheDocument();
 	});
 });
+
+describe('PresetBlock accessible labels', () => {
+	afterEach(() => cleanup());
+	it('labels every control by name', () => {
+		renderComponent(PresetBlock, {
+			props: {
+				draft: initialDraft(null),
+				readonly: false,
+				editing: false,
+				builtinNames: ['Fast 1080p30'],
+				issues: [],
+				onfield: vi.fn()
+			}
+		});
+		for (const name of ['Name', 'Media type', 'Tool', 'Container', 'Encoder', 'Base preset', 'Extra args']) {
+			expect(screen.getByLabelText(name)).toBeInTheDocument();
+		}
+	});
+});
