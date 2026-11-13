@@ -157,6 +157,60 @@ describe('sessions', () => {
 		expect(screen.getByRole('heading', { name: 'View session' })).toBeInTheDocument();
 	});
 
+	async function confirmSessionDelete() {
+		const dialog = await screen.findByRole('dialog', { name: 'Delete session' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+	}
+	const rowOf = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
+
+	it('highlights the row of the session whose builder is open', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		expect(rowOf('ses Alpha')).not.toHaveAttribute('aria-current');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		expect(rowOf('ses Alpha')).toHaveAttribute('aria-current', 'true');
+	});
+
+	it('highlights no row while a new session is being built', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		await fireEvent.click(screen.getByRole('button', { name: /new session/i }));
+		expect(rowOf('ses Alpha')).not.toHaveAttribute('aria-current');
+	});
+
+	it('deleting the session open in the builder closes the builder', async () => {
+		vi.mocked(deleteSession).mockResolvedValue(undefined);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await fireEvent.click(within(rowOf('ses Alpha')).getByRole('button', { name: 'Delete' }));
+		await confirmSessionDelete();
+		await waitFor(() => expect(screen.queryByRole('heading', { name: 'Edit session' })).not.toBeInTheDocument());
+	});
+
+	it('a delete that fails keeps the open builder', async () => {
+		vi.mocked(deleteSession).mockRejectedValue(new Error('boom'));
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await fireEvent.click(within(rowOf('ses Alpha')).getByRole('button', { name: 'Delete' }));
+		await confirmSessionDelete();
+		await expectToast('Delete failed', 'boom');
+		expect(screen.getByRole('heading', { name: 'Edit session' })).toBeInTheDocument();
+	});
+
+	it('deleting a session other than the open one keeps the builder', async () => {
+		vi.mocked(fetchSessions).mockResolvedValue([makeSession('s1', 'ses Alpha'), makeSession('s2', 'ses Beta')]);
+		vi.mocked(deleteSession).mockResolvedValue(undefined);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Beta');
+		await fireEvent.click(within(rowOf('ses Alpha')).getByRole('button', { name: 'Edit' }));
+		await fireEvent.click(within(rowOf('ses Beta')).getByRole('button', { name: 'Delete' }));
+		await confirmSessionDelete();
+		await waitFor(() => expect(deleteSession).toHaveBeenCalledWith('s2'));
+		expect(screen.getByRole('heading', { name: 'Edit session' })).toBeInTheDocument();
+	});
+
 	it('saving from the builder closes it and reloads', async () => {
 		vi.mocked(updateSession).mockResolvedValue(makeSession() as any);
 		renderComponent(SessionsArea);

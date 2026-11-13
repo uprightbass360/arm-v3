@@ -50,7 +50,9 @@
 								{:else if cell.pill}
 									<span class="badge badge-sm data-table-tag" data-tone={cell.pill.tone}>{cell.text}</span>
 								{:else}
-									<span class="data-table-text" title={cell.text}>{cell.text}</span>
+									<span class={cell.mono ? 'data-table-text mono' : 'data-table-text'} title={cell.text}
+										>{cell.text}</span
+									>
 								{/if}
 								{#each cell.badges ?? [] as badge (badge.text)}
 									<span class={BADGE_CLASS[badge.tone]}>{badge.text}</span>

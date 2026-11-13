@@ -1,7 +1,7 @@
 // The columns of the Rip presets and Transcode presets tables, and the
 // action rules their action cell shares. Each column turns one preset into
 // the text, sub line and badges its cell shows; DataTable only draws them.
-import type { MediaType, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
+import type { MediaType, RipPresetView, SessionView, TranscodePresetView } from '$lib/types/api.gen';
 import {
 	humanizeContainer,
 	humanizeMediaType,
@@ -22,6 +22,8 @@ export type CellContent = {
 	pill?: { tone: PillTone };
 	sub?: string;
 	muted?: boolean;
+	/** Draw the text in the monospace face (paths). */
+	mono?: boolean;
 	badges?: Array<{ text: string; tone: BadgeTone }>;
 };
 
@@ -133,4 +135,41 @@ export function deleteGuard(preset: { is_builtin: boolean }, usedBy: number): { 
 	if (preset.is_builtin) return { disabled: true, title: 'Built-in preset: clone to edit or remove' };
 	if (usedBy > 0) return { disabled: true, title: `Used by ${usedBy} session(s): repoint them first` };
 	return { disabled: false };
+}
+
+const NO_TRANSCODE: CellContent = { text: 'No transcode', muted: true };
+
+/** How a session's cells reach the presets it points at, and its sample output path. */
+export interface SessionLookup {
+	rip: (id: string) => RipPresetView | undefined;
+	transcode: (id: string | null) => TranscodePresetView | undefined;
+	samplePath: (session: SessionView) => string;
+}
+
+function ripPresetCell(session: SessionView, lookup: SessionLookup): CellContent {
+	const preset = lookup.rip(session.rip_preset_id);
+	if (!preset) return { text: session.rip_preset_id };
+	const sub = `${humanizeTrackSelection(preset.track_selection)} | ${humanizeOutputMode(preset.output_mode)}`;
+	return { text: preset.name, sub };
+}
+
+// Only the parts the preset sets: a passthrough preset uses the tool's own
+// encoder, so it reads "ISO", not "ISO | ".
+function transcodePresetCell(session: SessionView, lookup: SessionLookup): CellContent {
+	const preset = lookup.transcode(session.transcode_preset_id);
+	if (!preset) return NO_TRANSCODE;
+	const sub = [humanizeContainer(preset.container), encoderLabel(preset.encoder)].filter((v) => !!v).join(' | ');
+	return { text: preset.name, sub };
+}
+
+/** The Sessions table's columns. `lookup` resolves a session's presets and sample path. */
+export function sessionColumns(lookup: SessionLookup): TableColumn<SessionView>[] {
+	return [
+		{ id: 'name', header: 'Session', cell: (s) => ({ text: s.name }) },
+		{ id: 'media', header: 'Media', cell: mediaCell },
+		{ id: 'type', header: 'Type', cell: typeCell },
+		{ id: 'rip', header: 'Rip preset', cell: (s) => ripPresetCell(s, lookup) },
+		{ id: 'transcode', header: 'Transcode preset', cell: (s) => transcodePresetCell(s, lookup) },
+		{ id: 'output', header: 'Output path (sample)', cell: (s) => ({ text: lookup.samplePath(s), mono: true }) }
+	];
 }

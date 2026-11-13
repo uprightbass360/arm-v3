@@ -5,7 +5,7 @@ vi.mock('$lib/stores/encoders.svelte', () => ({
 		id === 'any_h265' ? 'Any GPU H.265' : id === 'preset' ? '' : (id ?? '')
 }));
 
-import { deleteGuard, openLabel, ripPresetColumns, transcodePresetColumns } from '../tableColumns';
+import { deleteGuard, openLabel, ripPresetColumns, sessionColumns, transcodePresetColumns } from '../tableColumns';
 
 const rip = (over = {}) => ({
 	id: 'r1',
@@ -209,5 +209,82 @@ describe('deleteGuard', () => {
 
 	it('leaves Delete on for an unused custom preset', () => {
 		expect(deleteGuard({ is_builtin: false }, 0)).toEqual({ disabled: false });
+	});
+});
+
+describe('sessionColumns', () => {
+	const session = (over = {}) =>
+		({
+			id: 's1',
+			name: 'Custom Plex 720p',
+			media_type: 'movie',
+			is_builtin: false,
+			rip_preset_id: 'r1',
+			transcode_preset_id: 't1',
+			output_path_template: 'x/{title}.{ext}',
+			overrides_json: null,
+			...over
+		}) as any;
+	const lookup = {
+		rip: (id: string) => (id === 'r1' ? (rip() as any) : undefined),
+		transcode: (id: string | null) =>
+			id === 't1' ? (transcode({ container: 'mkv', encoder: 'any_h265' }) as any) : undefined,
+		samplePath: (s: any) => `sample/${s.id}.mkv`
+	};
+	const cols = sessionColumns(lookup);
+	const cellOf = (id: string, s = session()) => cols.find((c) => c.id === id)!.cell(s);
+
+	it('has the mockup columns in order', () => {
+		expect(cols.map((c) => c.header)).toEqual([
+			'Session',
+			'Media',
+			'Type',
+			'Rip preset',
+			'Transcode preset',
+			'Output path (sample)'
+		]);
+	});
+
+	it('shows the session name', () => {
+		expect(cellOf('name')).toEqual({ text: 'Custom Plex 720p' });
+	});
+
+	it('shows media as a pill', () => {
+		expect(cellOf('media')).toEqual({ text: 'Movie', pill: { tone: 'movie' } });
+	});
+
+	it('marks custom and built-in sessions with the Type tag', () => {
+		expect(cellOf('type').pill).toEqual({ tone: 'custom' });
+		expect(cellOf('type', session({ is_builtin: true })).pill).toEqual({ tone: 'builtin' });
+	});
+
+	it('names the rip preset with its summary under it', () => {
+		expect(cellOf('rip')).toEqual({ text: 'Movie: Main Feature', sub: 'Main feature | Tracks' });
+	});
+
+	it('falls back to the preset id when the rip preset is missing', () => {
+		expect(cellOf('rip', session({ rip_preset_id: 'gone' }))).toEqual({ text: 'gone' });
+	});
+
+	it('names the transcode preset with container and encoder under it', () => {
+		expect(cellOf('transcode')).toEqual({ text: 'H.265 MKV', sub: 'MKV | Any GPU H.265' });
+	});
+
+	it('leaves the encoder out of the summary when the preset has none', () => {
+		const bare = sessionColumns({
+			...lookup,
+			transcode: () => transcode({ container: 'iso', encoder: 'preset' }) as any
+		});
+		expect(bare.find((c) => c.id === 'transcode')!.cell(session()).sub).toBe('ISO');
+	});
+
+	it('says No transcode, muted, when the session has none or its preset is missing', () => {
+		const none = { text: 'No transcode', muted: true };
+		expect(cellOf('transcode', session({ transcode_preset_id: null }))).toEqual(none);
+		expect(cellOf('transcode', session({ transcode_preset_id: 'gone' }))).toEqual(none);
+	});
+
+	it('shows the sample output path in monospace', () => {
+		expect(cellOf('output')).toEqual({ text: 'sample/s1.mkv', mono: true });
 	});
 });

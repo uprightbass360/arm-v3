@@ -119,4 +119,14 @@ describe('DataTable', () => {
 		expect(builtin).toHaveAttribute('data-tone', 'builtin');
 		expect(screen.getAllByText('Custom')[0]).toHaveAttribute('data-tone', 'custom');
 	});
+
+	it('draws a mono cell in the monospace face and a plain cell without it', () => {
+		const columns = [
+			{ id: 'p', header: 'Path', cell: () => ({ text: 'a/b.mkv', mono: true }) },
+			{ id: 'n', header: 'Name', cell: () => ({ text: 'plain' }) }
+		];
+		renderComponent(DataTableHarness, { rows, columns });
+		expect(screen.getAllByText('a/b.mkv')[0]).toHaveClass('mono');
+		expect(screen.getAllByText('plain')[0]).not.toHaveClass('mono');
+	});
 });

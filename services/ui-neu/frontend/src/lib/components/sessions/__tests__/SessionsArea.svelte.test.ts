@@ -156,8 +156,7 @@ describe('session delete — confirm flow', () => {
 		renderComponent(SessionsArea);
 		await screen.findByText('ses Alpha');
 
-		// Find the session card Delete button by its position inside the card
-		// (SessionCard renders one delete button; there's no dialog yet)
+		// The first Delete button is the first session row's
 		const deleteBtns = screen.getAllByRole('button', { name: /^delete$/i });
 		await fireEvent.click(deleteBtns[0]);
 

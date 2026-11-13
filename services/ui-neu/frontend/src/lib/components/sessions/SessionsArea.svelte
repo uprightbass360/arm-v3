@@ -55,6 +55,8 @@
 	let sidebar = $state<{ preset: TranscodePresetView | null; mode: SidebarMode } | null>(null);
 	// The preset whose editor is open, highlighted in its table.
 	const activePresetId = $derived(sidebar?.preset?.id ?? ripPreset?.id ?? null);
+	// The session whose builder is open, highlighted in its table.
+	const activeSessionId = $derived(builderOpen ? (editing?.id ?? null) : null);
 	let preselectRipId = $state<string | undefined>(undefined);
 	let preselectTranscodeId = $state<string | undefined>(undefined);
 
@@ -102,7 +104,9 @@
 		if (!deleteSessionTarget) return;
 		const target = deleteSessionTarget;
 		deleteSessionTarget = null;
-		await reloadAfter(() => deleteSession(target.id), 'Delete failed');
+		const deleted = await reloadAfter(() => deleteSession(target.id), 'Delete failed');
+		// A failed delete keeps its builder open; a deleted session has nothing left to edit.
+		if (deleted && target.id === activeSessionId) handleBuilderCancel();
 	}
 
 	// Applying a session needs a job context (ApplySessionDialog requires a job),
@@ -256,6 +260,7 @@
 			sessions={shownSessions}
 			typeCounts={shownTypeCounts}
 			loading={data.loading()}
+			activeKey={activeSessionId}
 			onnew={openNewSession}
 			onedit={openEditSession}
 			onclone={handleCloneSession}
