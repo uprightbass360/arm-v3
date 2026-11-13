@@ -54,12 +54,16 @@ const RESOLVERS: Record<string, OptionResolver> = {
 	audio_mixdowns: (_key, ref, schema, context) => schema.audio_mixdowns_by_encoder[String(context[ref] ?? '')] ?? []
 };
 
-export function fieldOptions(key: SlimKey, schema: HandbrakeSchemaSlimView, context: Context): string[] | null {
+export function fieldOptions(
+	key: SlimKey,
+	schema: HandbrakeSchemaSlimView,
+	context: Context
+): Array<string | number> | null {
 	if (!key.source) return null;
 	const resolve = RESOLVERS[key.source.kind];
 	const base = resolve ? resolve(key, key.source.ref, schema, context) : [];
 	const extras = (schema.source_extras[key.name] ?? []).filter((v) => !base.includes(v));
-	return [...base, ...extras] as string[];
+	return [...base, ...extras] as Array<string | number>;
 }
 
 export function keysForTab(schema: HandbrakeSchemaSlimView, tab: TabId): SlimKey[] {

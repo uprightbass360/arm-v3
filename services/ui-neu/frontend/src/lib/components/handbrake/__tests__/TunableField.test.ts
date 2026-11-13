@@ -1,0 +1,128 @@
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { renderComponent, screen, cleanup } from '$lib/test-utils';
+import { fireEvent } from '@testing-library/svelte';
+import type { HandbrakeSchemaSlimView, SettingIssue, SlimKey } from '$lib/types/api.gen';
+import fixture from '$lib/handbrake/__tests__/fixtures/slim-schema.json';
+import TunableField from '../TunableField.svelte';
+
+const schema = fixture as unknown as HandbrakeSchemaSlimView;
+const key = (name: string): SlimKey => [...schema.keys, ...schema.audio_item_keys].find((k) => k.name === name)!;
+
+function mount(name: string, over: Record<string, unknown> = {}) {
+	const onchange = vi.fn();
+	const onreset = vi.fn();
+	const result = renderComponent(TunableField, {
+		props: {
+			key: key(name),
+			value: undefined,
+			inherited: undefined,
+			stored: false,
+			options: null,
+			onchange,
+			onreset,
+			...over
+		}
+	});
+	return { onchange, onreset, ...result };
+}
+
+describe('TunableField', () => {
+	afterEach(() => cleanup());
+
+	it('renders a checkbox from the inherited value and emits a boolean', async () => {
+		const { onchange } = mount('ChapterMarkers', { inherited: true });
+		const box = screen.getByLabelText(key('ChapterMarkers').label) as HTMLInputElement;
+		expect(box.checked).toBe(true);
+		await fireEvent.click(box);
+		expect(onchange).toHaveBeenCalledWith(false);
+	});
+
+	it('shows the stored value rather than the inherited one', () => {
+		mount('ChapterMarkers', { value: false, inherited: true, stored: true });
+		expect((screen.getByLabelText(key('ChapterMarkers').label) as HTMLInputElement).checked).toBe(false);
+	});
+
+	it('renders a select and emits the option with its original type', async () => {
+		const { onchange } = mount('AudioBitrate', { options: [-1, 128, 'auto'], inherited: 128 });
+		const select = screen.getByLabelText(key('AudioBitrate').label) as HTMLSelectElement;
+		expect(select.value).toBe('128');
+		await fireEvent.change(select, { target: { value: '-1' } });
+		expect(onchange).toHaveBeenLastCalledWith(-1);
+		await fireEvent.change(select, { target: { value: 'auto' } });
+		expect(onchange).toHaveBeenLastCalledWith('auto');
+	});
+
+	it('falls back to the raw text when the option list lacks it, and tolerates no options', async () => {
+		const { onchange } = mount('AudioBitrate', { options: null });
+		const select = screen.getByLabelText(key('AudioBitrate').label) as HTMLSelectElement;
+		expect(select.options).toHaveLength(0);
+		select.add(new Option('x', 'x'));
+		await fireEvent.change(select, { target: { value: 'x' } });
+		expect(onchange).toHaveBeenCalledWith('x');
+	});
+
+	it('renders a number input with the schema limits and emits numbers', async () => {
+		const k = { ...key('PictureWidth'), limits: [16, 8000] as [number, number] };
+		const onchange = vi.fn();
+		renderComponent(TunableField, {
+			props: { key: k, value: 1280, inherited: null, stored: true, options: null, onchange, onreset: vi.fn() }
+		});
+		const input = screen.getByLabelText(k.label) as HTMLInputElement;
+		expect(input.min).toBe('16');
+		expect(input.max).toBe('8000');
+		expect(input.value).toBe('1280');
+		await fireEvent.change(input, { target: { value: '640' } });
+		expect(onchange).toHaveBeenCalledWith(640);
+	});
+
+	it('emits nothing for an empty number input and has no limits without them', async () => {
+		const { onchange } = mount('PictureWidth');
+		const input = screen.getByLabelText(key('PictureWidth').label) as HTMLInputElement;
+		expect(input.value).toBe('');
+		await fireEvent.change(input, { target: { value: '' } });
+		expect(onchange).not.toHaveBeenCalled();
+	});
+
+	it('renders a text input and emits the text', async () => {
+		const { onchange } = mount('PresetName', { inherited: 'abc' });
+		const input = screen.getByLabelText(key('PresetName').label) as HTMLInputElement;
+		expect(input.value).toBe('abc');
+		await fireEvent.change(input, { target: { value: 'xyz' } });
+		expect(onchange).toHaveBeenCalledWith('xyz');
+	});
+
+	it('renders a list of strings as comma separated text and emits an array', async () => {
+		const { onchange } = mount('AudioLanguageList', { inherited: ['eng', 'fra'] });
+		const input = screen.getByLabelText(key('AudioLanguageList').label) as HTMLInputElement;
+		expect(input.value).toBe('eng, fra');
+		await fireEvent.change(input, { target: { value: 'deu, , spa' } });
+		expect(onchange).toHaveBeenCalledWith(['deu', 'spa']);
+	});
+
+	it('renders no control of its own for the audio track list', () => {
+		mount('AudioList');
+		expect(screen.queryByRole('textbox')).toBeNull();
+	});
+
+	it('shows Reset only when stored, and calls onreset', async () => {
+		const first = mount('ChapterMarkers');
+		expect(screen.queryByRole('button', { name: 'Reset' })).toBeNull();
+		first.unmount();
+		const { onreset } = mount('ChapterMarkers', { stored: true, value: true });
+		await fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+		expect(onreset).toHaveBeenCalledTimes(1);
+	});
+
+	it('shows the issue and the hint', () => {
+		const issue = { key: 'ChapterMarkers', code: 'wrong_type', message: 'Not a boolean' } as SettingIssue;
+		mount('ChapterMarkers', { issue, hint: 'Applies to MKV' });
+		expect(screen.getByRole('alert')).toHaveTextContent('Not a boolean');
+		expect(screen.getByText('Applies to MKV')).toBeInTheDocument();
+	});
+
+	it('disables the control and Reset', () => {
+		mount('ChapterMarkers', { disabled: true, stored: true, value: true });
+		expect(screen.getByLabelText(key('ChapterMarkers').label)).toBeDisabled();
+		expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
+	});
+});
