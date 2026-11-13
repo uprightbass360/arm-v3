@@ -15,43 +15,48 @@
 	import { createTranscodePreset, deleteTranscodePreset } from '$lib/api/transcodePresets';
 	import { addToast } from '$lib/stores/toast.svelte';
 	import { transcoderEnabled } from '$lib/stores/config';
-	import { countByMediaType, isPassthroughSession, presetToolMap, PASSTHROUGH_TOOL } from '$lib/utils/sessions';
+	import {
+		activePresetKey,
+		activeSessionKey,
+		deletePresetMessage,
+		deleteSessionMessage,
+		errorMessage,
+		isCreatingRipPreset,
+		isCreatingTranscodePreset,
+		isRipSidebarReadOnly,
+		isSidebarStacked,
+		shouldCloseBuilderAfterDelete,
+		shouldClosePresetEditorsAfterDelete,
+		transcodeSidebarMode,
+		viewTabs,
+		visibleSessions,
+		visibleTranscodePresets,
+		visibleTypeCounts,
+		type EditorState,
+		type View
+	} from './sessionsAreaModel';
 	import type { RipPresetView, SessionView, TranscodePresetView } from '$lib/types/api.gen';
 
 	const data = createSessionsData();
 
-	// A ripper-only deployment (not transcode-capable) can never run encode
-	// work, so the hub, the builder's transcode picker and the transcode preset
-	// library show only passthrough sessions/presets (neu-style hide). Keyed on
-	// capability, not the runtime toggle: a capable-but-disabled box keeps its
-	// encode sessions editable for when transcoding is switched back on.
-	const shownSessions = $derived(
-		$transcoderEnabled
-			? data.sessions()
-			: data.sessions().filter((s) => isPassthroughSession(s, presetToolMap(data.transcodePresets())))
-	);
-	const shownTranscodePresets = $derived(
-		$transcoderEnabled ? data.transcodePresets() : data.transcodePresets().filter((p) => p.tool === PASSTHROUGH_TOOL)
-	);
-	const shownTypeCounts = $derived($transcoderEnabled ? data.typeCounts() : countByMediaType(shownSessions));
+	// A ripper-only deployment (not transcode-capable) shows only passthrough
+	// sessions/presets. Keyed on capability, not the runtime toggle: a
+	// capable-but-disabled box keeps its encode sessions editable.
+	const shownSessions = $derived(visibleSessions(data.sessions(), $transcoderEnabled, data.transcodePresets()));
+	const shownTranscodePresets = $derived(visibleTranscodePresets(data.transcodePresets(), $transcoderEnabled));
+	const shownTypeCounts = $derived(visibleTypeCounts($transcoderEnabled, data.typeCounts(), shownSessions));
 
 	// Active view: the sessions hub, one of the two preset libraries, or routing
-	type View = 'sessions' | 'rip' | 'transcode' | 'routing';
 	let view = $state<View>('sessions');
 
-	const TABS: Array<{ key: View; label: string }> = [
-		{ key: 'sessions', label: 'Sessions' },
-		{ key: 'rip', label: 'Rip presets' },
-		{ key: 'transcode', label: 'Transcode presets' },
-		{ key: 'routing', label: 'Routing' }
-	];
-
 	// Each list view's count, shown on its tab; Routing has none.
-	const tabCounts = $derived<Partial<Record<View, number>>>({
-		sessions: shownSessions.length,
-		rip: data.ripPresets().length,
-		transcode: shownTranscodePresets.length
-	});
+	const tabs = $derived(
+		viewTabs({
+			sessions: shownSessions.length,
+			rip: data.ripPresets().length,
+			transcode: shownTranscodePresets.length
+		})
+	);
 
 	// Builder slide-over
 	let builderOpen = $state(false);
@@ -62,10 +67,14 @@
 	let ripSidebar = $state<{ preset: RipPresetView | null } | null>(null);
 	// Transcode presets: the preset sidebar, open while set.
 	let sidebar = $state<{ preset: TranscodePresetView | null; mode: SidebarMode } | null>(null);
-	// The preset whose editor is open, highlighted in its table.
-	const activePresetId = $derived(sidebar?.preset?.id ?? ripSidebar?.preset?.id ?? null);
-	// The session whose builder is open, highlighted in its table.
-	const activeSessionId = $derived(builderOpen ? (editing?.id ?? null) : null);
+	const editor = $derived<EditorState>({
+		builderOpen,
+		sessionId: editing?.id ?? null,
+		ripPresetId: ripSidebar?.preset?.id ?? null,
+		transcodePresetId: sidebar?.preset?.id ?? null
+	});
+	const activePresetId = $derived(activePresetKey(editor));
+	const activeSessionId = $derived(activeSessionKey(editor));
 	let preselectRipId = $state<string | undefined>(undefined);
 	let preselectTranscodeId = $state<string | undefined>(undefined);
 
@@ -83,7 +92,7 @@
 			await data.load();
 			return true;
 		} catch (e) {
-			addToast({ tone: 'error', title: failTitle, body: e instanceof Error ? e.message : 'Unknown error' });
+			addToast({ tone: 'error', title: failTitle, body: errorMessage(e) });
 			return false;
 		}
 	}
@@ -110,12 +119,12 @@
 	}
 
 	async function confirmDeleteSession() {
-		if (!deleteSessionTarget) return;
-		const target = deleteSessionTarget;
+		// ConfirmDialog fires onconfirm only while open, which is only while the target is set.
+		const target = deleteSessionTarget as JoinedSession;
 		deleteSessionTarget = null;
 		const deleted = await reloadAfter(() => deleteSession(target.id), 'Delete failed');
 		// A failed delete keeps its builder open; a deleted session has nothing left to edit.
-		if (deleted && target.id === activeSessionId) handleBuilderCancel();
+		if (shouldCloseBuilderAfterDelete(target.id, deleted, editor)) handleBuilderCancel();
 	}
 
 	// Applying a session needs a job context (ApplySessionDialog requires a job),
@@ -141,7 +150,7 @@
 		if (isRipPreset(p)) {
 			ripSidebar = { preset: p };
 		} else {
-			sidebar = { preset: p, mode: p.is_builtin ? 'view' : 'edit' };
+			sidebar = { preset: p, mode: transcodeSidebarMode(p) };
 		}
 	}
 
@@ -176,15 +185,15 @@
 	}
 
 	async function confirmDeletePreset() {
-		if (!deletePresetTarget) return;
-		const target = deletePresetTarget;
+		// ConfirmDialog fires onconfirm only while open, which is only while the target is set.
+		const target = deletePresetTarget as RipPresetView | TranscodePresetView;
 		deletePresetTarget = null;
 		const deleted = await reloadAfter(
 			() => (isRipPreset(target) ? deleteRipPreset(target.id) : deleteTranscodePreset(target.id)),
 			'Delete failed'
 		);
 		// A failed delete keeps its editor open; a deleted preset has nothing left to edit.
-		if (deleted && target.id === activePresetId) {
+		if (shouldClosePresetEditorsAfterDelete(target.id, deleted, editor)) {
 			closeSidebar();
 			closeRipSidebar();
 		}
@@ -211,7 +220,7 @@
 	}
 
 	async function handleRipPresetSaved(p: RipPresetView) {
-		const wasCreating = ripSidebar?.preset === null;
+		const wasCreating = isCreatingRipPreset(ripSidebar);
 		closeRipSidebar();
 		await data.load();
 		// Only pre-select when creating a new preset (not when editing an existing one)
@@ -221,7 +230,7 @@
 	}
 
 	async function handleTranscodePresetSaved(p: TranscodePresetView) {
-		const wasCreating = sidebar?.mode === 'new';
+		const wasCreating = isCreatingTranscodePreset(sidebar);
 		closeSidebar();
 		await data.load();
 		if (wasCreating) {
@@ -248,7 +257,7 @@
 		<!-- View switch: Sessions / Rip presets / Transcode presets / Routing -->
 		<div class="sessions-area-tabs-box">
 			<div class="tabs tabs-pills sessions-area-tabs" role="tablist" aria-label="Sessions sections">
-				{#each TABS as tab (tab.key)}
+				{#each tabs as tab (tab.key)}
 					<button
 						type="button"
 						role="tab"
@@ -259,8 +268,8 @@
 						class="tabs-tab"
 					>
 						{tab.label}
-						{#if tabCounts[tab.key] !== undefined}
-							<span class="sessions-area-tab-count">{tabCounts[tab.key]}</span>
+						{#if tab.count !== undefined}
+							<span class="sessions-area-tab-count">{tab.count}</span>
 						{/if}
 					</button>
 				{/each}
@@ -327,8 +336,8 @@
 {#if ripSidebar}
 	<RipPresetSidebar
 		preset={ripSidebar.preset}
-		readOnly={ripSidebar.preset?.is_builtin ?? false}
-		stacked={builderOpen}
+		readOnly={isRipSidebarReadOnly(ripSidebar.preset)}
+		stacked={isSidebarStacked(editor)}
 		usage={ripSidebar.preset ? data.ripUsage(ripSidebar.preset.id) : 0}
 		onclone={cloneFromSidebar}
 		onsaved={handleRipPresetSaved}
@@ -352,7 +361,7 @@
 <ConfirmDialog
 	open={deleteSessionTarget !== null}
 	title="Delete session"
-	message={deleteSessionTarget ? `Delete the session "${deleteSessionTarget.name}"? This cannot be undone.` : ''}
+	message={deleteSessionMessage(deleteSessionTarget)}
 	confirmLabel="Delete"
 	variant="danger"
 	onconfirm={confirmDeleteSession}
@@ -365,7 +374,7 @@
 <ConfirmDialog
 	open={deletePresetTarget !== null}
 	title="Delete preset"
-	message={deletePresetTarget ? `Delete the preset "${deletePresetTarget.name}"? This cannot be undone.` : ''}
+	message={deletePresetMessage(deletePresetTarget)}
 	confirmLabel="Delete"
 	variant="danger"
 	onconfirm={confirmDeletePreset}
