@@ -4660,6 +4660,137 @@
         ]
       }
     },
+    "/api/handbrake-schema": {
+      "get": {
+        "tags": [
+          "handbrake-schema"
+        ],
+        "summary": "Get Slim View",
+        "operationId": "get_slim_view_api_handbrake_schema_get",
+        "security": [
+          {
+            "UserJWT": []
+          },
+          {}
+        ],
+        "parameters": [
+          {
+            "name": "if-none-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "If-None-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandbrakeSchemaSlimView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/handbrake-schema/builtin/{name}": {
+      "get": {
+        "tags": [
+          "handbrake-schema"
+        ],
+        "summary": "Get Builtin",
+        "operationId": "get_builtin_api_handbrake_schema_builtin__name__get",
+        "security": [
+          {
+            "UserJWT": []
+          },
+          {}
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Builtin Api Handbrake Schema Builtin  Name  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/handbrake-schema/refresh": {
+      "post": {
+        "tags": [
+          "handbrake-schema"
+        ],
+        "summary": "Refresh",
+        "operationId": "refresh_api_handbrake_schema_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HandbrakeSchemaRefreshResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ]
+      }
+    },
     "/api/config": {
       "get": {
         "tags": [
@@ -11250,6 +11381,114 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HandbrakeSchemaRefreshResult": {
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "title": "Ok"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "ok"
+        ],
+        "title": "HandbrakeSchemaRefreshResult"
+      },
+      "HandbrakeSchemaSlimView": {
+        "properties": {
+          "handbrake_tag": {
+            "type": "string",
+            "title": "Handbrake Tag"
+          },
+          "preset_version": {
+            "type": "string",
+            "title": "Preset Version"
+          },
+          "content_hash": {
+            "type": "string",
+            "title": "Content Hash"
+          },
+          "keys": {
+            "items": {
+              "$ref": "#/components/schemas/SlimKey"
+            },
+            "type": "array",
+            "title": "Keys"
+          },
+          "audio_item_keys": {
+            "items": {
+              "$ref": "#/components/schemas/SlimKey"
+            },
+            "type": "array",
+            "title": "Audio Item Keys"
+          },
+          "families": {
+            "items": {
+              "$ref": "#/components/schemas/SlimFamily"
+            },
+            "type": "array",
+            "title": "Families"
+          },
+          "lists": {
+            "additionalProperties": {
+              "items": {},
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Lists"
+          },
+          "audio_mixdowns_by_encoder": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Audio Mixdowns By Encoder"
+          },
+          "filters": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SlimFilter"
+            },
+            "type": "object",
+            "title": "Filters"
+          },
+          "builtin_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Builtin Names"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handbrake_tag",
+          "preset_version",
+          "content_hash",
+          "keys",
+          "audio_item_keys",
+          "families",
+          "lists",
+          "audio_mixdowns_by_encoder",
+          "filters",
+          "builtin_names"
+        ],
+        "title": "HandbrakeSchemaSlimView",
+        "description": "What the UI needs to render the settings sidebar; no built-in preset values."
+      },
       "HandbrakeSettings": {
         "properties": {
           "common": {
@@ -16502,6 +16741,249 @@
           "checklist_dismissed"
         ],
         "title": "SetupView"
+      },
+      "SlimFamily": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "codec_id": {
+            "type": "integer",
+            "title": "Codec Id"
+          },
+          "multipass": {
+            "type": "boolean",
+            "title": "Multipass"
+          },
+          "turbo": {
+            "type": "boolean",
+            "title": "Turbo"
+          },
+          "rate_controls": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Rate Controls"
+          },
+          "variants": {
+            "items": {
+              "$ref": "#/components/schemas/SlimVariant"
+            },
+            "type": "array",
+            "title": "Variants"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "codec_id",
+          "multipass",
+          "turbo",
+          "rate_controls",
+          "variants"
+        ],
+        "title": "SlimFamily"
+      },
+      "SlimFilter": {
+        "properties": {
+          "presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "tunes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tunes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "presets",
+          "tunes"
+        ],
+        "title": "SlimFilter"
+      },
+      "SlimKey": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "default": {
+            "title": "Default"
+          },
+          "tab": {
+            "type": "string",
+            "title": "Tab"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SlimSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "limits": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limits"
+          },
+          "known": {
+            "type": "boolean",
+            "title": "Known"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "default",
+          "tab",
+          "group",
+          "label",
+          "source",
+          "limits",
+          "known"
+        ],
+        "title": "SlimKey"
+      },
+      "SlimQuality": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "step": {
+            "type": "number",
+            "title": "Step"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "low",
+          "high",
+          "step"
+        ],
+        "title": "SlimQuality"
+      },
+      "SlimSource": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "ref": {
+            "type": "string",
+            "title": "Ref"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "ref"
+        ],
+        "title": "SlimSource"
+      },
+      "SlimVariant": {
+        "properties": {
+          "encoder": {
+            "type": "string",
+            "title": "Encoder"
+          },
+          "depth": {
+            "type": "integer",
+            "title": "Depth"
+          },
+          "presets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "tunes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tunes"
+          },
+          "profiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "levels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Levels"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/SlimQuality"
+          }
+        },
+        "type": "object",
+        "required": [
+          "encoder",
+          "depth",
+          "presets",
+          "tunes",
+          "profiles",
+          "levels",
+          "quality"
+        ],
+        "title": "SlimVariant"
       },
       "SourceClaims": {
         "properties": {

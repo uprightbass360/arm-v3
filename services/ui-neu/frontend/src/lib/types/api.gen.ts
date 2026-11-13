@@ -1854,6 +1854,74 @@ export type HttpValidationError = {
 };
 
 /**
+ * HandbrakeSchemaRefreshResult
+ */
+export type HandbrakeSchemaRefreshResult = {
+    /**
+     * Ok
+     */
+    ok: boolean;
+    /**
+     * Error
+     */
+    error?: string | null;
+};
+
+/**
+ * HandbrakeSchemaSlimView
+ *
+ * What the UI needs to render the settings sidebar; no built-in preset values.
+ */
+export type HandbrakeSchemaSlimView = {
+    /**
+     * Handbrake Tag
+     */
+    handbrake_tag: string;
+    /**
+     * Preset Version
+     */
+    preset_version: string;
+    /**
+     * Content Hash
+     */
+    content_hash: string;
+    /**
+     * Keys
+     */
+    keys: Array<SlimKey>;
+    /**
+     * Audio Item Keys
+     */
+    audio_item_keys: Array<SlimKey>;
+    /**
+     * Families
+     */
+    families: Array<SlimFamily>;
+    /**
+     * Lists
+     */
+    lists: {
+        [key: string]: Array<unknown>;
+    };
+    /**
+     * Audio Mixdowns By Encoder
+     */
+    audio_mixdowns_by_encoder: {
+        [key: string]: Array<string>;
+    };
+    /**
+     * Filters
+     */
+    filters: {
+        [key: string]: SlimFilter;
+    };
+    /**
+     * Builtin Names
+     */
+    builtin_names: Array<string>;
+};
+
+/**
  * HandbrakeSettings
  *
  * Settings every encoder shares (``common``) plus one block per encoder family (``encoders``).
@@ -4740,6 +4808,159 @@ export type SetupView = {
      * Deferred
      */
     deferred?: boolean;
+};
+
+/**
+ * SlimFamily
+ */
+export type SlimFamily = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Codec Id
+     */
+    codec_id: number;
+    /**
+     * Multipass
+     */
+    multipass: boolean;
+    /**
+     * Turbo
+     */
+    turbo: boolean;
+    /**
+     * Rate Controls
+     */
+    rate_controls: Array<number>;
+    /**
+     * Variants
+     */
+    variants: Array<SlimVariant>;
+};
+
+/**
+ * SlimFilter
+ */
+export type SlimFilter = {
+    /**
+     * Presets
+     */
+    presets: Array<string>;
+    /**
+     * Tunes
+     */
+    tunes: Array<string>;
+};
+
+/**
+ * SlimKey
+ */
+export type SlimKey = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Type
+     */
+    type: string;
+    /**
+     * Default
+     */
+    default: unknown;
+    /**
+     * Tab
+     */
+    tab: string;
+    /**
+     * Group
+     */
+    group: string;
+    /**
+     * Label
+     */
+    label: string;
+    source: SlimSource | null;
+    /**
+     * Limits
+     */
+    limits: [
+        number,
+        number
+    ] | null;
+    /**
+     * Known
+     */
+    known: boolean;
+};
+
+/**
+ * SlimQuality
+ */
+export type SlimQuality = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Low
+     */
+    low: number;
+    /**
+     * High
+     */
+    high: number;
+    /**
+     * Step
+     */
+    step: number;
+};
+
+/**
+ * SlimSource
+ */
+export type SlimSource = {
+    /**
+     * Kind
+     */
+    kind: string;
+    /**
+     * Ref
+     */
+    ref: string;
+};
+
+/**
+ * SlimVariant
+ */
+export type SlimVariant = {
+    /**
+     * Encoder
+     */
+    encoder: string;
+    /**
+     * Depth
+     */
+    depth: number;
+    /**
+     * Presets
+     */
+    presets: Array<string>;
+    /**
+     * Tunes
+     */
+    tunes: Array<string>;
+    /**
+     * Profiles
+     */
+    profiles: Array<string>;
+    /**
+     * Levels
+     */
+    levels: Array<string>;
+    quality: SlimQuality;
 };
 
 /**
@@ -8552,6 +8773,87 @@ export type ListEncodersApiEncodersGetResponses = {
 };
 
 export type ListEncodersApiEncodersGetResponse = ListEncodersApiEncodersGetResponses[keyof ListEncodersApiEncodersGetResponses];
+
+export type GetSlimViewApiHandbrakeSchemaGetData = {
+    body?: never;
+    headers?: {
+        /**
+         * If-None-Match
+         */
+        'if-none-match'?: string | null;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/handbrake-schema';
+};
+
+export type GetSlimViewApiHandbrakeSchemaGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetSlimViewApiHandbrakeSchemaGetError = GetSlimViewApiHandbrakeSchemaGetErrors[keyof GetSlimViewApiHandbrakeSchemaGetErrors];
+
+export type GetSlimViewApiHandbrakeSchemaGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: HandbrakeSchemaSlimView;
+};
+
+export type GetSlimViewApiHandbrakeSchemaGetResponse = GetSlimViewApiHandbrakeSchemaGetResponses[keyof GetSlimViewApiHandbrakeSchemaGetResponses];
+
+export type GetBuiltinApiHandbrakeSchemaBuiltinNameGetData = {
+    body?: never;
+    path: {
+        /**
+         * Name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/handbrake-schema/builtin/{name}';
+};
+
+export type GetBuiltinApiHandbrakeSchemaBuiltinNameGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetBuiltinApiHandbrakeSchemaBuiltinNameGetError = GetBuiltinApiHandbrakeSchemaBuiltinNameGetErrors[keyof GetBuiltinApiHandbrakeSchemaBuiltinNameGetErrors];
+
+export type GetBuiltinApiHandbrakeSchemaBuiltinNameGetResponses = {
+    /**
+     * Response Get Builtin Api Handbrake Schema Builtin  Name  Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetBuiltinApiHandbrakeSchemaBuiltinNameGetResponse = GetBuiltinApiHandbrakeSchemaBuiltinNameGetResponses[keyof GetBuiltinApiHandbrakeSchemaBuiltinNameGetResponses];
+
+export type RefreshApiHandbrakeSchemaRefreshPostData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/handbrake-schema/refresh';
+};
+
+export type RefreshApiHandbrakeSchemaRefreshPostResponses = {
+    /**
+     * Successful Response
+     */
+    200: HandbrakeSchemaRefreshResult;
+};
+
+export type RefreshApiHandbrakeSchemaRefreshPostResponse = RefreshApiHandbrakeSchemaRefreshPostResponses[keyof RefreshApiHandbrakeSchemaRefreshPostResponses];
 
 export type GetConfigApiConfigGetData = {
     body?: never;
