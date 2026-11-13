@@ -1,6 +1,9 @@
 <script lang="ts">
 	import type { RipPresetView, TranscodePresetView, MediaType } from '$lib/types/api.gen';
-	import PresetRow from './PresetRow.svelte';
+	import DataTable from '$lib/components/DataTable.svelte';
+	import { deleteGuard, openLabel, ripPresetColumns, transcodePresetColumns } from './tableColumns';
+	import { encodersStore } from '$lib/stores/encoders.svelte';
+	import { onMount } from 'svelte';
 	import MediaTypeChips from './MediaTypeChips.svelte';
 	import { matchesFilters, type SourceFilter } from './listFilters';
 	import { countByMediaType } from '$lib/utils/sessions';
@@ -13,6 +16,8 @@
 		ripUsage: (id: string) => number;
 		transcodeUsage: (id: string) => number;
 		loading: boolean;
+		/** The id of the preset whose editor is open, to highlight its row. */
+		activeKey?: string | null;
 		onnewrip: () => void;
 		onnewtranscode: () => void;
 		onview: (preset: RipPresetView | TranscodePresetView) => void;
@@ -28,6 +33,7 @@
 		ripUsage,
 		transcodeUsage,
 		loading,
+		activeKey = null,
 		onnewrip,
 		onnewtranscode,
 		onview,
@@ -60,10 +66,38 @@
 	// Filtered preset list
 	const visible = $derived(presets.filter(matches));
 	const noun = $derived(kind === 'rip' ? 'rip presets' : 'transcode presets');
+	const emptyText = $derived(`No ${noun} match the current filters.`);
 	const heading = $derived(kind === 'rip' ? 'Rip presets' : 'Transcode presets');
+
+	// Usage by preset id, for the Used by column and the Delete guard.
+	const usageById = $derived(Object.fromEntries(presets.map((p) => [p.id, usage(p.id)])));
+	const ripColumns = $derived(ripPresetColumns(usageById));
+	const transcodeColumns = $derived(transcodePresetColumns(usageById));
+
+	// The encoder column names encoders from the shared catalog.
+	onMount(() => {
+		encodersStore.load();
+	});
 
 	const SKELETON_COUNT = 3;
 </script>
+
+{#snippet presetActions(preset: RipPresetView | TranscodePresetView)}
+	{@const guard = deleteGuard(preset, usageById[preset.id] ?? 0)}
+	<div class="preset-library-actions">
+		<button type="button" class="btn btn-sm" onclick={() => (preset.is_builtin ? onview(preset) : onedit(preset))}
+			>{openLabel(preset)}</button
+		>
+		<button type="button" class="btn btn-sm" onclick={() => onclone(preset)}>Clone</button>
+		<button
+			type="button"
+			class="btn btn-danger btn-sm"
+			disabled={guard.disabled}
+			title={guard.title}
+			onclick={() => ondelete(preset)}>Delete</button
+		>
+	</div>
+{/snippet}
 
 <div class="stack stack-lg">
 	<!-- Reusable note -->
@@ -130,22 +164,26 @@
 		<section>
 			<h3 class="sr-only">{heading}</h3>
 
-			{#if visible.length === 0}
-				<p class="preset-library-empty">No {noun} match the current filters.</p>
+			{#if kind === 'rip'}
+				<DataTable
+					columns={ripColumns}
+					rows={visible as RipPresetView[]}
+					rowKey={(p) => p.id}
+					{activeKey}
+					label={heading}
+					empty={emptyText}
+					actions={presetActions}
+				/>
 			{:else}
-				<div class="stack stack-sm">
-					{#each visible as preset (preset.id)}
-						<PresetRow
-							{kind}
-							{preset}
-							usedBy={usage(preset.id)}
-							onview={() => onview(preset)}
-							onedit={() => onedit(preset)}
-							onclone={() => onclone(preset)}
-							ondelete={() => ondelete(preset)}
-						/>
-					{/each}
-				</div>
+				<DataTable
+					columns={transcodeColumns}
+					rows={visible as TranscodePresetView[]}
+					rowKey={(p) => p.id}
+					{activeKey}
+					label={heading}
+					empty={emptyText}
+					actions={presetActions}
+				/>
 			{/if}
 		</section>
 	{/if}
@@ -178,11 +216,10 @@
 		margin-left: auto;
 		flex-shrink: 0;
 	}
-	.preset-library-empty {
-		padding: 1rem 0;
-		text-align: center;
-		font-size: 0.875rem;
-		color: var(--color-text-faint);
+	.preset-library-actions {
+		display: flex;
+		justify-content: flex-end;
+		gap: 0.375rem;
 	}
 	/* original: h-16 rounded-lg border border-primary/20 bg-gray-100 - taller,
 	   more-rounded, and bordered compared to .skeleton-block's 2.5rem/radius-sm/

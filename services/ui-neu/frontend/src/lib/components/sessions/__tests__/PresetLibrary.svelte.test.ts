@@ -90,20 +90,21 @@ it('+ New transcode preset calls onnewtranscode', async () => {
 	expect(onnewtranscode).toHaveBeenCalled();
 });
 
-it('builtin rip preset shows BUILT-IN and disabled delete', () => {
+it('builtin rip preset shows Built-in and disabled delete', () => {
 	renderComponent(PresetLibrary, defaultProps({ kind: 'rip' }));
 	// Movie Rip is builtin
-	expect(screen.getByText('BUILT-IN')).toBeInTheDocument();
+	expect(screen.getByRole('cell', { name: 'Built-in' })).toBeInTheDocument();
 	// Find the delete button for the builtin row - there should be at least one disabled delete
 	const delButtons = screen.getAllByRole('button', { name: /delete/i }) as HTMLButtonElement[];
 	const disabledDels = delButtons.filter((b) => b.disabled);
 	expect(disabledDels.length).toBeGreaterThan(0);
 });
 
-it('rip preset with ripUsage>0 shows Used by N', () => {
+it('rip preset with ripUsage>0 shows its count in the Used by column', () => {
 	renderComponent(PresetLibrary, defaultProps({ kind: 'rip' }));
 	// TV Rip (r2) has usage 2
-	expect(screen.getByText(/used by 2/i)).toBeInTheDocument();
+	expect(screen.getByRole('columnheader', { name: 'Used by' })).toBeInTheDocument();
+	expect(screen.getByRole('cell', { name: '2' })).toBeInTheDocument();
 });
 
 it('media-type chip narrows rip presets section', async () => {

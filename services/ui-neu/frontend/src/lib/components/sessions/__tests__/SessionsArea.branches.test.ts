@@ -325,6 +325,66 @@ describe('presets, cloning', () => {
 	});
 });
 
+describe('the table row of the open preset editor', () => {
+	const rowOf = (name: string) => screen.getByText(name).closest('tr') as HTMLElement;
+
+	it('is highlighted while a transcode preset sidebar is open, and cleared when it closes', async () => {
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		expect(rowOf('tc t1')).not.toHaveAttribute('aria-current');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		expect(rowOf('tc t1')).toHaveAttribute('aria-current', 'true');
+		await fireEvent.click(screen.getByRole('button', { name: /^close$/i }));
+		await waitFor(() => expect(rowOf('tc t1')).not.toHaveAttribute('aria-current'));
+	});
+
+	it('is highlighted while the rip preset dialog is open', async () => {
+		await renderPresetTab(/rip presets/i, 'rip r1');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit rip preset' });
+		expect(rowOf('rip r1')).toHaveAttribute('aria-current', 'true');
+	});
+
+	it('deleting the open transcode preset closes its sidebar and clears the highlight', async () => {
+		vi.mocked(deleteTranscodePreset).mockResolvedValue(undefined);
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		await fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+		await confirmDelete();
+		await waitFor(() => expect(deleteTranscodePreset).toHaveBeenCalledWith('t1'));
+		await waitFor(() =>
+			expect(screen.queryByRole('dialog', { name: 'Edit transcode preset' })).not.toBeInTheDocument()
+		);
+		expect(rowOf('tc t1')).not.toHaveAttribute('aria-current');
+	});
+
+	it('deleting the open rip preset closes its dialog and clears the highlight', async () => {
+		vi.mocked(deleteRipPreset).mockResolvedValue(undefined);
+		await renderPresetTab(/rip presets/i, 'rip r1');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit rip preset' });
+		await fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+		await confirmDelete();
+		await waitFor(() => expect(deleteRipPreset).toHaveBeenCalledWith('r1'));
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Edit rip preset' })).not.toBeInTheDocument());
+		expect(rowOf('rip r1')).not.toHaveAttribute('aria-current');
+	});
+
+	it('deleting another preset leaves the open editor and its highlight alone', async () => {
+		vi.mocked(deleteTranscodePreset).mockResolvedValue(undefined);
+		vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode('t1', 'tc t1'), makeTranscode('t2', 'tc t2')]);
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(within(rowOf('tc t1')).getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		await fireEvent.click(within(rowOf('tc t2')).getByRole('button', { name: /^delete$/i }));
+		await confirmDelete();
+		await waitFor(() => expect(deleteTranscodePreset).toHaveBeenCalledWith('t2'));
+		expect(screen.getByRole('dialog', { name: 'Edit transcode preset' })).toBeInTheDocument();
+		expect(rowOf('tc t1')).toHaveAttribute('aria-current', 'true');
+	});
+});
+
 describe('presets, deleting', () => {
 	it('confirming a rip preset delete calls deleteRipPreset only, then reloads', async () => {
 		vi.mocked(deleteRipPreset).mockResolvedValue(undefined);

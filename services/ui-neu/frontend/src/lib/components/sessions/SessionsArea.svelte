@@ -53,6 +53,8 @@
 	let ripPreset = $state<RipPresetView | null>(null);
 	// Transcode presets: the preset sidebar, open while set.
 	let sidebar = $state<{ preset: TranscodePresetView | null; mode: SidebarMode } | null>(null);
+	// The preset whose editor is open, highlighted in its table.
+	const activePresetId = $derived(sidebar?.preset?.id ?? ripPreset?.id ?? null);
 	let preselectRipId = $state<string | undefined>(undefined);
 	let preselectTranscodeId = $state<string | undefined>(undefined);
 
@@ -155,6 +157,10 @@
 		if (!deletePresetTarget) return;
 		const target = deletePresetTarget;
 		deletePresetTarget = null;
+		if (target.id === activePresetId) {
+			closeSidebar();
+			closeRipDialog();
+		}
 		await reloadAfter(
 			() => (isRipPreset(target) ? deleteRipPreset(target.id) : deleteTranscodePreset(target.id)),
 			'Delete failed'
@@ -260,6 +266,7 @@
 			ripUsage={data.ripUsage}
 			transcodeUsage={data.transcodeUsage}
 			loading={data.loading()}
+			activeKey={activePresetId}
 			onnewrip={openNewRipPreset}
 			onnewtranscode={openNewTranscodePreset}
 			onview={openPresetForm}
