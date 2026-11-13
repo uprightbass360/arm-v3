@@ -5,7 +5,7 @@
 	import { parseHandbrakeImport } from '$lib/api/transcodePresets';
 	import { TABS } from '$lib/handbrake/fields';
 	import { defaultPick, reviewRows } from '$lib/handbrake/importReview';
-	import { importPanelView, presetPickView } from '$lib/handbrake/importPanelView';
+	import { importPanelView } from '$lib/handbrake/importPanelView';
 	import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, ImportedPresetView } from '$lib/types/api.gen';
 
 	interface Props {
@@ -24,7 +24,6 @@
 	let pick = $state<number | null>(null);
 
 	const picked = $derived(presets !== null && pick !== null ? presets[pick] : null);
-	const presetList = $derived(presets ?? []);
 	const view = $derived(importPanelView({ presets, schema, text, loading }));
 	const review = $derived(picked && schema ? reviewRows(picked, schema, availability) : null);
 
@@ -82,8 +81,7 @@
 		{#if view.showPicks}
 			<fieldset class="import-picks">
 				<legend class="field-label">Preset in the file</legend>
-				{#each presetList as p, i (i)}
-					{@const pickView = presetPickView(p)}
+				{#each view.picks as pickView, i (i)}
 					<label class="import-pick">
 						<input type="radio" name="import-pick" value={i} bind:group={pick} disabled={pickView.disabled} />
 						<span>{pickView.label}</span>

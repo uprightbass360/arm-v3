@@ -18,6 +18,7 @@ export interface ImportPanelView {
 	showPicks: boolean;
 	showSingleReason: boolean;
 	singleReason: string;
+	picks: PresetPickView[];
 }
 
 export interface PresetPickView {
@@ -44,7 +45,8 @@ export function importPanelView(input: ImportPanelInput): ImportPanelView {
 		readLabel: loading ? 'Reading...' : 'Read file',
 		showPicks: reviewing && presets.length > 1,
 		showSingleReason,
-		singleReason: showSingleReason ? (presets[0]?.reason ?? '') : ''
+		singleReason: showSingleReason ? (presets[0]?.reason ?? '') : '',
+		picks: reviewing ? presets.map(presetPickView) : []
 	};
 }
 

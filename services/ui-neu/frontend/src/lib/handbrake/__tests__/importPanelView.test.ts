@@ -72,6 +72,19 @@ describe('importPanelView step 2', () => {
 	});
 });
 
+describe('importPanelView picks', () => {
+	it('is empty on step 1', () => {
+		expect(view().picks).toEqual([]);
+	});
+
+	it('has one pick per preset on step 2', () => {
+		expect(view({ presets: [preset(), preset({ name: 'B', importable: false })] }).picks.map((p) => p.label)).toEqual([
+			'Plex / Good',
+			'Plex / B'
+		]);
+	});
+});
+
 describe('presetPickView', () => {
 	it('joins the path and name, and enables an importable preset', () => {
 		expect(presetPickView(preset({ path: ['Plex', 'Movies'] }))).toEqual({
