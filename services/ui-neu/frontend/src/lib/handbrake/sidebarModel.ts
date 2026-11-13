@@ -48,7 +48,7 @@ export const CLEARED_NOTE = "This preset's HandBrake settings will be cleared wh
 export const MARKED_ISSUES_MESSAGE = 'Fix the marked settings and save again.';
 
 const PRESET_ENCODER = 'preset';
-const LOCKED_TOOLS: TranscodeTool[] = ['abcde', 'none'];
+const LOCKED_TOOLS = new Set<TranscodeTool>(['abcde', 'none']);
 // HandBrake's VideoQualityType when neither the preset, the base nor the template names one: constant quality.
 const CONSTANT_QUALITY = 2;
 const DEFAULT_DEPTH = 8;
@@ -117,7 +117,7 @@ export function draftToCreate(d: Draft): TranscodePresetCreateRequest {
 
 // abcde and none run their own encoder, so a codec encoder would 422.
 export function onToolChange(d: Draft, tool: TranscodeTool): Draft {
-	return { ...d, tool, encoder: LOCKED_TOOLS.includes(tool) ? PRESET_ENCODER : d.encoder };
+	return { ...d, tool, encoder: LOCKED_TOOLS.has(tool) ? PRESET_ENCODER : d.encoder };
 }
 
 // Drops the blocks of families the new encoder can never reach (Review Focus 4).
@@ -181,11 +181,16 @@ export interface RowFlags {
 	cpuHere: boolean;
 }
 
+function settingsLabel(count: number): string | null {
+	if (count === 0) return null;
+	return `${count} ${count === 1 ? 'setting' : 'settings'}`;
+}
+
 // What a Transcode presets list row adds to its attribute line; nothing for a rip preset (null).
 export function rowFlags(preset: TranscodePresetView | null): RowFlags {
 	const count = settingsCount(preset?.handbrake_settings ?? null);
 	return {
-		settings: count === 0 ? null : `${count} ${count === 1 ? 'setting' : 'settings'}`,
+		settings: settingsLabel(count),
 		needsReview: (preset?.issues ?? []).length > 0,
 		cpuHere: footerNote(preset) !== null
 	};

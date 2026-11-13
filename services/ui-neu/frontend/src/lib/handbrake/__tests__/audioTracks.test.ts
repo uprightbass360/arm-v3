@@ -61,6 +61,22 @@ describe('audioTracks', () => {
 		expect(rowEncoder({}, { ...schema, audio_item_keys: [] })).toBe('');
 	});
 
+	it('rowEncoder prints a non-string value as its text, never [object Object]', () => {
+		expect(rowEncoder({ AudioEncoder: 5 }, schema)).toBe('5');
+		expect(rowEncoder({ AudioEncoder: true }, schema)).toBe('true');
+		expect(rowEncoder({ AudioEncoder: { nested: 1 } }, schema)).toBe('');
+		const objectDefault = {
+			...schema,
+			audio_item_keys: schema.audio_item_keys.map((k) => (k.name === 'AudioEncoder' ? { ...k, default: { x: 1 } } : k))
+		};
+		expect(rowEncoder({}, objectDefault)).toBe('');
+		const numberDefault = {
+			...schema,
+			audio_item_keys: schema.audio_item_keys.map((k) => (k.name === 'AudioEncoder' ? { ...k, default: 7 } : k))
+		};
+		expect(rowEncoder({}, numberDefault)).toBe('7');
+	});
+
 	it('mixdownsFor narrows to the encoder, and a passthrough encoder offers none only', () => {
 		expect(mixdownsFor(schema, 'av_aac')).toContain('5point1');
 		expect(mixdownsFor(schema, 'copy:ac3')).toEqual(['none']);

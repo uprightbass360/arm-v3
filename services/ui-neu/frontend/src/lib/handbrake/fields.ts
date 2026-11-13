@@ -37,12 +37,19 @@ export function numberLimits(key: SlimKey): { min: number; max: number } | null 
 }
 
 type Context = Record<string, unknown>;
+
+// A stored value as text; anything that is not a string, number or boolean (an object) reads as empty.
+export function scalarText(value: unknown): string {
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	return '';
+}
 type OptionResolver = (key: SlimKey, ref: string, schema: HandbrakeSchemaSlimView, context: Context) => unknown[];
 
 // ref is either a filter name or the key that selects one (PictureDenoiseFilter).
 function filterFor(ref: string, schema: HandbrakeSchemaSlimView, context: Context) {
 	if (schema.filters[ref]) return schema.filters[ref];
-	const chosen = String(context[ref] ?? '');
+	const chosen = scalarText(context[ref]);
 	return schema.filters[schema.selector_filter_aliases[chosen] ?? chosen];
 }
 
@@ -51,7 +58,7 @@ const RESOLVERS: Record<string, OptionResolver> = {
 	schema_list: (_key, ref, schema) => schema.lists[ref] ?? [],
 	filter_presets: (_key, ref, schema, context) => filterFor(ref, schema, context)?.presets ?? [],
 	filter_tunes: (_key, ref, schema, context) => filterFor(ref, schema, context)?.tunes ?? [],
-	audio_mixdowns: (_key, ref, schema, context) => schema.audio_mixdowns_by_encoder[String(context[ref] ?? '')] ?? []
+	audio_mixdowns: (_key, ref, schema, context) => schema.audio_mixdowns_by_encoder[scalarText(context[ref])] ?? []
 };
 
 export function fieldOptions(

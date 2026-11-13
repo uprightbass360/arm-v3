@@ -84,6 +84,24 @@ describe('fieldOptions', () => {
 		expect(fieldOptions(key('AudioMixdown'), schema, {})).toEqual([]);
 	});
 
+	it('never looks a selector or encoder up by the text [object Object]', () => {
+		const trap = {
+			...schema,
+			filters: { ...schema.filters, '[object Object]': { presets: ['trap'], tunes: ['trap'] } },
+			audio_mixdowns_by_encoder: { ...schema.audio_mixdowns_by_encoder, '[object Object]': ['trap'] }
+		} as unknown as HandbrakeSchemaSlimView;
+		expect(fieldOptions(key('PictureDenoisePreset'), trap, { PictureDenoiseFilter: { a: 1 } })).toEqual([]);
+		expect(fieldOptions(key('AudioMixdown'), trap, { AudioEncoder: { a: 1 } })).toEqual([]);
+	});
+
+	it('reads a numeric selector value as its text', () => {
+		const numeric = {
+			...schema,
+			filters: { ...schema.filters, '3': { presets: ['three'], tunes: [] } }
+		} as unknown as HandbrakeSchemaSlimView;
+		expect(fieldOptions(key('PictureDenoisePreset'), numeric, { PictureDenoiseFilter: 3 })).toEqual(['three']);
+	});
+
 	it('is empty for an unknown static enum, list or source kind', () => {
 		const src = (kind: string, ref: string): SlimKey => ({ ...key('PictureWidth'), source: { kind, ref } });
 		expect(fieldOptions(src('static', 'nope'), schema, {})).toEqual([]);

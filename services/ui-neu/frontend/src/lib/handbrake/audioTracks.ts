@@ -2,7 +2,7 @@
 // Every helper returns new arrays and objects; nothing here mutates its input.
 
 import type { HandbrakeSchemaSlimView, SettingIssue, SlimKey } from '$lib/types/api.gen';
-import { fieldOptions } from './fields';
+import { fieldOptions, scalarText } from './fields';
 
 export type AudioItem = Record<string, unknown>;
 
@@ -62,8 +62,8 @@ export function clearTrackField(list: AudioItem[], index: number, name: string):
 // The row's encoder, or the schema default encoder when the row does not set one.
 export function rowEncoder(item: AudioItem, schema: HandbrakeSchemaSlimView): string {
 	const set = item[ENCODER];
-	if (set != null) return String(set);
-	return String(itemKey(schema, ENCODER)?.default ?? '');
+	if (set != null) return scalarText(set);
+	return scalarText(itemKey(schema, ENCODER)?.default);
 }
 
 // Mixdowns the encoder accepts, from the schema's per-encoder table.

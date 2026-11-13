@@ -61,7 +61,7 @@ function depthOf(encoder: string, block: Block): number {
 }
 
 function codecOf(family: string): string | null {
-	const suffix = family.split('_').slice(-1)[0];
+	const suffix = family.slice(family.lastIndexOf('_') + 1);
 	return CODEC_LABELS[family] ?? CODEC_LABELS[suffix] ?? null;
 }
 
