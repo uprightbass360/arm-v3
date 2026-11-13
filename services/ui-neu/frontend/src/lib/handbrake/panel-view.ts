@@ -10,13 +10,13 @@ import { keyShown, type FilterState } from './visibility';
 import type { SaveFailure } from '$lib/api/save-failure';
 import type { SidebarMode } from './display';
 
-export interface SettingsPanelInput {
+interface SettingsPanelInput {
 	tab: TabId;
 	encoder: string;
 	availability: EncoderAvailabilityView[];
 }
 
-export interface SettingsPanelView {
+interface SettingsPanelView {
 	section: 'video' | 'plain';
 	showAmdNote: boolean;
 	encoderLabel: string;
@@ -30,7 +30,7 @@ export function settingsPanelView(input: SettingsPanelInput): SettingsPanelView 
 	};
 }
 
-export type KeyRow = 'hidden' | 'audio-list' | 'field';
+type KeyRow = 'hidden' | 'audio-list' | 'field';
 
 export function keyRow(key: SlimKey, stored: boolean, filter: FilterState, schema: HandbrakeSchemaSlimView): KeyRow {
 	if (!keyShown(key, stored, filter, schema)) return 'hidden';
@@ -52,7 +52,7 @@ export interface PresetBlockInput {
 	presetEncoderId: string;
 }
 
-export interface PresetBlockView {
+interface PresetBlockView {
 	encoderDisabled: boolean;
 	usesFfmpegVaapi: boolean;
 	encoderList: 'loading' | 'empty' | 'groups';
@@ -101,7 +101,7 @@ export interface PresetSidebarInput {
 	unplacedCount: number;
 }
 
-export interface PresetSidebarView {
+interface PresetSidebarView {
 	readonly: boolean;
 	showImport: boolean;
 	showFooter: boolean;
