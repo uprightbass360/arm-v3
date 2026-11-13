@@ -5,7 +5,6 @@ import {
 	CPU_HERE_NOTE,
 	footerNote,
 	issuesFor,
-	rowFlags,
 	schemaLoadError,
 	sidebarTitle,
 	unplacedIssues,
@@ -49,23 +48,6 @@ describe('footerNote', () => {
 		expect(footerNote(preset({ host_notes: [] }))).toBeNull();
 		expect(footerNote(preset({ host_notes: undefined }))).toBeNull();
 		expect(footerNote(null)).toBeNull();
-	});
-});
-
-describe('rowFlags', () => {
-	it('names the settings count, issues and the CPU note', () => {
-		expect(rowFlags(preset({ issues: [issue({})], host_notes: ['encodes_on_cpu_here'] }))).toEqual({
-			settings: '2 settings',
-			needsReview: true,
-			cpuHere: true
-		});
-		expect(rowFlags(preset({ handbrake_settings: { common: { A: 1 } } })).settings).toBe('1 setting');
-	});
-
-	it('is empty for a plain preset or none', () => {
-		const empty = { settings: null, needsReview: false, cpuHere: false };
-		expect(rowFlags(preset({ handbrake_settings: null, issues: undefined }))).toEqual(empty);
-		expect(rowFlags(null)).toEqual(empty);
 	});
 });
 
