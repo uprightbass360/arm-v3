@@ -19,7 +19,7 @@ import type {
 import { blockFields, encoderCards, type EncoderCard } from './encoderCards';
 import { keysForTab, type TabId } from './fields';
 import { matchesKeyFilter } from './filter';
-import { PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';
+import { PRESET_ENCODER_ID } from './encoder-availability';
 import { pruneUnreachable, toPayload } from './settingsEdit';
 import { plural } from '$lib/utils/plural';
 

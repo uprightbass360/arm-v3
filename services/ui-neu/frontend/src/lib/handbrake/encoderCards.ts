@@ -9,7 +9,7 @@ import type {
 	SlimKey,
 	SlimVariant
 } from '$lib/types/api.gen';
-import { findAvailability } from './encoder-availability';
+import { PRESET_ENCODER_ID, findAvailability } from './encoder-availability';
 
 // 'open' is a card with no hardware state to report: a pinned or base-preset family.
 export type CardState = 'verified' | 'cpu-fallback' | 'collapsed' | 'open';
@@ -45,7 +45,7 @@ function reachableFamilies(
 	schema: HandbrakeSchemaSlimView,
 	baseVideoEncoder: string | null
 ): string[] {
-	if (encoderId === 'preset') {
+	if (encoderId === PRESET_ENCODER_ID) {
 		return presetRef === null || baseVideoEncoder === null ? [] : familyOfVariant(schema, baseVideoEncoder);
 	}
 	const id = parseId(encoderId);
