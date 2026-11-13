@@ -5,7 +5,7 @@
 	import type { Snippet } from 'svelte';
 	import MediaPill from '$lib/components/MediaPill.svelte';
 	import type { MediaType } from '$lib/types/api.gen';
-	import type { BadgeTone, PillTone, TableColumn } from '$lib/components/dataTable';
+	import { alignClass, cellView, type BadgeTone, type TableColumn } from '$lib/components/dataTable';
 
 	interface Props {
 		columns: TableColumn<R>[];
@@ -23,8 +23,6 @@
 		neutral: 'badge badge-sm'
 	};
 
-	const MEDIA_TONES: ReadonlySet<PillTone> = new Set(['movie', 'tv', 'music', 'data', 'iso']);
-
 	let { columns, rows, rowKey, activeKey = null, label, actions, empty }: Props = $props();
 </script>
 
@@ -33,7 +31,7 @@
 		<thead>
 			<tr>
 				{#each columns as col (col.id)}
-					<th scope="col" class={col.align === 'end' ? 'data-table-num' : ''}>{col.header}</th>
+					<th scope="col" class={alignClass(col.align)}>{col.header}</th>
 				{/each}
 				<th scope="col" class="data-table-actions"><span class="sr-only">Actions</span></th>
 			</tr>
@@ -42,23 +40,21 @@
 			{#each rows as row (rowKey(row))}
 				<tr aria-current={rowKey(row) === activeKey ? 'true' : undefined}>
 					{#each columns as col (col.id)}
-						{@const cell = col.cell(row)}
-						<td class={col.align === 'end' ? 'data-table-num' : ''} data-muted={cell.muted ? 'true' : undefined}>
+						{@const view = cellView(col.cell(row), col.align)}
+						<td class={view.className} data-muted={view.muted}>
 							<div class="data-table-main">
-								{#if cell.pill && MEDIA_TONES.has(cell.pill.tone)}
-									<MediaPill mediaType={cell.pill.tone as MediaType} />
-								{:else if cell.pill}
-									<span class="badge badge-sm data-table-tag" data-tone={cell.pill.tone}>{cell.text}</span>
+								{#if view.pill?.kind === 'media'}
+									<MediaPill mediaType={view.pill.tone as MediaType} />
+								{:else if view.pill}
+									<span class="badge badge-sm data-table-tag" data-tone={view.pill.tone}>{view.pill.text}</span>
 								{:else}
-									<span class={cell.mono ? 'data-table-text mono' : 'data-table-text'} title={cell.text}
-										>{cell.text}</span
-									>
+									<span class={view.textClass} title={view.title}>{view.text}</span>
 								{/if}
-								{#each cell.badges ?? [] as badge (badge.text)}
+								{#each view.badges ?? [] as badge (badge.text)}
 									<span class={BADGE_CLASS[badge.tone]}>{badge.text}</span>
 								{/each}
 							</div>
-							{#if cell.sub}<div class="data-table-sub" title={cell.sub}>{cell.sub}</div>{/if}
+							{#if view.sub}<div class="data-table-sub" title={view.sub}>{view.sub}</div>{/if}
 						</td>
 					{/each}
 					<td class="data-table-actions">{@render actions(row)}</td>

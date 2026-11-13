@@ -23,3 +23,45 @@ export interface TableColumn<R> {
 	align?: 'start' | 'end';
 	cell: (row: R) => CellContent;
 }
+
+export type CellView = {
+	/** Class of the cell's td (and of its column's th). */
+	className: string;
+	/** Tooltip of the plain text; a pill carries none. */
+	title: string | undefined;
+	text: string;
+	sub: string | undefined;
+	pill: { kind: 'media' | 'tag'; tone: PillTone; text: string } | undefined;
+	badges: CellContent['badges'];
+	/** Class of the plain-text span. */
+	textClass: string;
+	/** Value of the td's data-muted attribute. */
+	muted: 'true' | undefined;
+};
+
+const MEDIA_TONES: ReadonlySet<PillTone> = new Set(['movie', 'tv', 'music', 'data', 'iso']);
+
+export function alignClass(align?: 'start' | 'end'): string {
+	return align === 'end' ? 'data-table-num' : '';
+}
+
+function pillView(cell: CellContent): CellView['pill'] {
+	if (!cell.pill) return undefined;
+	const kind = MEDIA_TONES.has(cell.pill.tone) ? 'media' : 'tag';
+	return { kind, tone: cell.pill.tone, text: cell.text };
+}
+
+/** What one cell draws: its classes, tooltips, pill and badges, decided once. */
+export function cellView(cell: CellContent, align?: 'start' | 'end'): CellView {
+	const pill = pillView(cell);
+	return {
+		className: alignClass(align),
+		title: pill ? undefined : cell.text,
+		text: cell.text,
+		sub: cell.sub,
+		pill,
+		badges: cell.badges,
+		textClass: cell.mono ? 'data-table-text mono' : 'data-table-text',
+		muted: cell.muted ? 'true' : undefined
+	};
+}
