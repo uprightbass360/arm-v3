@@ -105,8 +105,10 @@ def test_lists(hb_schema):
     lists = hb_schema.lists
     assert "av_aac" in lists["audio_encoders"]
     assert "stereo" in lists["mixdowns"]
-    assert lists["audio_samplerates"] == tuple(sorted(set(lists["audio_samplerates"])))
-    assert 48000 in lists["audio_samplerates"]
+    rates = lists["audio_samplerates"]
+    assert {"48", "44.1", "22.05", "11.025", "8"} <= set(rates)
+    assert 48000 not in rates
+    assert len(rates) == len(set(rates))
     assert 160 in lists["audio_bitrates"]
     assert "triangular" in lists["audio_dithers"]
     assert "23.976" in lists["video_framerates"]

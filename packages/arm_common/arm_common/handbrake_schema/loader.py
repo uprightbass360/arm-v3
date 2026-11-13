@@ -159,12 +159,19 @@ def _names(items: list[dict[str, Any]]) -> tuple[str, ...]:
     return tuple(item["name"] for item in items)
 
 
+def _samplerate_spelling(hertz: int) -> str:
+    """A sample rate as presets store it: kHz without trailing zeros (48000 -> "48", 44100 -> "44.1")."""
+    return f"{hertz / 1000:g}"
+
+
 def _build_lists(raw: dict[str, Any]) -> dict[str, Any]:
     encoders = raw["audio_encoders"]
     return {
         "audio_encoders": _names(encoders),
         "mixdowns": _names(raw["mixdowns"]),
-        "audio_samplerates": tuple(sorted({rate for enc in encoders for rate in enc["samplerates"]})),
+        "audio_samplerates": tuple(
+            _samplerate_spelling(rate) for rate in sorted({r for enc in encoders for r in enc["samplerates"]})
+        ),
         "audio_bitrates": tuple(raw["audio_bitrates"]),
         "audio_dithers": _names(raw["audio_dithers"]),
         "video_framerates": _names(raw["video_framerates"]),
