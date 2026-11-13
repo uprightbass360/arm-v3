@@ -46,6 +46,7 @@ from arm_transcode.engines.handbrake_engine import encoder_args as handbrake_enc
 from arm_transcode.ffmpeg_audio import transcode_audio
 from arm_transcode.handbrake import ProgressCallback, transcode_handbrake
 from arm_transcode.heartbeat import HeartbeatPump, ProgressState
+from arm_transcode.schema_file import dump_schema
 from arm_transcode.ws_client import EnvelopeHandler, WSClient
 
 
@@ -387,6 +388,8 @@ async def run() -> int:
 
 
 def main() -> int:
+    if "--dump-schema" in sys.argv[1:]:
+        return dump_schema()
     if "--probe-encoders" in sys.argv[1:]:
         # Deprecated compatibility mode. The install-time HandBrakeCLI --help
         # scrape this used to run is gone; an installer or drill script that

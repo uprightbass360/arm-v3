@@ -501,3 +501,14 @@ def test_main_runs_the_task_when_no_mode_flag_is_given(monkeypatch: pytest.Monke
     monkeypatch.setattr(m.sys, "argv", ["arm_transcode.main"])
     monkeypatch.setattr(m, "run", fake_run)
     assert m.main() == 7
+
+
+def test_dump_schema_mode_needs_no_backend_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arm_transcode import main as m
+
+    calls: list[str] = []
+    monkeypatch.setattr(m.sys, "argv", ["arm_transcode.main", "--dump-schema"])
+    monkeypatch.setattr(m, "dump_schema", lambda: calls.append("dump") or 0)
+    monkeypatch.setattr(m, "run", lambda: pytest.fail("must not start the task"))
+    assert m.main() == 0
+    assert calls == ["dump"]

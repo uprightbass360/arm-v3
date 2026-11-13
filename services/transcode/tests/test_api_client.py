@@ -30,7 +30,8 @@ class _FakeHttp:
 
 @pytest.fixture
 def client(monkeypatch: pytest.MonkeyPatch) -> tuple[BackendClient, _FakeHttp]:
-    c = BackendClient(base_url="https://backend", service_token="t", hostname="host-1")
+    c = BackendClient.__new__(BackendClient)  # skip __init__: it builds a real TLS client
+    c._hostname = "host-1"
     fake = _FakeHttp()
     c._client = fake  # type: ignore[assignment]
     monkeypatch.setattr(api_client.RegisterTranscoderResponse, "model_validate", staticmethod(lambda d: d))
@@ -45,3 +46,21 @@ async def test_register_posts_task_host_and_caps(client: tuple[BackendClient, _F
     assert url == "/api/transcoder/register"
     assert body["task_id"] == "t1"
     assert body["hostname"] == "host-1"
+
+
+async def test_register_sends_the_baked_schema_hash(
+    client: tuple[BackendClient, _FakeHttp], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c, fake = client
+    monkeypatch.setattr(api_client, "baked_schema_hash", lambda: "abc123")
+    await c.register(task_id="t1", hw_caps=HardwareCaps(cpu_count=2))
+    assert fake.calls[0][1]["schema_hash"] == "abc123"
+
+
+async def test_register_sends_no_hash_without_a_baked_schema(
+    client: tuple[BackendClient, _FakeHttp], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    c, fake = client
+    monkeypatch.setattr(api_client, "baked_schema_hash", lambda: None)
+    await c.register(task_id="t1", hw_caps=HardwareCaps(cpu_count=2))
+    assert fake.calls[0][1]["schema_hash"] is None
