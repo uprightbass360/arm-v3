@@ -296,6 +296,22 @@ describe('editing and saving', () => {
 		});
 	});
 
+	it('a new base drops the blocks the preset encoder no longer reaches', async () => {
+		vi.mocked(updateTranscodePreset).mockResolvedValue(preset());
+		vi.mocked(fetchBuiltinPreset).mockResolvedValue({ VideoEncoder: 'x265_10bit' });
+		const settings = { common: {}, encoders: { x264: { VideoTune: 'film' }, x265: { VideoTune: 'grain' } } };
+		mount({ mode: 'edit', preset: preset({ encoder: 'preset', handbrake_settings: settings }) });
+		await ready();
+		await fireEvent.change(screen.getByTestId('tp-preset-ref'), { target: { value: 'H.265 MKV 1080p30' } });
+		await waitFor(() => expect(fetchBuiltinPreset).toHaveBeenCalledWith('H.265 MKV 1080p30'));
+		await save();
+		await waitFor(() => expect(updateTranscodePreset).toHaveBeenCalled());
+		expect(vi.mocked(updateTranscodePreset).mock.calls[0][1].handbrake_settings).toEqual({
+			common: {},
+			encoders: { x265: { VideoTune: 'grain' } }
+		});
+	});
+
 	it('edits and resets a per-encoder value', async () => {
 		vi.mocked(updateTranscodePreset).mockResolvedValue(preset());
 		mount({

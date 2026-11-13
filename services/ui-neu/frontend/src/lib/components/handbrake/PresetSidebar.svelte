@@ -15,17 +15,18 @@
 	import {
 		VAAPI_NOTE,
 		applyField,
-		baseVideoEncoder,
 		draftToCreate,
 		draftToUpdate,
 		footerNote,
 		initialDraft,
+		onBaseChange,
 		saveFailure,
 		schemaLoadError,
 		showTabs,
 		sidebarTitle,
 		unplacedIssues,
 		usageLabel,
+		type Bases,
 		type PresetField,
 		type SaveFailure,
 		type SidebarMode
@@ -51,7 +52,7 @@
 	let open = $state(true);
 	let draft = $state(initialDraft(preset));
 	let issues = $state<SettingIssue[]>(preset?.issues ?? []);
-	let bases = $state<Record<string, Record<string, unknown>>>({});
+	let bases = $state<Bases>({});
 	let submitting = $state(false);
 	let failure = $state<SaveFailure | null>(null);
 	let importing = $state(false);
@@ -83,9 +84,11 @@
 		}
 	}
 
-	function onfield(field: PresetField, value: string) {
-		draft = applyField(draft, field, value, schema, baseVideoEncoder(base));
-		loadBase();
+	async function onfield(field: PresetField, value: string) {
+		draft = applyField(draft, field, value, schema, bases);
+		await loadBase();
+		// A base fetched just now can only be resolved once it has loaded.
+		if (field === 'preset_ref') draft = onBaseChange(draft, draft.preset_ref, schema, bases);
 	}
 
 	function useImported(imported: ImportedPresetView) {

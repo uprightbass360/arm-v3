@@ -23,6 +23,8 @@ import { pruneUnreachable, toPayload } from './settingsEdit';
 
 export type SidebarMode = 'new' | 'edit' | 'view';
 export type BaseValues = Record<string, unknown> | null;
+// The built-in presets loaded so far, by name.
+export type Bases = Record<string, Record<string, unknown>>;
 export type FilterState = { text: string; changedOnly: boolean };
 export type PresetField = 'name' | 'media_type' | 'tool' | 'preset_ref' | 'container' | 'encoder' | 'extra_args';
 
@@ -129,17 +131,38 @@ export function onEncoderChange(
 	return { ...d, encoder: encoderId, settings: pruneUnreachable(d.settings, reachable) };
 }
 
-// One preset-block edit. Without a schema the blocks cannot be pruned, so an encoder change only sets the id.
+function baseEncoderOf(bases: Bases, presetRef: string | null): string | null {
+	return baseVideoEncoder(presetRef === null ? null : (bases[presetRef] ?? null));
+}
+
+// The preset encoder reaches only its base's family, so a new base drops the blocks it no longer reaches.
+// A base whose values have not loaded cannot be resolved yet; its blocks stay until it loads.
+export function onBaseChange(
+	d: Draft,
+	presetRef: string | null,
+	schema: HandbrakeSchemaSlimView | null,
+	bases: Bases
+): Draft {
+	const next = { ...d, preset_ref: presetRef };
+	if (!schema || d.encoder !== PRESET_ENCODER) return next;
+	if (presetRef !== null && !(presetRef in bases)) return next;
+	return onEncoderChange(next, PRESET_ENCODER, schema, baseEncoderOf(bases, presetRef));
+}
+
+// One preset-block edit; `bases` holds the built-in presets loaded so far, by name. Without a schema the
+// blocks cannot be pruned, so an encoder change only sets the id.
 export function applyField(
 	d: Draft,
 	field: PresetField,
 	value: string,
 	schema: HandbrakeSchemaSlimView | null,
-	baseEncoder: string | null
+	bases: Bases
 ): Draft {
 	if (field === 'tool') return onToolChange(d, value as TranscodeTool);
-	if (field === 'encoder') return schema ? onEncoderChange(d, value, schema, baseEncoder) : { ...d, encoder: value };
-	if (field === 'preset_ref') return { ...d, preset_ref: value || null };
+	if (field === 'encoder') {
+		return schema ? onEncoderChange(d, value, schema, baseEncoderOf(bases, d.preset_ref)) : { ...d, encoder: value };
+	}
+	if (field === 'preset_ref') return onBaseChange(d, value || null, schema, bases);
 	return { ...d, [field]: value };
 }
 
