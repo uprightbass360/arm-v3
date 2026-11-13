@@ -22,6 +22,11 @@ vi.mock('$lib/api/transcodePresets', () => ({
 	updateTranscodePreset: vi.fn(),
 	deleteTranscodePreset: vi.fn()
 }));
+vi.mock('$lib/api/handbrakeSchema', () => ({
+	fetchHandbrakeSchema: vi.fn().mockRejectedValue(new Error('No HandBrake schema loaded yet')),
+	fetchBuiltinPreset: vi.fn(),
+	refreshHandbrakeSchema: vi.fn()
+}));
 // The preset form's encoders store follows transcode.events; keep jsdom off a real socket.
 vi.mock('$lib/api/ws', () => ({
 	wsClient: { start: vi.fn(), subscribe: vi.fn(() => () => {}) }
@@ -327,5 +332,35 @@ describe('ripper-only deployment (not transcode-capable)', () => {
 		await screen.findByText('ses Encode');
 		await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
 		expect(screen.getByText('tc t1')).toBeInTheDocument();
+	});
+});
+
+describe('transcode presets open the sidebar, rip presets the dialog', () => {
+	it('"+ Create new transcode preset..." in the session slide-over opens the sidebar', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText(/ses /i);
+		await fireEvent.click(screen.getByRole('button', { name: /new session/i }));
+		await fireEvent.change(screen.getByLabelText(/transcode preset/i), { target: { value: '__create_tc__' } });
+		const sidebar = await screen.findByRole('dialog', { name: 'New transcode preset' });
+		expect(sidebar).toHaveTextContent('Import HandBrake preset');
+		expect(screen.getByRole('button', { name: 'Save preset' })).toBeInTheDocument();
+	});
+
+	it('Edit on a transcode preset opens the sidebar, not the dialog', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText(/ses /i);
+		await fireEvent.click(screen.getByRole('tab', { name: /transcode presets/i }));
+		await fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+		const sidebar = await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		expect(sidebar).toHaveTextContent('Save preset');
+	});
+
+	it('a new rip preset still opens the stacked dialog', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText(/ses /i);
+		await fireEvent.click(screen.getByRole('tab', { name: /rip presets/i }));
+		await fireEvent.click(screen.getByRole('button', { name: /new rip preset/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'New rip preset' });
+		expect(dialog).not.toHaveTextContent('Save preset');
 	});
 });

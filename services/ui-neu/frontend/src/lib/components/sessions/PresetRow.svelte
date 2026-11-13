@@ -4,6 +4,7 @@
 	import MediaPill from './MediaPill.svelte';
 	import type { RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
 	import { encodersStore, encoderLabel } from '$lib/stores/encoders.svelte';
+	import { rowFlags } from '$lib/handbrake/sidebarModel';
 
 	interface Props {
 		kind: 'rip' | 'transcode';
@@ -28,6 +29,9 @@
 			? ripPresetSummary(preset as RipPresetView)
 			: transcodePresetSummary(preset as TranscodePresetView, encoderLabel)
 	);
+
+	// HandBrake settings count, issues and host note: transcode presets only.
+	let flags = $derived(rowFlags(kind === 'transcode' ? (preset as TranscodePresetView) : null));
 
 	let deleteDisabled = $derived(preset.is_builtin || usedBy > 0);
 
@@ -55,6 +59,9 @@
 					BUILT-IN
 				</span>
 			{/if}
+			{#if flags.needsReview}
+				<span class="badge badge-sm badge-warning preset-row-review">Needs review</span>
+			{/if}
 		</div>
 
 		<!-- Action buttons -->
@@ -81,6 +88,9 @@
 
 		<!-- One-line summary -->
 		<span class="preset-row-summary">{summary}</span>
+
+		{#if flags.settings}<span class="preset-row-summary">{flags.settings}</span>{/if}
+		{#if flags.cpuHere}<span class="preset-row-summary">Encodes on CPU on this host</span>{/if}
 
 		<!-- Used by chip -->
 		<span class="chip chip-sm preset-row-used-by">
@@ -137,6 +147,9 @@
 		line-height: 1rem;
 		font-weight: 700;
 		letter-spacing: 0.1em;
+	}
+	.preset-row-review {
+		flex-shrink: 0;
 	}
 	.preset-row-actions {
 		display: flex;

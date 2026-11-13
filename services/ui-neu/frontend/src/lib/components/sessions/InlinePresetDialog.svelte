@@ -1,32 +1,18 @@
 <script lang="ts">
-	// The sessions area's stacked preset dialog: a rip or transcode
-	// preset form, to create one or edit one, layered above the
-	// builder slide-over.
+	// The sessions area's stacked rip preset dialog, to create one or edit
+	// one, layered above the builder slide-over. Transcode presets open the
+	// preset sidebar instead (PresetSidebar).
 	import RipPresetForm from '$lib/components/RipPresetForm.svelte';
-	import TranscodePresetForm from '$lib/components/TranscodePresetForm.svelte';
-	import type { RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
+	import type { RipPresetView } from '$lib/types/api.gen';
 
 	interface Props {
-		kind: 'rip' | 'transcode';
 		/** The preset to edit, or null to create one. */
-		preset: RipPresetView | TranscodePresetView | null;
-		onripsaved: (p: RipPresetView) => void;
-		ontranscodesaved: (p: TranscodePresetView) => void;
+		preset: RipPresetView | null;
+		onsaved: (p: RipPresetView) => void;
 		/** Closes the dialog without saving: the scrim and the form's Cancel. */
 		onclose: () => void;
 	}
-	let { kind, preset, onripsaved, ontranscodesaved, onclose }: Props = $props();
-
-	// Inline dialog label for ARIA
-	let inlineDialogLabel = $derived(
-		kind === 'rip'
-			? preset
-				? 'Edit rip preset'
-				: 'New rip preset'
-			: preset
-				? 'Edit transcode preset'
-				: 'New transcode preset'
-	);
+	let { preset, onsaved, onclose }: Props = $props();
 </script>
 
 <!-- Stacked modal: same shape as .modal, but layered above the builder
@@ -35,16 +21,13 @@
 <div class="modal sessions-area-inline-modal">
 	<button type="button" class="sessions-area-scrim" aria-label="Close dialog" onclick={onclose}></button>
 
-	<div role="dialog" aria-modal="true" aria-label={inlineDialogLabel} class="modal-panel sessions-area-inline-panel">
-		{#if kind === 'rip'}
-			<RipPresetForm preset={preset as RipPresetView | null} onsaved={onripsaved} oncancel={onclose} />
-		{:else}
-			<TranscodePresetForm
-				preset={preset as TranscodePresetView | null}
-				onsaved={ontranscodesaved}
-				oncancel={onclose}
-			/>
-		{/if}
+	<div
+		role="dialog"
+		aria-modal="true"
+		aria-label={preset ? 'Edit rip preset' : 'New rip preset'}
+		class="modal-panel sessions-area-inline-panel"
+	>
+		<RipPresetForm {preset} {onsaved} oncancel={onclose} />
 	</div>
 </div>
 

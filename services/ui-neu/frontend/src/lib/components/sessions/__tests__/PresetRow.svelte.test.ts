@@ -316,3 +316,54 @@ describe('PresetRow — transcode preset', () => {
 		expect(screen.getByText(/used by 3/i)).toBeInTheDocument();
 	});
 });
+
+describe('PresetRow — transcode preset HandBrake settings', () => {
+	const props = (over = {}) => ({
+		kind: 'transcode' as const,
+		preset: transcodePreset(over),
+		usedBy: 0,
+		onview: vi.fn(),
+		onedit: vi.fn(),
+		onclone: vi.fn(),
+		ondelete: vi.fn()
+	});
+
+	it('shows the count of stored settings, common and per encoder', () => {
+		renderComponent(
+			PresetRow,
+			props({ handbrake_settings: { common: { A: 1, B: 2 }, encoders: { x265: { VideoTune: 'grain' } } } })
+		);
+		expect(screen.getByText('3 settings')).toBeInTheDocument();
+	});
+
+	it('says "1 setting" for one', () => {
+		renderComponent(PresetRow, props({ handbrake_settings: { common: { A: 1 }, encoders: {} } }));
+		expect(screen.getByText('1 setting')).toBeInTheDocument();
+	});
+
+	it('shows no count, badge or host note for a plain preset', () => {
+		renderComponent(PresetRow, props());
+		expect(screen.queryByText(/\d+ settings?$/)).not.toBeInTheDocument();
+		expect(screen.queryByText('Needs review')).not.toBeInTheDocument();
+		expect(screen.queryByText('Encodes on CPU on this host')).not.toBeInTheDocument();
+	});
+
+	it('shows "Needs review" when the preset has issues', () => {
+		renderComponent(
+			PresetRow,
+			props({ issues: [{ key: 'preset_ref', encoder: null, code: 'not_in_list', message: 'gone' }] })
+		);
+		expect(screen.getByText('Needs review')).toBeInTheDocument();
+	});
+
+	it('shows the CPU host note', () => {
+		renderComponent(PresetRow, props({ host_notes: ['encodes_on_cpu_here'] }));
+		expect(screen.getByText('Encodes on CPU on this host')).toBeInTheDocument();
+	});
+
+	it('shows none of these on a rip preset', () => {
+		renderComponent(PresetRow, { ...props(), kind: 'rip' as const, preset: ripPreset() });
+		expect(screen.queryByText('Needs review')).not.toBeInTheDocument();
+		expect(screen.queryByText(/settings?$/)).not.toBeInTheDocument();
+	});
+});

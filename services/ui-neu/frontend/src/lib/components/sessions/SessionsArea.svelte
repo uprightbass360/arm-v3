@@ -6,6 +6,8 @@
 	import PresetLibrary from './PresetLibrary.svelte';
 	import SessionBuilderSlideOver from './SessionBuilderSlideOver.svelte';
 	import InlinePresetDialog from './InlinePresetDialog.svelte';
+	import PresetSidebar from '$lib/components/handbrake/PresetSidebar.svelte';
+	import type { SidebarMode } from '$lib/handbrake/sidebarModel';
 	import ConfirmDialog from '$lib/components/ConfirmDialog.svelte';
 	import { deleteSession, cloneSession } from '$lib/api/sessions';
 	import { createRipPreset, deleteRipPreset } from '$lib/api/ripPresets';
@@ -45,11 +47,12 @@
 	let builderOpen = $state(false);
 	let editing = $state<JoinedSession | null>(null);
 
-	// Inline-create / inline-edit stacked dialog.
-	// When kind is set, the dialog opens. editingPreset carries an existing preset
-	// for edit mode; null means create mode.
-	let inlineKind = $state<'rip' | 'transcode' | null>(null);
-	let inlinePreset = $state<RipPresetView | TranscodePresetView | null>(null);
+	// Rip presets: the inline-create / inline-edit stacked dialog, open while
+	// ripDialogOpen; ripPreset carries the preset to edit, null to create one.
+	let ripDialogOpen = $state(false);
+	let ripPreset = $state<RipPresetView | null>(null);
+	// Transcode presets: the preset sidebar, open while set.
+	let sidebar = $state<{ preset: TranscodePresetView | null; mode: SidebarMode } | null>(null);
 	let preselectRipId = $state<string | undefined>(undefined);
 	let preselectTranscodeId = $state<string | undefined>(undefined);
 
@@ -115,11 +118,16 @@
 
 	// ── Preset library callbacks ───────────────────────────────────────────────
 
-	// FIX 2: wire View/Edit to open the form in the stacked dialog.
-	// PresetLibrary passes (preset) — the kind is inferred from the preset shape.
+	// View/Edit: a rip preset opens the stacked dialog, a transcode preset the
+	// sidebar (read-only for a built-in). PresetLibrary passes (preset); the
+	// kind is inferred from the preset shape.
 	function openPresetForm(p: RipPresetView | TranscodePresetView) {
-		inlineKind = isRipPreset(p) ? 'rip' : 'transcode';
-		inlinePreset = p;
+		if (isRipPreset(p)) {
+			ripDialogOpen = true;
+			ripPreset = p;
+		} else {
+			sidebar = { preset: p, mode: p.is_builtin ? 'view' : 'edit' };
+		}
 	}
 
 	async function handleCloneRipPreset(p: RipPresetView) {
@@ -155,20 +163,29 @@
 
 	// ── Inline-create / inline-edit callbacks ─────────────────────────────────
 
-	// Opens the inline dialog on an empty form of that kind.
-	function openNewPreset(kind: 'rip' | 'transcode') {
-		inlineKind = kind;
-		inlinePreset = null;
+	// Opens an empty rip preset dialog.
+	function openNewRipPreset() {
+		ripDialogOpen = true;
+		ripPreset = null;
 	}
 
-	function closeInline() {
-		inlineKind = null;
-		inlinePreset = null;
+	// Opens the sidebar on a new transcode preset.
+	function openNewTranscodePreset() {
+		sidebar = { preset: null, mode: 'new' };
+	}
+
+	function closeRipDialog() {
+		ripDialogOpen = false;
+		ripPreset = null;
+	}
+
+	function closeSidebar() {
+		sidebar = null;
 	}
 
 	async function handleRipPresetSaved(p: RipPresetView) {
-		const wasCreating = inlinePreset === null;
-		closeInline();
+		const wasCreating = ripPreset === null;
+		closeRipDialog();
 		await data.load();
 		// Only pre-select when creating a new preset (not when editing an existing one)
 		if (wasCreating) {
@@ -177,8 +194,8 @@
 	}
 
 	async function handleTranscodePresetSaved(p: TranscodePresetView) {
-		const wasCreating = inlinePreset === null;
-		closeInline();
+		const wasCreating = sidebar?.mode === 'new';
+		closeSidebar();
 		await data.load();
 		if (wasCreating) {
 			preselectTranscodeId = p.id;
@@ -243,8 +260,8 @@
 			ripUsage={data.ripUsage}
 			transcodeUsage={data.transcodeUsage}
 			loading={data.loading()}
-			onnewrip={() => openNewPreset('rip')}
-			onnewtranscode={() => openNewPreset('transcode')}
+			onnewrip={openNewRipPreset}
+			onnewtranscode={openNewTranscodePreset}
 			onview={openPresetForm}
 			onedit={openPresetForm}
 			onclone={handleClonePreset}
@@ -259,8 +276,8 @@
 		session={editing}
 		ripPresets={data.ripPresets()}
 		transcodePresets={shownTranscodePresets}
-		oncreaterip={() => openNewPreset('rip')}
-		oncreatetranscode={() => openNewPreset('transcode')}
+		oncreaterip={openNewRipPreset}
+		oncreatetranscode={openNewTranscodePreset}
 		onsaved={handleBuilderSaved}
 		oncancel={handleBuilderCancel}
 		{preselectRipId}
@@ -268,14 +285,19 @@
 	/>
 {/if}
 
-<!-- ── Inline-create / inline-edit stacked dialog ────────────────────── -->
-{#if inlineKind !== null}
-	<InlinePresetDialog
-		kind={inlineKind}
-		preset={inlinePreset}
-		onripsaved={handleRipPresetSaved}
-		ontranscodesaved={handleTranscodePresetSaved}
-		onclose={closeInline}
+<!-- ── Rip preset: inline-create / inline-edit stacked dialog ────────── -->
+{#if ripDialogOpen}
+	<InlinePresetDialog preset={ripPreset} onsaved={handleRipPresetSaved} onclose={closeRipDialog} />
+{/if}
+
+<!-- ── Transcode preset sidebar ───────────────────────────────────────── -->
+{#if sidebar}
+	<PresetSidebar
+		preset={sidebar.preset}
+		mode={sidebar.mode}
+		usage={sidebar.preset ? data.transcodeUsage(sidebar.preset.id) : 0}
+		onclose={closeSidebar}
+		onsaved={handleTranscodePresetSaved}
 	/>
 {/if}
 

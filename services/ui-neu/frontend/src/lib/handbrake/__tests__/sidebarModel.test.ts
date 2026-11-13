@@ -1,0 +1,398 @@
+import { describe, it, expect } from 'vitest';
+import type {
+	HandbrakeSchemaSlimView,
+	SettingIssue,
+	SlimFamily,
+	SlimKey,
+	TranscodePresetView
+} from '$lib/types/api.gen';
+import { ApiError, NETWORK_ERROR_MESSAGE } from '$lib/api/client';
+import fixture from './fixtures/slim-schema.json';
+import {
+	CPU_HERE_NOTE,
+	audioListValue,
+	blockOf,
+	commonOf,
+	applyField,
+	baseVideoEncoder,
+	cardFamilies,
+	cardShown,
+	commonKeys,
+	draftToCreate,
+	draftToUpdate,
+	effectiveQualityType,
+	footerNote,
+	inheritedDepth,
+	inheritedValue,
+	initialDraft,
+	issuesFor,
+	keyShown,
+	onEncoderChange,
+	onToolChange,
+	rowFlags,
+	saveFailure,
+	schemaLoadError,
+	settingsCount,
+	showTabs,
+	sidebarTitle,
+	unplacedIssues,
+	usageLabel,
+	type Draft
+} from '../sidebarModel';
+
+const schema = fixture as unknown as HandbrakeSchemaSlimView;
+const family = (name: string): SlimFamily => schema.families.find((f) => f.name === name)!;
+const key = (name: string): SlimKey => schema.keys.find((k) => k.name === name)!;
+const issue = (over: Partial<SettingIssue>): SettingIssue => ({
+	key: 'VideoQualitySlider',
+	encoder: null,
+	code: 'out_of_range',
+	message: 'Too high',
+	...over
+});
+
+function preset(over: Partial<TranscodePresetView> = {}): TranscodePresetView {
+	return {
+		id: 't1',
+		name: 'Movies',
+		media_type: 'tv',
+		is_builtin: false,
+		tool: 'handbrake',
+		preset_ref: 'Fast 1080p30',
+		handbrake_settings: { common: { PictureWidth: 1280 }, encoders: { x264: { VideoPreset: 'slow' } } },
+		issues: [],
+		host_notes: [],
+		container: 'mp4',
+		encoder: 'any_h264',
+		extra_args: '--x',
+		created_by_user_id: null,
+		created_at: null,
+		updated_at: null,
+		...over
+	};
+}
+
+function draft(over: Partial<Draft> = {}): Draft {
+	return { ...initialDraft(null), ...over };
+}
+
+describe('initialDraft', () => {
+	it('starts a new preset on HandBrake defaults with nothing stored', () => {
+		expect(initialDraft(null)).toEqual({
+			name: '',
+			media_type: 'movie',
+			tool: 'handbrake',
+			preset_ref: null,
+			container: 'mkv',
+			encoder: 'preset',
+			extra_args: '',
+			settings: { common: {}, encoders: {} }
+		});
+	});
+
+	it('copies an existing preset, null extra args as empty text', () => {
+		const d = initialDraft(preset({ extra_args: null }));
+		expect(d).toMatchObject({ name: 'Movies', media_type: 'tv', preset_ref: 'Fast 1080p30', encoder: 'any_h264' });
+		expect(d.extra_args).toBe('');
+		expect(d.settings).toEqual({ common: { PictureWidth: 1280 }, encoders: { x264: { VideoPreset: 'slow' } } });
+	});
+
+	it('fills missing settings sections', () => {
+		expect(initialDraft(preset({ handbrake_settings: null })).settings).toEqual({ common: {}, encoders: {} });
+		expect(initialDraft(preset({ handbrake_settings: { common: { A: 1 } } })).settings).toEqual({
+			common: { A: 1 },
+			encoders: {}
+		});
+	});
+});
+
+describe('draftToCreate / draftToUpdate', () => {
+	it('creates with every field and the settings payload', () => {
+		const d = draft({ name: 'N', extra_args: '--y', settings: { common: { A: 1 }, encoders: {} } });
+		expect(draftToCreate(d)).toEqual({
+			name: 'N',
+			media_type: 'movie',
+			tool: 'handbrake',
+			preset_ref: null,
+			container: 'mkv',
+			encoder: 'preset',
+			extra_args: '--y',
+			handbrake_settings: { common: { A: 1 }, encoders: {} }
+		});
+	});
+
+	it('sends null settings once everything is cleared (Review Focus 2)', () => {
+		const d = draft({ settings: { common: {}, encoders: { x264: {} } }, extra_args: '' });
+		expect(draftToUpdate(d).handbrake_settings).toBeNull();
+		expect(draftToUpdate(d).extra_args).toBeNull();
+	});
+
+	it('updates without media_type', () => {
+		expect(draftToUpdate(draft())).not.toHaveProperty('media_type');
+	});
+
+	it('sends no settings when the tabs do not apply', () => {
+		const stored = { common: { A: 1 }, encoders: {} };
+		expect(draftToCreate(draft({ tool: 'abcde', settings: stored })).handbrake_settings).toBeNull();
+		expect(draftToUpdate(draft({ encoder: 'vaapi_h264', settings: stored })).handbrake_settings).toBeNull();
+	});
+});
+
+describe('onToolChange', () => {
+	it('locks the encoder to preset for abcde and none', () => {
+		expect(onToolChange(draft({ encoder: 'any_h264' }), 'abcde')).toMatchObject({ tool: 'abcde', encoder: 'preset' });
+		expect(onToolChange(draft({ encoder: 'any_h264' }), 'none').encoder).toBe('preset');
+	});
+
+	it('keeps the encoder for HandBrake', () => {
+		expect(onToolChange(draft({ tool: 'none', encoder: 'any_h264' }), 'handbrake').encoder).toBe('any_h264');
+	});
+});
+
+describe('onEncoderChange (Review Focus 4)', () => {
+	const settings = { common: { A: 1 }, encoders: { x264: { VideoPreset: 'slow' }, x265: { VideoPreset: 'fast' } } };
+
+	it('drops blocks of families the new encoder cannot reach', () => {
+		const next = onEncoderChange(draft({ encoder: 'any_h264', settings }), 'any_h265', schema);
+		expect(next.encoder).toBe('any_h265');
+		expect(next.settings).toEqual({ common: { A: 1 }, encoders: { x265: { VideoPreset: 'fast' } } });
+	});
+
+	it('keeps the base encoder family for the preset encoder', () => {
+		const next = onEncoderChange(draft({ preset_ref: 'Fast 1080p30', settings }), 'preset', schema, 'x264');
+		expect(Object.keys(next.settings.encoders!)).toEqual(['x264']);
+	});
+});
+
+describe('applyField', () => {
+	const settings = { common: {}, encoders: { x264: { VideoTune: 'film' } } };
+
+	it('routes tool and encoder edits through their rules', () => {
+		expect(applyField(draft({ encoder: 'any_h264' }), 'tool', 'none', schema, null).encoder).toBe('preset');
+		expect(applyField(draft({ encoder: 'any_h264', settings }), 'encoder', 'any_h265', schema, null).settings).toEqual({
+			common: {},
+			encoders: {}
+		});
+	});
+
+	it('only sets the encoder without a schema', () => {
+		const next = applyField(draft({ encoder: 'any_h264', settings }), 'encoder', 'any_h265', null, null);
+		expect(next).toMatchObject({ encoder: 'any_h265', settings });
+	});
+
+	it('stores an empty base preset as null and other fields as given', () => {
+		expect(applyField(draft({ preset_ref: 'Fast 1080p30' }), 'preset_ref', '', schema, null).preset_ref).toBeNull();
+		expect(applyField(draft(), 'preset_ref', 'Fast 480p30', schema, null).preset_ref).toBe('Fast 480p30');
+		expect(applyField(draft(), 'name', 'N', schema, null).name).toBe('N');
+	});
+});
+
+describe('footerNote', () => {
+	it('is the CPU note only with the host note', () => {
+		expect(footerNote(preset({ host_notes: ['encodes_on_cpu_here'] }))).toBe(CPU_HERE_NOTE);
+		expect(CPU_HERE_NOTE).toBe('Encodes on CPU on this host: no verified non-AMD GPU for this codec');
+		expect(footerNote(preset({ host_notes: [] }))).toBeNull();
+		expect(footerNote(preset({ host_notes: undefined }))).toBeNull();
+		expect(footerNote(null)).toBeNull();
+	});
+});
+
+describe('settingsCount', () => {
+	it('counts common keys and every block key', () => {
+		expect(settingsCount({ common: { A: 1, B: 2 }, encoders: { x264: { C: 1 }, x265: { C: 1, D: 2 } } })).toBe(5);
+		expect(settingsCount(null)).toBe(0);
+		expect(settingsCount({})).toBe(0);
+	});
+});
+
+describe('rowFlags', () => {
+	it('names the settings count, issues and the CPU note', () => {
+		expect(rowFlags(preset({ issues: [issue({})], host_notes: ['encodes_on_cpu_here'] }))).toEqual({
+			settings: '2 settings',
+			needsReview: true,
+			cpuHere: true
+		});
+		expect(rowFlags(preset({ handbrake_settings: { common: { A: 1 } } })).settings).toBe('1 setting');
+	});
+
+	it('is empty for a plain preset or none', () => {
+		const empty = { settings: null, needsReview: false, cpuHere: false };
+		expect(rowFlags(preset({ handbrake_settings: null, issues: undefined }))).toEqual(empty);
+		expect(rowFlags(null)).toEqual(empty);
+	});
+});
+
+describe('showTabs', () => {
+	it('is HandBrake with a non-VAAPI encoder', () => {
+		expect(showTabs(draft({ encoder: 'any_h264' }))).toBe(true);
+		expect(showTabs(draft({ encoder: 'vaapi_h265' }))).toBe(false);
+		expect(showTabs(draft({ tool: 'abcde' }))).toBe(false);
+	});
+});
+
+describe('sidebarTitle and usageLabel', () => {
+	it('names each mode', () => {
+		expect(sidebarTitle('new')).toBe('New transcode preset');
+		expect(sidebarTitle('edit')).toBe('Edit transcode preset');
+		expect(sidebarTitle('view')).toBe('View transcode preset');
+	});
+
+	it('pluralises sessions', () => {
+		expect(usageLabel(0)).toBe('Used by 0 sessions');
+		expect(usageLabel(1)).toBe('Used by 1 session');
+		expect(usageLabel(3)).toBe('Used by 3 sessions');
+	});
+});
+
+describe('inherited values', () => {
+	it('reads the base, then the schema default', () => {
+		expect(inheritedValue(key('VideoQualityType'), { VideoQualityType: 1 })).toBe(1);
+		expect(inheritedValue(key('VideoQualityType'), {})).toBe(2);
+		expect(inheritedValue(key('VideoQualityType'), null)).toBe(2);
+	});
+
+	it('takes the quality type from the preset, the base, then the template', () => {
+		const vqt = (common: Record<string, unknown>, base: Record<string, unknown> | null) =>
+			effectiveQualityType({ common, encoders: {} }, base, schema);
+		expect(vqt({ VideoQualityType: 1 }, { VideoQualityType: 2 })).toBe(1);
+		expect(vqt({}, { VideoQualityType: 1 })).toBe(1);
+		expect(vqt({}, null)).toBe(2);
+		expect(effectiveQualityType({}, null, { ...schema, keys: [] })).toBe(2);
+	});
+
+	it('reads the base video encoder only when it is text', () => {
+		expect(baseVideoEncoder({ VideoEncoder: 'x264' })).toBe('x264');
+		expect(baseVideoEncoder({ VideoEncoder: 3 })).toBeNull();
+		expect(baseVideoEncoder(null)).toBeNull();
+	});
+
+	it('inherits bit depth from a same-family base encoder, else 8', () => {
+		expect(inheritedDepth(family('x265'), { VideoEncoder: 'x265_10bit' })).toEqual({ depth: 10, source: 'base' });
+		expect(inheritedDepth(family('x265'), { VideoEncoder: 'x264' })).toEqual({ depth: 8, source: 'default' });
+		expect(inheritedDepth(family('x265'), null)).toEqual({ depth: 8, source: 'default' });
+	});
+});
+
+describe('settings access', () => {
+	it('reads sections that may be missing', () => {
+		expect(commonOf({})).toEqual({});
+		expect(commonOf({ common: { A: 1 } })).toEqual({ A: 1 });
+		expect(blockOf({}, 'x264')).toEqual({});
+		expect(blockOf({ encoders: { x264: { B: 2 } } }, 'x264')).toEqual({ B: 2 });
+	});
+
+	it('takes the audio tracks from the preset, then the base, else none', () => {
+		const tracks = [{ AudioEncoder: 'av_aac' }];
+		expect(audioListValue(key('AudioList'), { common: { AudioList: tracks } }, null)).toEqual(tracks);
+		expect(audioListValue(key('AudioList'), {}, { AudioList: tracks })).toEqual(tracks);
+		expect(audioListValue(key('AudioList'), {}, { AudioList: 'junk' })).toEqual([]);
+	});
+});
+
+describe('commonKeys', () => {
+	it('leaves out ARM-owned and encoder-specific keys', () => {
+		const video = commonKeys(schema, 'video').map((k) => k.name);
+		expect(video).toContain('VideoQualityType');
+		expect(video).not.toContain('VideoEncoder');
+		expect(video).not.toContain('VideoHWDecode');
+		expect(video).not.toContain('VideoPreset');
+		expect(commonKeys(schema, 'summary').map((k) => k.name)).not.toContain('PresetName');
+	});
+});
+
+describe('filtering', () => {
+	const none = { text: '', changedOnly: false };
+
+	it('shows a key matching the text, and only stored ones under Changed only', () => {
+		expect(keyShown(key('VideoQualityType'), false, none)).toBe(true);
+		expect(keyShown(key('VideoQualityType'), false, { text: 'rate control', changedOnly: false })).toBe(true);
+		expect(keyShown(key('VideoQualityType'), false, { text: 'denoise', changedOnly: false })).toBe(false);
+		expect(keyShown(key('VideoQualityType'), false, { text: '', changedOnly: true })).toBe(false);
+		expect(keyShown(key('VideoQualityType'), true, { text: '', changedOnly: true })).toBe(true);
+	});
+
+	it('shows the audio track list when a track key matches', () => {
+		expect(keyShown(key('AudioList'), false, { text: 'mixdown', changedOnly: false }, schema)).toBe(true);
+		expect(keyShown(key('AudioList'), false, { text: 'zzz', changedOnly: false }, schema)).toBe(false);
+		expect(keyShown(key('AudioList'), false, { text: 'mixdown', changedOnly: false })).toBe(false);
+	});
+
+	it('shows a card when a block field matches or, under Changed only, it stores something', () => {
+		expect(cardShown(schema, family('x264'), {}, none)).toBe(true);
+		expect(cardShown(schema, family('x264'), {}, { text: 'tune', changedOnly: false })).toBe(true);
+		expect(cardShown(schema, family('x264'), {}, { text: 'bit depth', changedOnly: false })).toBe(true);
+		expect(cardShown(schema, family('x264'), {}, { text: 'denoise', changedOnly: false })).toBe(false);
+		expect(cardShown(schema, family('x264'), {}, { text: '', changedOnly: true })).toBe(false);
+		expect(cardShown(schema, family('x264'), { VideoTune: 'film' }, { text: 'tune', changedOnly: true })).toBe(true);
+		expect(cardShown(schema, family('x264'), { VideoTune: 'film' }, { text: '', changedOnly: true })).toBe(true);
+	});
+});
+
+describe('cardFamilies', () => {
+	it('pairs each card with its family and drops families the schema lacks', () => {
+		const card = (family: string) => ({ family, label: family, state: 'open' as const, device: null });
+		const pairs = cardFamilies([card('x264'), card('nope')], schema);
+		expect(pairs).toEqual([{ card: card('x264'), family: family('x264') }]);
+	});
+});
+
+describe('issues', () => {
+	const list = [
+		issue({ key: 'PictureWidth', message: 'w' }),
+		issue({ key: 'VideoPreset', encoder: 'x264', message: 'p' }),
+		issue({ key: 'preset_ref', message: 'ref' }),
+		issue({ key: 'handbrake_settings', message: 'whole' }),
+		issue({ key: 'NotAKey', message: 'unknown' }),
+		issue({ key: 'AudioMixdown', message: 'mix' }),
+		issue({ key: 'bit_depth', encoder: 'x265', message: 'depth' })
+	];
+
+	it('finds the issue of a common or preset-block field', () => {
+		expect(issuesFor(list, 'PictureWidth')?.message).toBe('w');
+		expect(issuesFor(list, 'VideoPreset')).toBeUndefined();
+		expect(issuesFor(list, 'VideoPreset', 'x264')?.message).toBe('p');
+		expect(issuesFor(list, 'preset_ref')?.message).toBe('ref');
+	});
+
+	it('lists the ones no field shows', () => {
+		expect(unplacedIssues(list, schema).map((i) => i.message)).toEqual(['whole', 'unknown', 'depth']);
+		expect(unplacedIssues(list, null).map((i) => i.message)).toEqual(['w', 'p', 'whole', 'unknown', 'mix', 'depth']);
+	});
+});
+
+describe('schemaLoadError', () => {
+	it('is an Error only while unavailable', () => {
+		expect(schemaLoadError('unavailable', 'boom')?.message).toBe('boom');
+		expect(schemaLoadError('unavailable', null)?.message).toBe('No HandBrake schema loaded yet');
+		expect(schemaLoadError('ready', 'boom')).toBeNull();
+	});
+});
+
+describe('saveFailure', () => {
+	it('marks fields for a 422 with an issue list', () => {
+		const issues = [issue({})];
+		const f = saveFailure(new ApiError(422, 'API 422', { detail: { issues } }));
+		expect(f).toEqual({ issues, message: 'Fix the marked settings and save again.', schemaMissing: false });
+	});
+
+	it('keeps a 422 without issues as a plain message', () => {
+		expect(saveFailure(new ApiError(422, 'Bad name', { detail: 'Bad name' }))).toEqual({
+			issues: null,
+			message: 'Bad name',
+			schemaMissing: false
+		});
+		expect(saveFailure(new ApiError(422, 'Bad', null)).issues).toBeNull();
+	});
+
+	it('flags a 503 as no schema loaded', () => {
+		expect(saveFailure(new ApiError(503, 'No HandBrake schema loaded yet', null))).toEqual({
+			issues: null,
+			message: 'No HandBrake schema loaded yet',
+			schemaMissing: true
+		});
+	});
+
+	it('uses the network message for anything else', () => {
+		expect(saveFailure(new TypeError('fetch failed')).message).toBe(NETWORK_ERROR_MESSAGE);
+	});
+});

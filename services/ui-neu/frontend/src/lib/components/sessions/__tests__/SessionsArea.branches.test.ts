@@ -33,6 +33,12 @@ vi.mock('$lib/api/transcodePresets', () => ({
 	updateTranscodePreset: vi.fn(),
 	deleteTranscodePreset: vi.fn()
 }));
+// The transcode preset sidebar loads the HandBrake schema.
+vi.mock('$lib/api/handbrakeSchema', () => ({
+	fetchHandbrakeSchema: vi.fn().mockRejectedValue(new Error('No HandBrake schema loaded yet')),
+	fetchBuiltinPreset: vi.fn(),
+	refreshHandbrakeSchema: vi.fn()
+}));
 // The preset form's encoders store follows transcode.events; keep jsdom off a real socket.
 vi.mock('$lib/api/ws', () => ({
 	wsClient: { start: vi.fn(), subscribe: vi.fn(() => () => {}) }
@@ -47,6 +53,7 @@ import {
 	deleteTranscodePreset
 } from '$lib/api/transcodePresets';
 import { toasts, dismissToast } from '$lib/stores/toast.svelte';
+import { handbrakeSchema } from '$lib/stores/handbrakeSchema.svelte';
 import SessionsArea from '../SessionsArea.svelte';
 
 const makeSession = (id = 's1', name = 'ses Alpha') => ({
@@ -100,6 +107,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+	handbrakeSchema.reset();
 	vi.mocked(fetchSessions).mockResolvedValue([makeSession()]);
 	vi.mocked(fetchRipPresets).mockResolvedValue([makeRip()]);
 	vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode()]);
@@ -205,12 +213,24 @@ describe('presets, opening', () => {
 		expect(within(dialog).getByTestId('preset-name')).toHaveValue('rip r1');
 	});
 
-	it('View on a transcode preset opens the transcode form in the inline dialog', async () => {
+	it('View on a built-in transcode preset opens the sidebar read-only', async () => {
 		vi.mocked(fetchTranscodePresets).mockResolvedValue([{ ...makeTranscode(), is_builtin: true }]);
 		await renderPresetTab(/transcode presets/i, 'tc t1');
 		await fireEvent.click(screen.getByRole('button', { name: /^view$/i }));
-		const dialog = await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		const dialog = await screen.findByRole('dialog', { name: 'View transcode preset' });
 		expect(within(dialog).getByTestId('tp-name')).toHaveValue('tc t1');
+		expect(within(dialog).getByTestId('tp-name')).toBeDisabled();
+		expect(within(dialog).queryByRole('button', { name: 'Save preset' })).not.toBeInTheDocument();
+	});
+
+	it('the sidebar shows how many sessions use the preset', async () => {
+		vi.mocked(fetchSessions).mockResolvedValue([{ ...makeSession(), transcode_preset_id: 't1' }]);
+		renderComponent(SessionsArea);
+		await screen.findByText('ses Alpha');
+		await openTab(/transcode presets/i);
+		await fireEvent.click(await screen.findByRole('button', { name: /^edit$/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		expect(within(dialog).getByText('Used by 1 session')).toBeInTheDocument();
 	});
 
 	it('"New transcode preset" from the library opens an empty transcode form', async () => {
@@ -355,7 +375,7 @@ describe('presets, deleting', () => {
 	});
 });
 
-describe('the inline dialog', () => {
+describe('the inline dialog and the transcode preset sidebar', () => {
 	it('is labelled "New rip preset" for a new rip preset', async () => {
 		await renderPresetTab(/rip presets/i, 'rip r1');
 		await fireEvent.click(screen.getByRole('button', { name: /new rip preset/i }));
@@ -378,6 +398,14 @@ describe('the inline dialog', () => {
 		await renderPresetTab(/transcode presets/i, 'tc t1');
 		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
 		expect(await screen.findByRole('dialog', { name: 'Edit transcode preset' })).toBeInTheDocument();
+	});
+
+	it('Cancel closes the transcode preset sidebar', async () => {
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(screen.getByRole('button', { name: /new transcode preset/i }));
+		const dialog = await screen.findByRole('dialog', { name: 'New transcode preset' });
+		await fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 	});
 
 	async function openBuilderTranscodeSelect() {
@@ -408,7 +436,7 @@ describe('the inline dialog', () => {
 		await fireEvent.change(select, { target: { value: '__create_tc__' } });
 		await screen.findByRole('dialog', { name: 'New transcode preset' });
 		await fireEvent.input(screen.getByTestId('tp-name'), { target: { value: 'tc new' } });
-		await fireEvent.click(screen.getByTestId('tp-submit'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
 		await waitFor(() => expect(createTranscodePreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New transcode preset' })).not.toBeInTheDocument());
 		await waitFor(() => expect(select.value).toBe('t2'));
@@ -419,7 +447,7 @@ describe('the inline dialog', () => {
 		await renderPresetTab(/transcode presets/i, 'tc t1');
 		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
 		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
-		await fireEvent.click(screen.getByTestId('tp-submit'));
+		await fireEvent.click(screen.getByRole('button', { name: 'Save preset' }));
 		await waitFor(() => expect(updateTranscodePreset).toHaveBeenCalled());
 		await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 		await waitFor(() => expect(fetchTranscodePresets).toHaveBeenCalledTimes(2));
