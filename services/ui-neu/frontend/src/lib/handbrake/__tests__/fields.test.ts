@@ -184,6 +184,11 @@ describe('fieldView', () => {
 		expect(view.stored).toBe(true);
 	});
 
+	it('selects nothing for an unstored select with no inherited value', () => {
+		const view = fieldView(key('AudioBitrate'), { ...base, options: [1, 2] });
+		expect(view.options.map((o) => o.selected)).toEqual([false, false]);
+	});
+
 	it('treats null options as an empty list', () => {
 		expect(fieldView(key('AudioBitrate'), base).options).toEqual([]);
 	});

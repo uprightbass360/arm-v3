@@ -1,6 +1,6 @@
 import type { SidebarMode } from '$lib/handbrake/sidebarModel';
 import type { RipPresetView, SessionView, TranscodePresetView } from '$lib/types/api.gen';
-import { countByMediaType, isPassthroughSession, presetToolMap, PASSTHROUGH_TOOL } from '$lib/utils/sessions';
+import { isPassthroughSession, presetToolMap, PASSTHROUGH_TOOL } from '$lib/utils/sessions';
 
 export type View = 'sessions' | 'rip' | 'transcode' | 'routing';
 
@@ -87,27 +87,14 @@ export function errorMessage(e: unknown): string {
 
 // A ripper-only deployment (not transcode-capable) can never run encode work,
 // so it shows only passthrough sessions and presets.
-export function visibleSessions<S extends SessionView>(
+export function passthroughSessions<S extends SessionView>(
 	sessions: S[],
-	transcoderEnabled: boolean,
 	transcodePresets: TranscodePresetView[]
 ): S[] {
-	if (transcoderEnabled) return sessions;
 	const tools = presetToolMap(transcodePresets);
 	return sessions.filter((s) => isPassthroughSession(s, tools));
 }
 
-export function visibleTranscodePresets(
-	presets: TranscodePresetView[],
-	transcoderEnabled: boolean
-): TranscodePresetView[] {
-	return transcoderEnabled ? presets : presets.filter((p) => p.tool === PASSTHROUGH_TOOL);
-}
-
-export function visibleTypeCounts(
-	transcoderEnabled: boolean,
-	allCounts: ReturnType<typeof countByMediaType>,
-	shown: SessionView[]
-): ReturnType<typeof countByMediaType> {
-	return transcoderEnabled ? allCounts : countByMediaType(shown);
+export function passthroughTranscodePresets(presets: TranscodePresetView[]): TranscodePresetView[] {
+	return presets.filter((p) => p.tool === PASSTHROUGH_TOOL);
 }

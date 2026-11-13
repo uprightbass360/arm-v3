@@ -59,7 +59,6 @@ export interface PresetBlockInput {
 }
 
 export interface PresetBlockView {
-	encoderLocked: boolean;
 	encoderDisabled: boolean;
 	usesFfmpegVaapi: boolean;
 	encoderList: 'loading' | 'empty' | 'groups';
@@ -87,7 +86,6 @@ export function presetBlockView(input: PresetBlockInput): PresetBlockView {
 	const encoderLocked = draft.tool === 'abcde' || draft.tool === 'none';
 	const usesFfmpegVaapi = isVaapiEncoder(draft.encoder);
 	return {
-		encoderLocked,
 		encoderDisabled: input.readonly || encoderLocked || input.encodersLoading,
 		usesFfmpegVaapi,
 		encoderList: encoderListState(input.encodersLoading, input.encoderCount),

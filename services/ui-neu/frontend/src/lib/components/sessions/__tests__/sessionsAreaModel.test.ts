@@ -14,9 +14,8 @@ import {
 	shouldClosePresetEditorsAfterDelete,
 	transcodeSidebarMode,
 	viewTabs,
-	visibleSessions,
-	visibleTranscodePresets,
-	visibleTypeCounts,
+	passthroughSessions,
+	passthroughTranscodePresets,
 	type EditorState
 } from '../sessionsAreaModel';
 
@@ -108,25 +107,17 @@ describe('messages', () => {
 	});
 });
 
-describe('transcoder visibility', () => {
+describe('passthrough filtering', () => {
 	const presets = [asTc({ id: 'p-none', tool: 'none' }), asTc({ id: 'p-hb', tool: 'handbrake' })];
 	const sessions = [
 		asSession({ id: 'a', transcode_preset_id: null, media_type: 'movie' }),
 		asSession({ id: 'b', transcode_preset_id: 'p-none', media_type: 'movie' }),
 		asSession({ id: 'c', transcode_preset_id: 'p-hb', media_type: 'movie' })
 	];
-	it('shows everything when transcoding is available', () => {
-		expect(visibleSessions(sessions, true, presets)).toBe(sessions);
-		expect(visibleTranscodePresets(presets, true)).toBe(presets);
+	it('keeps only passthrough sessions', () => {
+		expect(passthroughSessions(sessions, presets).map((s) => s.id)).toEqual(['a', 'b']);
 	});
-	it('hides encode sessions and presets otherwise', () => {
-		expect(visibleSessions(sessions, false, presets).map((s) => s.id)).toEqual(['a', 'b']);
-		expect(visibleTranscodePresets(presets, false)).toEqual([presets[0]]);
-	});
-	it('counts shown sessions only when transcoding is unavailable', () => {
-		const all = visibleTypeCounts(true, { all: 9 } as never, sessions);
-		expect(all).toEqual({ all: 9 });
-		const shown = visibleTypeCounts(false, { all: 9 } as never, sessions.slice(0, 2));
-		expect(shown.all).toBe(2);
+	it('keeps only passthrough presets', () => {
+		expect(passthroughTranscodePresets(presets)).toEqual([presets[0]]);
 	});
 });

@@ -67,12 +67,6 @@ describe('presetBlockView', () => {
 		...over
 	});
 
-	it('locks the encoder for abcde and none presets', () => {
-		expect(presetBlockView(input()).encoderLocked).toBe(false);
-		expect(presetBlockView(input({ draft: draft({ tool: 'abcde' }) })).encoderLocked).toBe(true);
-		expect(presetBlockView(input({ draft: draft({ tool: 'none' }) })).encoderLocked).toBe(true);
-	});
-
 	it('disables the encoder when read-only, locked or loading', () => {
 		expect(presetBlockView(input()).encoderDisabled).toBe(false);
 		expect(presetBlockView(input({ readonly: true })).encoderDisabled).toBe(true);

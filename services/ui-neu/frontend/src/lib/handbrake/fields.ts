@@ -38,12 +38,6 @@ export function numberLimits(key: SlimKey): { min: number; max: number } | null 
 
 type Context = Record<string, unknown>;
 
-// A stored value as text; anything that is not a string, number or boolean (an object) reads as empty.
-export function scalarText(value: unknown): string {
-	if (typeof value === 'string') return value;
-	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-	return '';
-}
 type OptionResolver = (key: SlimKey, ref: string, schema: HandbrakeSchemaSlimView, context: Context) => unknown[];
 
 // ref is either a filter name or the key that selects one (PictureDenoiseFilter).
@@ -111,11 +105,18 @@ export interface FieldViewInput {
 	range?: { min: number; max: number; step: number };
 }
 
+// A stored value as text; anything that is not a string, number or boolean (an object) reads as empty.
+export function scalarText(value: unknown): string {
+	if (typeof value === 'string') return value;
+	if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+	return '';
+}
+
 // What a field draws: an unstored text or number field is empty with the inherited
 // value as its placeholder; a select marks the inherited value as selected.
 export function fieldView(key: SlimKey, opts: FieldViewInput): FieldView {
 	const shown = opts.stored ? opts.value : opts.inherited;
-	const text = shown == null ? '' : String(shown);
+	const text = scalarText(shown);
 	const limits = numberLimits(key);
 	return {
 		kind: fieldKind(key),
@@ -128,7 +129,7 @@ export function fieldView(key: SlimKey, opts: FieldViewInput): FieldView {
 		options: (opts.options ?? []).map((raw) => ({
 			value: String(raw),
 			label: optionLabel(key, raw),
-			selected: String(raw) === String(shown),
+			selected: String(raw) === text,
 			raw
 		})),
 		chipValues: Array.isArray(shown) ? shown.map(String) : [],

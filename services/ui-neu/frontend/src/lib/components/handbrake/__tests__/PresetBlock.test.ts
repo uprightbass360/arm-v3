@@ -239,6 +239,24 @@ describe('encoder picker', () => {
 		expect(webm.disabled).toBe(true);
 	});
 
+	it('re-derives the VAAPI view when the encoder prop changes', async () => {
+		const props = {
+			draft: { ...initialDraft(null), encoder: 'any_h264' },
+			readonly: false,
+			editing: false,
+			builtinNames: ['Fast 1080p30'],
+			issues: [] as SettingIssue[],
+			onfield: vi.fn()
+		};
+		const { rerender } = renderComponent(PresetBlock, { props });
+		await encodersLoaded();
+		expect(screen.queryByText('ffmpeg arguments')).not.toBeInTheDocument();
+		expect(screen.queryByTestId('tp-container-vaapi-note')).not.toBeInTheDocument();
+		await rerender({ draft: { ...props.draft, encoder: 'vaapi_h264' } });
+		expect(screen.getByText('ffmpeg arguments')).toBeInTheDocument();
+		expect(screen.getByTestId('tp-container-vaapi-note')).toBeInTheDocument();
+	});
+
 	it('shows the current id alone when the catalog is empty', async () => {
 		mockFetchEncoders.mockResolvedValueOnce([]);
 		mount({ encoder: 'any_h264' });

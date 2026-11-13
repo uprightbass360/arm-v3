@@ -2,16 +2,11 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { renderComponent, screen, fireEvent, cleanup, waitFor, within } from '$lib/test-utils';
 import type { MediaType } from '$lib/types/api.gen';
 
-// Branch pins for SessionsArea, beside SessionsArea.svelte.test.ts. Two
-// branches cannot be reached from the rendered component, so nothing here
-// forces them:
-// - The `if (!deleteSessionTarget) return;` and `if (!deletePresetTarget)
-//   return;` guards: ConfirmDialog fires onconfirm only while it is open,
-//   which is only while the target is set, and each handler clears the
-//   target only after reading it, so the guard never sees a null target.
-// - The `: ''` side of each ConfirmDialog's message: ConfirmDialog renders
-//   the message only while open, and open is the same target-is-set test, so
-//   the empty string is never shown.
+// Branch pins for SessionsArea, beside SessionsArea.svelte.test.ts. The delete
+// handlers read their target with an as-cast rather than a null guard:
+// ConfirmDialog fires onconfirm only while it is open, which is only while the
+// target is set. The empty-message arms of the ConfirmDialog messages are
+// covered in sessionsAreaModel.test.ts.
 
 vi.mock('$lib/api/sessions', () => ({
 	fetchSessions: vi.fn(),

@@ -29,12 +29,12 @@
 		shouldClosePresetEditorsAfterDelete,
 		transcodeSidebarMode,
 		viewTabs,
-		visibleSessions,
-		visibleTranscodePresets,
-		visibleTypeCounts,
+		passthroughSessions,
+		passthroughTranscodePresets,
 		type EditorState,
 		type View
 	} from './sessionsAreaModel';
+	import { countByMediaType } from '$lib/utils/sessions';
 	import type { RipPresetView, SessionView, TranscodePresetView } from '$lib/types/api.gen';
 
 	const data = createSessionsData();
@@ -42,9 +42,13 @@
 	// A ripper-only deployment (not transcode-capable) shows only passthrough
 	// sessions/presets. Keyed on capability, not the runtime toggle: a
 	// capable-but-disabled box keeps its encode sessions editable.
-	const shownSessions = $derived(visibleSessions(data.sessions(), $transcoderEnabled, data.transcodePresets()));
-	const shownTranscodePresets = $derived(visibleTranscodePresets(data.transcodePresets(), $transcoderEnabled));
-	const shownTypeCounts = $derived(visibleTypeCounts($transcoderEnabled, data.typeCounts(), shownSessions));
+	const shownSessions = $derived(
+		$transcoderEnabled ? data.sessions() : passthroughSessions(data.sessions(), data.transcodePresets())
+	);
+	const shownTranscodePresets = $derived(
+		$transcoderEnabled ? data.transcodePresets() : passthroughTranscodePresets(data.transcodePresets())
+	);
+	const shownTypeCounts = $derived($transcoderEnabled ? data.typeCounts() : countByMediaType(shownSessions));
 
 	// Active view: the sessions hub, one of the two preset libraries, or routing
 	let view = $state<View>('sessions');
