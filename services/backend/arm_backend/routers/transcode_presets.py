@@ -1,8 +1,9 @@
 """Transcode preset CRUD. Built-in protection mirrors sessions.py and rip_presets.py."""
 
+import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
@@ -13,7 +14,10 @@ from arm_backend.handbrake_schema_store import SchemaStore, get_schema_store
 from arm_backend.preset_views import normalise_settings, preset_view
 from arm_common import ContainerFormat, Gpu, MediaType, Session, TranscodePreset, TranscodeTool, User
 from arm_common.encoders import encoder_allowed_for_tool, encoder_supports_container, get_encoder
+from arm_common.handbrake_schema.importer import ExportNotRecognised, import_export
+from arm_common.handbrake_schema.types import HandbrakeSchema
 from arm_common.handbrake_schema.validate import validate_settings
+from arm_common.schemas.handbrake import ImportParseResponse
 from arm_common.schemas import (
     HandbrakeSettings,
     TranscodePresetCreateRequest,
@@ -22,6 +26,9 @@ from arm_common.schemas import (
 )
 
 router = APIRouter(prefix="/api/transcode-presets", tags=["transcode-presets"])
+
+_NO_SCHEMA = "No HandBrake schema loaded yet"
+_MAX_IMPORT_BYTES = 1_048_576
 
 # NOT NULL columns (name, tool, container, encoder): the update schema lets a
 # client send null for them, which means "leave it as is".
@@ -60,10 +67,7 @@ def _check_settings(
     parsed = HandbrakeSettings.model_validate(settings) if settings else None
     if parsed is None or parsed.is_empty():
         return
-    schema = store.current()
-    if schema is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No HandBrake schema loaded yet")
-    issues = validate_settings(schema, tool=tool, encoder_id=encoder, preset_ref=preset_ref, settings=parsed)
+    issues = validate_settings(_loaded(store), tool=tool, encoder_id=encoder, preset_ref=preset_ref, settings=parsed)
     if issues:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -71,8 +75,44 @@ def _check_settings(
         )
 
 
+def _loaded(store: SchemaStore) -> HandbrakeSchema:
+    schema = store.current()
+    if schema is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, _NO_SCHEMA)
+    return schema
+
+
 async def _load_gpus(db: AsyncSession) -> list[Gpu]:
     return list((await db.execute(select(Gpu))).scalars().all())
+
+
+def _decode_export(raw: bytes) -> Any:
+    """The export's JSON, or 413 when the file is over 1 MB and 422 when it is not JSON."""
+    if len(raw) > _MAX_IMPORT_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "The file is larger than 1 MB")
+    try:
+        return json.loads(raw)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The file is not valid JSON") from exc
+
+
+@router.post(
+    "/import/parse",
+    response_model=ImportParseResponse,
+    openapi_extra={"requestBody": {"required": True, "content": {"application/json": {"schema": {}}}}},
+)
+async def parse_handbrake_export(
+    request: Request,
+    _: User = Depends(require_writer),
+    store: SchemaStore = Depends(get_schema_store),
+) -> ImportParseResponse:
+    """Turn a HandBrake GUI export into preset proposals. Stores nothing."""
+    body = _decode_export(await request.body())
+    schema = _loaded(store)
+    try:
+        return import_export(schema, body)
+    except ExportNotRecognised as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
 
 
 @router.get("", response_model=list[TranscodePresetView])

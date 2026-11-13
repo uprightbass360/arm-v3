@@ -2188,6 +2188,93 @@ export type IdentityView = {
 };
 
 /**
+ * ImportParseResponse
+ */
+export type ImportParseResponse = {
+    /**
+     * Handbrake Version
+     */
+    handbrake_version: {
+        [key: string]: string;
+    };
+    /**
+     * Presets
+     */
+    presets: Array<ImportedPresetView>;
+};
+
+/**
+ * ImportProposal
+ *
+ * The preset an import would create from one HandBrake export entry.
+ */
+export type ImportProposal = {
+    /**
+     * Name
+     */
+    name: string;
+    container: ContainerFormat;
+    /**
+     * Encoder
+     */
+    encoder: string;
+    handbrake_settings: HandbrakeSettings;
+};
+
+/**
+ * ImportedPresetView
+ *
+ * One export entry as the review step shows it: the proposal plus everything the import changed.
+ */
+export type ImportedPresetView = {
+    /**
+     * Path
+     */
+    path: Array<string>;
+    /**
+     * Name
+     */
+    name: string;
+    proposal: ImportProposal | null;
+    /**
+     * Source Encoder
+     */
+    source_encoder: string;
+    /**
+     * Dropped Keys
+     */
+    dropped_keys: Array<string>;
+    /**
+     * Not Imported
+     */
+    not_imported: Array<string>;
+    /**
+     * Copied Depth To
+     */
+    copied_depth_to: Array<string>;
+    /**
+     * Eight Bit Only
+     */
+    eight_bit_only: Array<string>;
+    /**
+     * Warnings
+     */
+    warnings: Array<string>;
+    /**
+     * Issues
+     */
+    issues: Array<SettingIssue>;
+    /**
+     * Importable
+     */
+    importable: boolean;
+    /**
+     * Reason
+     */
+    reason?: string | null;
+};
+
+/**
  * InAppChannelConfig
  */
 export type InAppChannelConfig = {
@@ -8124,6 +8211,22 @@ export type UpdateRipPresetApiRipPresetsPresetIdPatchResponses = {
 };
 
 export type UpdateRipPresetApiRipPresetsPresetIdPatchResponse = UpdateRipPresetApiRipPresetsPresetIdPatchResponses[keyof UpdateRipPresetApiRipPresetsPresetIdPatchResponses];
+
+export type ParseHandbrakeExportApiTranscodePresetsImportParsePostData = {
+    body: unknown;
+    path?: never;
+    query?: never;
+    url: '/api/transcode-presets/import/parse';
+};
+
+export type ParseHandbrakeExportApiTranscodePresetsImportParsePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: ImportParseResponse;
+};
+
+export type ParseHandbrakeExportApiTranscodePresetsImportParsePostResponse = ParseHandbrakeExportApiTranscodePresetsImportParsePostResponses[keyof ParseHandbrakeExportApiTranscodePresetsImportParsePostResponses];
 
 export type ListTranscodePresetsApiTranscodePresetsGetData = {
     body?: never;

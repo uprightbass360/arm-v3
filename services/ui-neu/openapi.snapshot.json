@@ -3527,6 +3527,41 @@
         }
       }
     },
+    "/api/transcode-presets/import/parse": {
+      "post": {
+        "tags": [
+          "transcode-presets"
+        ],
+        "summary": "Parse Handbrake Export",
+        "description": "Turn a HandBrake GUI export into preset proposals. Stores nothing.",
+        "operationId": "parse_handbrake_export_api_transcode_presets_import_parse_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportParseResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "UserJWT": []
+          }
+        ]
+      }
+    },
     "/api/transcode-presets": {
       "get": {
         "tags": [
@@ -11903,6 +11938,159 @@
         "type": "object",
         "title": "IdentityView",
         "description": "`GET /api/jobs/{id}/identity` response."
+      },
+      "ImportParseResponse": {
+        "properties": {
+          "handbrake_version": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Handbrake Version"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/ImportedPresetView"
+            },
+            "type": "array",
+            "title": "Presets"
+          }
+        },
+        "type": "object",
+        "required": [
+          "handbrake_version",
+          "presets"
+        ],
+        "title": "ImportParseResponse"
+      },
+      "ImportProposal": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "container": {
+            "$ref": "#/components/schemas/ContainerFormat"
+          },
+          "encoder": {
+            "type": "string",
+            "title": "Encoder"
+          },
+          "handbrake_settings": {
+            "$ref": "#/components/schemas/HandbrakeSettings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "container",
+          "encoder",
+          "handbrake_settings"
+        ],
+        "title": "ImportProposal",
+        "description": "The preset an import would create from one HandBrake export entry."
+      },
+      "ImportedPresetView": {
+        "properties": {
+          "path": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Path"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "proposal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImportProposal"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_encoder": {
+            "type": "string",
+            "title": "Source Encoder"
+          },
+          "dropped_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Dropped Keys"
+          },
+          "not_imported": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Not Imported"
+          },
+          "copied_depth_to": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Copied Depth To"
+          },
+          "eight_bit_only": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Eight Bit Only"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SettingIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "importable": {
+            "type": "boolean",
+            "title": "Importable"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path",
+          "name",
+          "proposal",
+          "source_encoder",
+          "dropped_keys",
+          "not_imported",
+          "copied_depth_to",
+          "eight_bit_only",
+          "warnings",
+          "issues",
+          "importable"
+        ],
+        "title": "ImportedPresetView",
+        "description": "One export entry as the review step shows it: the proposal plus everything the import changed."
       },
       "InAppChannelConfig": {
         "properties": {

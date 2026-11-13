@@ -38,3 +38,9 @@ def schema_without_nvenc_h264_preset(name: str) -> HandbrakeSchema:
         if encoder["name"] == "nvenc_h264":
             encoder["presets"] = [p for p in encoder["presets"] if p != name]
     return load_schema(raw)
+
+
+def plex_export() -> dict[str, Any]:
+    """A fresh copy of the committed GUI export of a custom Plex 720p preset."""
+    path = _FIXTURE.parent / "handbrake-export-custom-plex-720p.json"
+    return json.loads(path.read_text())
