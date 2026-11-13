@@ -490,3 +490,14 @@ def test_require_gpu_device_raises_when_empty(monkeypatch: pytest.MonkeyPatch) -
 
     with pytest.raises(RuntimeError, match="ffmpeg_vaapi encoder requires ARM_GPU_DEVICE"):
         m._require_gpu_device()
+
+
+def test_main_runs_the_task_when_no_mode_flag_is_given(monkeypatch: pytest.MonkeyPatch) -> None:
+    from arm_transcode import main as m
+
+    async def fake_run() -> int:
+        return 7
+
+    monkeypatch.setattr(m.sys, "argv", ["arm_transcode.main"])
+    monkeypatch.setattr(m, "run", fake_run)
+    assert m.main() == 7
