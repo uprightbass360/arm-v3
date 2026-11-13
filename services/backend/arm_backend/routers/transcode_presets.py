@@ -31,6 +31,8 @@ _NO_SCHEMA = "No HandBrake schema loaded yet"
 _MAX_IMPORT_BYTES = 1_048_576
 # A patch touching one of these can change what the settings mean, so it re-validates them.
 _SETTINGS_INPUTS = frozenset({"handbrake_settings", "tool", "encoder", "preset_ref"})
+# Fields whose post-patch combination `_validate_encoder` checks.
+_ENCODER_INPUTS = frozenset({"encoder", "tool", "container"})
 
 # NOT NULL columns (name, tool, container, encoder): the update schema lets a
 # client send null for them, which means "leave it as is".
@@ -174,6 +176,37 @@ async def create_transcode_preset(
     return preset_view(row, store.current(), await _load_gpus(db))
 
 
+def _patch_fields(req: TranscodePresetUpdateRequest) -> dict[str, Any]:
+    """The fields the patch sets: null for a NOT NULL column means "leave it as is"; settings normalised."""
+    fields = {k: v for k, v in req.model_dump(exclude_unset=True).items() if not (k in _NOT_NULL_FIELDS and v is None)}
+    if "handbrake_settings" in fields:
+        fields["handbrake_settings"] = normalise_settings(req.handbrake_settings)
+    return fields
+
+
+def _patched(fields: dict[str, Any], row: TranscodePreset, key: str) -> Any:
+    """What the row will hold for `key` after the patch."""
+    return fields.get(key, getattr(row, key))
+
+
+def _validate_patch(store: SchemaStore, fields: dict[str, Any], row: TranscodePreset) -> None:
+    """Validate what the row will hold after the patch, so switching the tool away from HandBrake cannot
+    strand a codec encoder on it, a container change cannot pair a VAAPI encoder with WebM, and the
+    settings are checked against the post-patch tool, encoder and base preset."""
+    if fields.keys() & _ENCODER_INPUTS:
+        _validate_encoder(
+            _patched(fields, row, "encoder"), _patched(fields, row, "tool"), _patched(fields, row, "container")
+        )
+    if fields.keys() & _SETTINGS_INPUTS:
+        _check_settings(
+            store,
+            tool=_patched(fields, row, "tool"),
+            encoder=_patched(fields, row, "encoder"),
+            preset_ref=_patched(fields, row, "preset_ref"),
+            settings=_patched(fields, row, "handbrake_settings"),
+        )
+
+
 @router.patch("/{preset_id}", response_model=TranscodePresetView)
 async def update_transcode_preset(
     preset_id: str,
@@ -186,31 +219,13 @@ async def update_transcode_preset(
     if row is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"unknown transcode_preset_id: {preset_id}")
 
-    fields = {k: v for k, v in req.model_dump(exclude_unset=True).items() if not (k in _NOT_NULL_FIELDS and v is None)}
+    fields = _patch_fields(req)
     if row.is_builtin and fields:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="built-in transcode preset is read-only; create a new preset to customise",
         )
-    if req.encoder is not None or req.tool is not None or req.container is not None:
-        # Validate what the row will hold after the patch, so switching the
-        # tool away from HandBrake cannot strand a codec encoder on it, and a
-        # container change cannot pair a VAAPI encoder with WebM.
-        _validate_encoder(
-            req.encoder if req.encoder is not None else row.encoder,
-            req.tool if req.tool is not None else row.tool,
-            req.container if req.container is not None else row.container,
-        )
-    if "handbrake_settings" in fields:
-        fields["handbrake_settings"] = normalise_settings(req.handbrake_settings)
-    if fields.keys() & _SETTINGS_INPUTS:
-        _check_settings(
-            store,
-            tool=fields.get("tool", row.tool),
-            encoder=fields.get("encoder", row.encoder),
-            preset_ref=fields.get("preset_ref", row.preset_ref),
-            settings=fields.get("handbrake_settings", row.handbrake_settings),
-        )
+    _validate_patch(store, fields, row)
 
     for key, value in fields.items():
         setattr(row, key, value)
