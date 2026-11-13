@@ -3,7 +3,9 @@
 	// snippet draws the last cell of every row. The wrapper scrolls sideways
 	// in a narrow window, never the page.
 	import type { Snippet } from 'svelte';
-	import type { BadgeTone, TableColumn } from '$lib/components/sessions/tableColumns';
+	import MediaPill from '$lib/components/sessions/MediaPill.svelte';
+	import type { MediaType } from '$lib/types/api.gen';
+	import type { BadgeTone, PillTone, TableColumn } from '$lib/components/sessions/tableColumns';
 
 	interface Props {
 		columns: TableColumn<R>[];
@@ -20,6 +22,8 @@
 		info: 'badge badge-sm badge-info',
 		neutral: 'badge badge-sm'
 	};
+
+	const MEDIA_TONES: ReadonlySet<PillTone> = new Set(['movie', 'tv', 'music', 'data', 'iso']);
 
 	let { columns, rows, rowKey, activeKey = null, label, actions, empty }: Props = $props();
 </script>
@@ -41,7 +45,13 @@
 						{@const cell = col.cell(row)}
 						<td class={col.align === 'end' ? 'data-table-num' : ''} data-muted={cell.muted ? 'true' : undefined}>
 							<div class="data-table-main">
-								<span class="data-table-text" title={cell.text}>{cell.text}</span>
+								{#if cell.pill && MEDIA_TONES.has(cell.pill.tone)}
+									<MediaPill mediaType={cell.pill.tone as MediaType} />
+								{:else if cell.pill}
+									<span class="badge badge-sm data-table-tag" data-tone={cell.pill.tone}>{cell.text}</span>
+								{:else}
+									<span class="data-table-text" title={cell.text}>{cell.text}</span>
+								{/if}
 								{#each cell.badges ?? [] as badge (badge.text)}
 									<span class={BADGE_CLASS[badge.tone]}>{badge.text}</span>
 								{/each}
@@ -90,6 +100,27 @@
 		border-top: 1px solid var(--color-border);
 		color: var(--color-text);
 		vertical-align: middle;
+	}
+	.data-table td:first-child {
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+	.data-table-tag {
+		flex-shrink: 0;
+		padding: 0.125rem 0.375rem;
+		font-size: 0.75rem;
+		line-height: 1rem;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+	}
+	.data-table-tag[data-tone='builtin'] {
+		background: var(--color-warning-soft);
+		color: var(--color-on-warning-soft);
+	}
+	.data-table-tag[data-tone='custom'] {
+		background: var(--color-info-soft);
+		color: var(--color-on-info-soft);
 	}
 	.data-table tr[aria-current='true'] {
 		background: var(--color-primary-tint-2);

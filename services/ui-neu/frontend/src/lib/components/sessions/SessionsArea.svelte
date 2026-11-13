@@ -65,13 +65,15 @@
 	onMount(data.load);
 
 	// Runs a change, then reloads. A change that throws skips the reload
-	// and toasts `failTitle` with what went wrong.
-	async function reloadAfter(change: () => Promise<unknown>, failTitle: string) {
+	// and toasts `failTitle` with what went wrong. Says whether the change worked.
+	async function reloadAfter(change: () => Promise<unknown>, failTitle: string): Promise<boolean> {
 		try {
 			await change();
 			await data.load();
+			return true;
 		} catch (e) {
 			addToast({ tone: 'error', title: failTitle, body: e instanceof Error ? e.message : 'Unknown error' });
+			return false;
 		}
 	}
 
@@ -157,14 +159,15 @@
 		if (!deletePresetTarget) return;
 		const target = deletePresetTarget;
 		deletePresetTarget = null;
-		if (target.id === activePresetId) {
-			closeSidebar();
-			closeRipDialog();
-		}
-		await reloadAfter(
+		const deleted = await reloadAfter(
 			() => (isRipPreset(target) ? deleteRipPreset(target.id) : deleteTranscodePreset(target.id)),
 			'Delete failed'
 		);
+		// A failed delete keeps its editor open; a deleted preset has nothing left to edit.
+		if (deleted && target.id === activePresetId) {
+			closeSidebar();
+			closeRipDialog();
+		}
 	}
 
 	// ── Inline-create / inline-edit callbacks ─────────────────────────────────

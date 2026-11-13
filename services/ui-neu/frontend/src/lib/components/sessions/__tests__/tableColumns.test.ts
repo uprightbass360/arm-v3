@@ -62,8 +62,8 @@ describe('ripPresetColumns', () => {
 		const c = cells(ripPresetColumns({ r1: 2 }), rip());
 		expect(c).toEqual({
 			name: { text: 'Movie: Main Feature' },
-			media: { text: 'Movie' },
-			type: { text: 'Custom' },
+			media: { text: 'Movie', pill: { tone: 'movie' } },
+			type: { text: 'Custom', pill: { tone: 'custom' } },
 			tracks: { text: 'Main feature' },
 			identification: { text: 'Required', muted: false },
 			output: { text: 'Tracks' },
@@ -75,7 +75,7 @@ describe('ripPresetColumns', () => {
 	it('formats a built-in preset that skips identification and is unused', () => {
 		const c = cells(ripPresetColumns({}), rip({ is_builtin: true, identification_mode: 'skip' }));
 		expect(c).toMatchObject({
-			type: { text: 'Built-in' },
+			type: { text: 'Built-in', pill: { tone: 'builtin' } },
 			identification: { text: 'Skipped', muted: true },
 			usedBy: { text: '0', muted: true }
 		});
@@ -119,8 +119,8 @@ describe('transcodePresetColumns', () => {
 		);
 		expect(c).toEqual({
 			name: { text: 'H.265 MKV' },
-			media: { text: 'Movie' },
-			type: { text: 'Custom' },
+			media: { text: 'Movie', pill: { tone: 'movie' } },
+			type: { text: 'Custom', pill: { tone: 'custom' } },
 			tool: { text: 'HandBrake' },
 			container: { text: 'MKV' },
 			encoder: { text: 'Any GPU H.265' },
@@ -164,6 +164,24 @@ describe('transcodePresetColumns', () => {
 			base: { text: 'Not used', muted: true },
 			settings: { text: 'Not used', muted: true }
 		});
+	});
+});
+
+describe('Media and Type pills', () => {
+	it('tone the media pill by media type, in both tables', () => {
+		const tv = rip({ media_type: 'tv' });
+		expect(ripPresetColumns({})[1].cell(tv)).toEqual({ text: 'TV', pill: { tone: 'tv' } });
+		expect(transcodePresetColumns({})[1].cell(transcode({ media_type: 'music' }))).toEqual({
+			text: 'Music',
+			pill: { tone: 'music' }
+		});
+	});
+
+	it('tag the Type column Custom or Built-in, in both tables', () => {
+		expect(ripPresetColumns({})[2].cell(rip({ is_builtin: true })).pill).toEqual({ tone: 'builtin' });
+		expect(ripPresetColumns({})[2].cell(rip()).pill).toEqual({ tone: 'custom' });
+		expect(transcodePresetColumns({})[2].cell(transcode({ is_builtin: true })).pill).toEqual({ tone: 'builtin' });
+		expect(transcodePresetColumns({})[2].cell(transcode()).pill).toEqual({ tone: 'custom' });
 	});
 });
 

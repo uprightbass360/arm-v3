@@ -1,7 +1,7 @@
 // The columns of the Rip presets and Transcode presets tables, and the
 // action rules their action cell shares. Each column turns one preset into
 // the text, sub line and badges its cell shows; DataTable only draws them.
-import type { RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
+import type { MediaType, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
 import {
 	humanizeContainer,
 	humanizeMediaType,
@@ -14,8 +14,12 @@ import { settingsCount } from '$lib/handbrake/sidebarModel';
 
 export type BadgeTone = 'warn' | 'info' | 'neutral';
 
+export type PillTone = MediaType | 'custom' | 'builtin';
+
 export type CellContent = {
 	text: string;
+	/** Draw the cell as an uppercase pill: a media-type pill, or the Custom / Built-in tag. */
+	pill?: { tone: PillTone };
 	sub?: string;
 	muted?: boolean;
 	badges?: Array<{ text: string; tone: BadgeTone }>;
@@ -39,7 +43,13 @@ const IDENTIFICATION_LABELS: Record<string, string> = {
 };
 
 function typeCell(preset: { is_builtin: boolean }): CellContent {
-	return { text: preset.is_builtin ? 'Built-in' : 'Custom' };
+	return preset.is_builtin
+		? { text: 'Built-in', pill: { tone: 'builtin' } }
+		: { text: 'Custom', pill: { tone: 'custom' } };
+}
+
+function mediaCell(preset: { media_type: MediaType }): CellContent {
+	return { text: humanizeMediaType(preset.media_type), pill: { tone: preset.media_type } };
 }
 
 function usedByCell(usage: Record<string, number>, id: string): CellContent {
@@ -64,7 +74,7 @@ function trackFiltersCell(p: RipPresetView): CellContent {
 export function ripPresetColumns(usage: Record<string, number>): TableColumn<RipPresetView>[] {
 	return [
 		{ id: 'name', header: 'Preset', cell: (p) => ({ text: p.name }) },
-		{ id: 'media', header: 'Media', cell: (p) => ({ text: humanizeMediaType(p.media_type) }) },
+		{ id: 'media', header: 'Media', cell: mediaCell },
 		{ id: 'type', header: 'Type', cell: typeCell },
 		{ id: 'tracks', header: 'Tracks', cell: (p) => ({ text: humanizeTrackSelection(p.track_selection) }) },
 		{ id: 'identification', header: 'Identification', cell: identificationCell },
@@ -102,7 +112,7 @@ function settingsCell(p: TranscodePresetView): CellContent {
 export function transcodePresetColumns(usage: Record<string, number>): TableColumn<TranscodePresetView>[] {
 	return [
 		{ id: 'name', header: 'Preset', cell: nameCell },
-		{ id: 'media', header: 'Media', cell: (p) => ({ text: humanizeMediaType(p.media_type) }) },
+		{ id: 'media', header: 'Media', cell: mediaCell },
 		{ id: 'type', header: 'Type', cell: typeCell },
 		{ id: 'tool', header: 'Tool', cell: (p) => ({ text: humanizeTool(p.tool) }) },
 		{ id: 'container', header: 'Container', cell: (p) => ({ text: humanizeContainer(p.container) }) },

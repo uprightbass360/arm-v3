@@ -100,4 +100,23 @@ describe('DataTable', () => {
 		expect(cell).not.toHaveAttribute('data-muted');
 		expect(cell.querySelector('.data-table-sub')).toBeNull();
 	});
+
+	it('draws a media pill and the Custom and Built-in tags for pill cells', () => {
+		const columns = [
+			{
+				id: 'm',
+				header: 'Media',
+				cell: (r: { name: string }) =>
+					r.name === 'Alpha'
+						? { text: 'Movie', pill: { tone: 'movie' as const } }
+						: { text: 'Built-in', pill: { tone: 'builtin' as const } }
+			},
+			{ id: 't', header: 'Type', cell: () => ({ text: 'Custom', pill: { tone: 'custom' as const } }) }
+		];
+		renderComponent(DataTableHarness, { rows, columns });
+		expect(screen.getByText('Movie')).toHaveAttribute('data-media', 'movie');
+		const builtin = screen.getByText('Built-in');
+		expect(builtin).toHaveAttribute('data-tone', 'builtin');
+		expect(screen.getAllByText('Custom')[0]).toHaveAttribute('data-tone', 'custom');
+	});
 });

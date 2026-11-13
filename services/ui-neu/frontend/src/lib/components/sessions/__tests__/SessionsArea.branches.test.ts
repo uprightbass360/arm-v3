@@ -371,6 +371,18 @@ describe('the table row of the open preset editor', () => {
 		expect(rowOf('rip r1')).not.toHaveAttribute('aria-current');
 	});
 
+	it('a delete that fails keeps the open editor and its highlight', async () => {
+		vi.mocked(deleteTranscodePreset).mockRejectedValue(new Error('in use'));
+		await renderPresetTab(/transcode presets/i, 'tc t1');
+		await fireEvent.click(screen.getByRole('button', { name: /^edit$/i }));
+		await screen.findByRole('dialog', { name: 'Edit transcode preset' });
+		await fireEvent.click(screen.getByRole('button', { name: /^delete$/i }));
+		await confirmDelete();
+		await expectToast('Delete failed', 'in use');
+		expect(screen.getByRole('dialog', { name: 'Edit transcode preset' })).toBeInTheDocument();
+		expect(rowOf('tc t1')).toHaveAttribute('aria-current', 'true');
+	});
+
 	it('deleting another preset leaves the open editor and its highlight alone', async () => {
 		vi.mocked(deleteTranscodePreset).mockResolvedValue(undefined);
 		vi.mocked(fetchTranscodePresets).mockResolvedValue([makeTranscode('t1', 'tc t1'), makeTranscode('t2', 'tc t2')]);

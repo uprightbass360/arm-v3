@@ -83,7 +83,7 @@
 </script>
 
 {#snippet presetActions(preset: RipPresetView | TranscodePresetView)}
-	{@const guard = deleteGuard(preset, usageById[preset.id] ?? 0)}
+	{@const guard = deleteGuard(preset, usageById[preset.id])}
 	<div class="preset-library-actions">
 		<button type="button" class="btn btn-sm" onclick={() => (preset.is_builtin ? onview(preset) : onedit(preset))}
 			>{openLabel(preset)}</button
