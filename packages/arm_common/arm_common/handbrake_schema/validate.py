@@ -76,6 +76,8 @@ def _check_type(target: _Target) -> SettingIssue | None:
 def _selected_filter(target: _Target, selector: str) -> str | None:
     """The libhb filter a selector key currently names, or None when it names none (for example off)."""
     selected = target.sibling(selector)
+    if not isinstance(selected, str):
+        return None  # the selector itself is reported wrong_type
     name = SELECTOR_FILTER_ALIASES.get(selected, selected)
     return name if name in target.schema.filters else None
 
@@ -91,6 +93,8 @@ def _filter_values(target: _Target, attr: str) -> tuple[str, ...] | None:
 
 def _mixdown_values(target: _Target) -> tuple[str, ...] | None:
     encoder = target.sibling(target.spec.source.ref)  # type: ignore[union-attr]
+    if not isinstance(encoder, str):
+        return None  # the encoder itself is reported wrong_type
     mixdowns: dict[str, tuple[str, ...]] = target.schema.lists["audio_mixdowns_by_encoder"]
     return mixdowns.get(encoder)
 

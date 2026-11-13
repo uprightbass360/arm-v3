@@ -74,8 +74,7 @@ def test_mixdown_uses_template_encoder_when_item_has_none(hb_schema):
     default_encoder = hb_schema.audio_item_keys["AudioEncoder"].default
     allowed = hb_schema.lists["audio_mixdowns_by_encoder"][default_encoder]
     bad = next((m for m in hb_schema.lists["mixdowns"] if m not in allowed), None)
-    if bad is None:
-        pytest.skip("template encoder allows every mixdown")
+    assert bad is not None, "fixture fact: the template encoder does not allow every mixdown"
     assert check(hb_schema, {"AudioList": [{"AudioMixdown": bad}]}) == [("AudioList[0].AudioMixdown", "not_in_list")]
 
 
@@ -199,3 +198,13 @@ def test_settings_is_empty():
     assert HandbrakeSettings(encoders={"x264": {}}).is_empty()
     assert not HandbrakeSettings(common={"a": 1}).is_empty()
     assert not HandbrakeSettings(encoders={"x264": {"VideoPreset": "slow"}}).is_empty()
+
+
+def test_unhashable_selector_is_only_a_type_issue(hb_schema):
+    common = {"PictureSharpenFilter": [], "PictureSharpenTune": "x"}
+    assert check(hb_schema, common) == [("PictureSharpenFilter", "wrong_type")]
+
+
+def test_unhashable_track_encoder_is_only_a_type_issue(hb_schema):
+    item = {"AudioEncoder": [], "AudioMixdown": "x"}
+    assert check(hb_schema, {"AudioList": [item]}) == [("AudioList[0].AudioEncoder", "wrong_type")]
