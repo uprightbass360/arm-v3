@@ -100,3 +100,16 @@ def test_view_carries_issues_and_notes() -> None:
     view = preset_view(_preset(settings), fixture_schema(), [])
     assert [(i.key, i.code) for i in view.issues] == [("VideoPreset", "not_in_list")]
     assert view.host_notes == ["encodes_on_cpu_here"]
+
+
+def test_normalise_strips_empty_encoder_blocks() -> None:
+    """An empty block (the UI prunes them; a raw client may not) is dropped, not stored or validated."""
+    settings = HandbrakeSettings(common={"PictureWidth": 1280}, encoders={"x265": {}, "x264": {"VideoPreset": "fast"}})
+    assert normalise_settings(settings) == {
+        "common": {"PictureWidth": 1280},
+        "encoders": {"x264": {"VideoPreset": "fast"}},
+    }
+
+
+def test_normalise_turns_only_empty_blocks_into_none() -> None:
+    assert normalise_settings(HandbrakeSettings(encoders={"x265": {}})) is None

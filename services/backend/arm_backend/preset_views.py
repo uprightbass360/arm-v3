@@ -16,10 +16,13 @@ from arm_common.schemas import HandbrakeSettings, SettingIssue, TranscodePresetV
 
 
 def normalise_settings(settings: HandbrakeSettings | None) -> dict[str, Any] | None:
-    """The stored form of a preset's settings: None for none or for settings with no value in them."""
+    """The stored form of a preset's settings: empty encoder blocks dropped; None for none or for settings
+    with no value in them."""
     if settings is None or settings.is_empty():
         return None
-    return settings.model_dump()
+    stored = settings.model_dump()
+    stored["encoders"] = {family: block for family, block in stored["encoders"].items() if block}
+    return stored
 
 
 def host_notes(preset: TranscodePreset, gpus: Sequence[Gpu]) -> list[str]:

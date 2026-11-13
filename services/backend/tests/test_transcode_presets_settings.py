@@ -201,6 +201,17 @@ def test_create_stores_empty_settings_as_null_without_a_schema(signing_key: byte
     assert db.rows["transcode_presets"][0].handbrake_settings is None
 
 
+def test_create_drops_an_empty_unreachable_block_instead_of_422(signing_key: bytes) -> None:
+    """A raw client's empty x265 block on an h264 preset is pruned, as the UI does, not rejected."""
+    db = FakeSession()
+    app, headers = _make_app(signing_key, db)
+    settings = {"encoders": {**_GOOD["encoders"], "x265": {}}}
+    with TestClient(app) as client:
+        r = client.post("/api/transcode-presets", json={**_H264, "handbrake_settings": settings}, headers=headers)
+    assert r.status_code == 201
+    assert db.rows["transcode_presets"][0].handbrake_settings == {"common": {}, **_GOOD}
+
+
 def test_patch_empty_settings_clears_to_null_without_a_schema(signing_key: bytes) -> None:
     db = FakeSession()
     app, headers = _make_app(signing_key, db, store=_empty_store())
