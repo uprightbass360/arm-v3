@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { renderComponent, screen, fireEvent, cleanup, waitFor, within } from '$lib/test-utils';
 import type { EncoderAvailabilityView, HandbrakeSchemaSlimView, TranscodePresetView } from '$lib/types/api.gen';
+import plexImport from '$lib/handbrake/__tests__/fixtures/plex-import-response.json';
 import fixture from '$lib/handbrake/__tests__/fixtures/slim-schema.json';
 import { ApiError } from '$lib/api/client';
 import { fetchBuiltinPreset, fetchHandbrakeSchema, refreshHandbrakeSchema } from '$lib/api/handbrakeSchema';
-import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcodePresets';
+import { createTranscodePreset, parseHandbrakeImport, updateTranscodePreset } from '$lib/api/transcodePresets';
 import { handbrakeSchema } from '$lib/stores/handbrakeSchema.svelte';
 import { stopEncoderEvents } from '$lib/stores/encoders.svelte';
 import PresetSidebar from '../PresetSidebar.svelte';
@@ -16,7 +17,8 @@ vi.mock('$lib/api/handbrakeSchema', () => ({
 }));
 vi.mock('$lib/api/transcodePresets', () => ({
 	createTranscodePreset: vi.fn(),
-	updateTranscodePreset: vi.fn()
+	updateTranscodePreset: vi.fn(),
+	parseHandbrakeImport: vi.fn()
 }));
 const encoders = vi.hoisted(() => ({ list: [] as unknown[] }));
 vi.mock('$lib/api/encoders', () => ({ fetchEncoders: () => Promise.resolve(encoders.list) }));
@@ -109,8 +111,8 @@ describe('header', () => {
 		expect(await screen.findByRole('dialog', { name: title })).toBeInTheDocument();
 	});
 
-	it('offers Import HandBrake preset, disabled until the import flow lands', () => {
-		mount({});
+	it('offers Import HandBrake preset, disabled in view mode', () => {
+		mount({ mode: 'view', preset: preset() });
 		expect(screen.getByRole('button', { name: 'Import HandBrake preset' })).toBeDisabled();
 	});
 
@@ -395,5 +397,38 @@ describe('footer', () => {
 		mount({ mode: 'edit', usage: 1, preset: preset() });
 		expect(screen.getByText('Used by 1 session')).toBeInTheDocument();
 		expect(screen.queryByText(/Encodes on CPU on this host/)).not.toBeInTheDocument();
+	});
+});
+
+describe('import', () => {
+	async function openImport() {
+		await ready();
+		await fireEvent.click(screen.getByRole('button', { name: 'Import HandBrake preset' }));
+		await fireEvent.input(screen.getByLabelText('Or paste the export JSON'), { target: { value: '{}' } });
+	}
+
+	it('Cancel on step 1 returns to the tabs unchanged', async () => {
+		mount({});
+		await openImport();
+		await fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+		expect(await screen.findByRole('tablist')).toBeInTheDocument();
+		expect(screen.getByLabelText('Name')).toHaveValue('');
+	});
+
+	it('Use these settings fills the draft without saving, and Save preset then creates it', async () => {
+		vi.mocked(parseHandbrakeImport).mockResolvedValue(plexImport as never);
+		vi.mocked(createTranscodePreset).mockResolvedValue(preset());
+		const { onsaved } = mount({});
+		await openImport();
+		await fireEvent.click(screen.getByRole('button', { name: 'Read file' }));
+		await fireEvent.click(await screen.findByRole('button', { name: 'Use these settings' }));
+		expect(await screen.findByRole('tablist')).toBeInTheDocument();
+		expect(screen.getByLabelText('Name')).toHaveValue('Custom_Plex_720p');
+		expect(createTranscodePreset).not.toHaveBeenCalled();
+		await save();
+		await waitFor(() => expect(onsaved).toHaveBeenCalled());
+		const body = vi.mocked(createTranscodePreset).mock.calls[0][0];
+		expect(body).toMatchObject({ name: 'Custom_Plex_720p', container: 'mkv', encoder: 'any_h264' });
+		expect(body.handbrake_settings?.encoders?.nvenc_h264).toMatchObject({ VideoPreset: 'slower' });
 	});
 });
