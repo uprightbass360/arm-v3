@@ -8,6 +8,7 @@ import pytest
 
 from arm_common import ContainerFormat, MediaType, TranscodeTool
 from arm_common.schemas import TranscodePresetView
+from arm_common.schemas.handbrake import HandbrakeSettings
 from arm_transcode.heartbeat import ProgressState
 from arm_transcode.main import _MAX_ERROR_CHARS, _clip_error
 
@@ -314,6 +315,23 @@ async def test_run_encoder_handbrake_requires_preset_ref(monkeypatch, tmp_path) 
     _clear_encoder_env(monkeypatch)
     with pytest.raises(RuntimeError, match="transcode tool=handbrake requires a preset_ref"):
         await _call_run_encoder(tmp_path, tool=TranscodeTool.HANDBRAKE, preset=_handbrake_preset(preset_ref=None))
+
+
+@pytest.mark.asyncio
+async def test_run_encoder_handbrake_with_empty_settings_still_requires_preset_ref(monkeypatch, tmp_path) -> None:
+    _clear_encoder_env(monkeypatch)
+    preset = _handbrake_preset(preset_ref=None).model_copy(update={"handbrake_settings": HandbrakeSettings()})
+    with pytest.raises(RuntimeError, match="transcode tool=handbrake requires a preset_ref"):
+        await _call_run_encoder(tmp_path, tool=TranscodeTool.HANDBRAKE, preset=preset)
+
+
+@pytest.mark.asyncio
+async def test_run_encoder_abcde_with_settings_still_requires_preset_ref(monkeypatch, tmp_path) -> None:
+    _clear_encoder_env(monkeypatch)
+    settings = HandbrakeSettings(common={"PictureWidth": 1280})
+    preset = _audio_preset(preset_ref=None).model_copy(update={"handbrake_settings": settings})
+    with pytest.raises(RuntimeError, match="transcode tool=abcde requires a preset_ref"):
+        await _call_run_encoder(tmp_path, tool=TranscodeTool.ABCDE, preset=preset)
 
 
 @pytest.mark.asyncio

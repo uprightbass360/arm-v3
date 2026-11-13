@@ -371,3 +371,28 @@ def test_build_handbrake_command_without_settings_is_todays_argv() -> None:
         "20",
         "--all-audio",
     ]
+
+
+def test_build_handbrake_command_with_preset_file_imports_arm_preset() -> None:
+    assert build_handbrake_command(
+        input_path=Path("/in/a.mkv"),
+        output_path=Path("/out/a.mkv"),
+        preset_ref=None,
+        extra_args="--foo 1",
+        encoder_args=["--encoder", "x264"],
+        preset_file=Path("/tmp/arm-hb-1/arm-preset.json"),
+    ) == [
+        "HandBrakeCLI",
+        "-i",
+        "/in/a.mkv",
+        "-o",
+        "/out/a.mkv",
+        "--preset-import-file",
+        "/tmp/arm-hb-1/arm-preset.json",
+        "--preset",
+        "arm",
+        "--encoder",
+        "x264",
+        "--foo",
+        "1",
+    ]
