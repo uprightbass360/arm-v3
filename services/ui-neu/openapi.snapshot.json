@@ -17110,6 +17110,20 @@
           "known": {
             "type": "boolean",
             "title": "Known"
+          },
+          "option_labels": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Option Labels"
           }
         },
         "type": "object",

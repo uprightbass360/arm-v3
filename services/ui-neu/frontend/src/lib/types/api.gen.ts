@@ -5011,6 +5011,12 @@ export type SlimKey = {
      * Known
      */
     known: boolean;
+    /**
+     * Option Labels
+     */
+    option_labels?: {
+        [key: string]: string;
+    } | null;
 };
 
 /**

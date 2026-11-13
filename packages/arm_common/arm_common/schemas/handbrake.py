@@ -85,6 +85,7 @@ class SlimKey(BaseModel):
     source: SlimSource | None
     limits: tuple[float, float] | None
     known: bool
+    option_labels: dict[str, str] | None = None
 
 
 class SlimQuality(BaseModel):

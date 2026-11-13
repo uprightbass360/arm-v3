@@ -7,6 +7,7 @@ from typing import Any
 from arm_common.handbrake_schema.overlay import (
     ARM_OWNED_KEYS,
     ENCODER_SPECIFIC_KEYS,
+    OPTION_LABELS,
     SELECTOR_FILTER_ALIASES,
     SOURCE_EXTRAS,
     STATIC_ENUMS,
@@ -31,6 +32,14 @@ from arm_common.schemas.handbrake import (
 _MIXDOWNS_LIST = "audio_mixdowns_by_encoder"
 
 
+def _option_labels(name: str) -> dict[str, str] | None:
+    labels = OPTION_LABELS.get(name)
+    if labels is None:
+        return None
+    allowed = {str(v) for v in (*STATIC_ENUMS.get(name, ()), *SOURCE_EXTRAS.get(name, ()))}
+    return {value: label for value, label in labels.items() if value in allowed}
+
+
 def _slim_key(spec: KeySpec) -> SlimKey:
     source = SlimSource(kind=spec.source.kind, ref=spec.source.ref) if spec.source else None
     return SlimKey(
@@ -43,6 +52,7 @@ def _slim_key(spec: KeySpec) -> SlimKey:
         source=source,
         limits=spec.limits,
         known=spec.known,
+        option_labels=_option_labels(spec.name),
     )
 
 

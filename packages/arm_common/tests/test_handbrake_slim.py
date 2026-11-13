@@ -57,3 +57,46 @@ def test_slim_carries_arm_owned_and_encoder_specific_keys(hb_schema):
     assert view.encoder_specific_keys == sorted(ENCODER_SPECIFIC_KEYS)
     assert "VideoHWDecode" in view.arm_owned_keys
     assert "VideoQualitySlider" in view.encoder_specific_keys
+
+
+def _key(hb_schema, name):
+    return next(k for k in slim_view(hb_schema).keys if k.name == name)
+
+
+def test_slim_quality_type_labels(hb_schema):
+    assert _key(hb_schema, "VideoQualityType").option_labels == {"1": "Average bitrate", "2": "Constant quality"}
+
+
+def test_slim_framerate_labels(hb_schema):
+    assert _key(hb_schema, "VideoFramerate").option_labels["auto"] == "Same as source"
+    assert _key(hb_schema, "VideoFramerateMode").option_labels == {
+        "cfr": "Constant",
+        "vfr": "Variable",
+        "pfr": "Peak",
+    }
+
+
+def test_slim_color_range_and_hdr_labels(hb_schema):
+    assert _key(hb_schema, "VideoColorRange").option_labels == {
+        "auto": "Same as source",
+        "limited": "Limited",
+        "full": "Full",
+    }
+    hdr = _key(hb_schema, "VideoPasshtruHDRDynamicMetadata").option_labels
+    assert hdr["all"] == "Pass through all"
+    assert hdr["off"] == "Off"
+
+
+def test_slim_key_without_labels_is_none(hb_schema):
+    assert _key(hb_schema, "PictureWidth").option_labels is None
+
+
+def test_slim_labels_only_for_allowed_values(hb_schema, monkeypatch):
+    from arm_common.handbrake_schema import slim
+
+    monkeypatch.setitem(slim.OPTION_LABELS, "VideoFramerateMode", {"cfr": "Constant", "bogus": "Nope"})
+    assert _key(hb_schema, "VideoFramerateMode").option_labels == {"cfr": "Constant"}
+    for key in slim_view(hb_schema).keys:
+        if key.option_labels:
+            allowed = {str(v) for v in (*slim.STATIC_ENUMS.get(key.name, ()), *slim.SOURCE_EXTRAS.get(key.name, ()))}
+            assert set(key.option_labels) <= allowed

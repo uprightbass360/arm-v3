@@ -82,6 +82,34 @@ STATIC_ENUMS: dict[str, tuple[Any, ...]] = {
     "VideoQualityType": (1, 2),  # average bitrate, constant quality
 }
 
+# Display labels for enum values, keyed by str(value). Values without a label fall back to the raw value in the UI.
+OPTION_LABELS: dict[str, dict[str, str]] = {
+    "VideoQualityType": {"1": "Average bitrate", "2": "Constant quality"},
+    "VideoFramerate": {"auto": "Same as source"},
+    "VideoFramerateMode": {"cfr": "Constant", "vfr": "Variable", "pfr": "Peak"},
+    "VideoColorRange": {"auto": "Same as source", "limited": "Limited", "full": "Full"},
+    "VideoPasshtruHDRDynamicMetadata": {
+        "all": "Pass through all",
+        "off": "Off",
+        "hdr10plus": "HDR10+",
+        "dolbyvision": "Dolby Vision",
+    },
+    "PicturePadMode": {
+        "none": "None",
+        "custom": "Custom",
+        "fill": "Fill",
+        "letterbox": "Letterbox",
+        "pillarbox": "Pillarbox",
+    },
+    "PictureCropMode": {"0": "Automatic", "1": "Loose", "2": "None", "3": "Custom"},
+    "SubtitleBurnBehavior": {
+        "none": "None",
+        "foreign": "Foreign audio scan",
+        "first": "First track",
+        "foreign_first": "Foreign audio scan, then first track",
+    },
+}
+
 # A selector value that names a filter differently from the dump's filter name.
 SELECTOR_FILTER_ALIASES: dict[str, str] = {"deinterlace": "yadif"}
 
