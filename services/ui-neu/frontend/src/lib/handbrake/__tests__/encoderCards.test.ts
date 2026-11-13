@@ -107,6 +107,22 @@ describe('blockFields', () => {
 	});
 });
 
+describe('blockFields reads its keys from the schema', () => {
+	it('leaves out a key the schema does not call encoder-specific', () => {
+		const slim = { ...schema, encoder_specific_keys: schema.encoder_specific_keys.filter((n) => n !== 'VideoLevel') };
+		expect(blockFields(slim, family('x264')).map((k) => k.name)).not.toContain('VideoLevel');
+	});
+
+	it('puts a block key it has no display rank for last', () => {
+		const slim = { ...schema, encoder_specific_keys: ['VideoFramerate', ...schema.encoder_specific_keys] };
+		expect(
+			blockFields(slim, family('x265'))
+				.map((k) => k.name)
+				.at(-1)
+		).toBe('VideoFramerate');
+	});
+});
+
 describe('showsAmdNote', () => {
 	it('shows for any_* with an AMD device', () => {
 		expect(showsAmdNote('any_h264', [nvidia, amd])).toBe(true);

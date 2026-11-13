@@ -364,3 +364,18 @@ describe('transcode presets open the sidebar, rip presets the dialog', () => {
 		expect(dialog).not.toHaveTextContent('Save preset');
 	});
 });
+
+describe('the sidebar stacked over the session slide-over', () => {
+	it('layers above the builder, and an outside click closes only the sidebar', async () => {
+		renderComponent(SessionsArea);
+		await screen.findByText(/ses /i);
+		await fireEvent.click(screen.getByRole('button', { name: /new session/i }));
+		await fireEvent.change(screen.getByLabelText(/transcode preset/i), { target: { value: '__create_tc__' } });
+		const sidebar = await screen.findByRole('dialog', { name: 'New transcode preset' });
+		expect(sidebar).toHaveAttribute('data-stacked', 'true');
+		const scrim = document.querySelector('.slide-over-scrim[data-stacked="true"]') as HTMLElement;
+		await fireEvent.click(scrim);
+		await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New transcode preset' })).not.toBeInTheDocument());
+		expect(screen.getByRole('heading', { name: 'Create a session' })).toBeInTheDocument();
+	});
+});

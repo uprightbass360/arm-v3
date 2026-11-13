@@ -71,14 +71,38 @@ export function encoderCards(
 	return families.map((family) => cardFor(family, anyCodec, availability));
 }
 
-// Block keys in display order. Multi-pass and turbo only where the family has them; advanced options on x264 only.
+// Block keys that only some families have (R6, rule 11): HandBrake's multi-pass
+// and turbo flags, and advanced options on x264 only.
+const FAMILY_GATES: Record<string, (family: SlimFamily) => boolean> = {
+	VideoMultiPass: (f) => f.multipass,
+	VideoTurboMultiPass: (f) => f.turbo,
+	x264UseAdvancedOptions: (f) => f.name === 'x264'
+};
+// Display order only; which keys are block keys comes from the schema. A key not listed here follows the rest.
+const DISPLAY_RANK = [
+	'VideoPreset',
+	'VideoTune',
+	'VideoProfile',
+	'VideoLevel',
+	'VideoQualitySlider',
+	'VideoMultiPass',
+	'VideoTurboMultiPass',
+	'x264UseAdvancedOptions',
+	'VideoOptionExtra'
+];
+
+function rank(name: string): number {
+	const at = DISPLAY_RANK.indexOf(name);
+	return at === -1 ? DISPLAY_RANK.length : at;
+}
+
+// The family's block keys (the schema's encoder-specific keys it can take), in display order.
 export function blockFields(schema: HandbrakeSchemaSlimView, family: SlimFamily): SlimKey[] {
-	const wanted = ['VideoPreset', 'VideoTune', 'VideoProfile', 'VideoLevel', 'VideoQualitySlider'];
-	if (family.multipass) wanted.push('VideoMultiPass');
-	if (family.turbo) wanted.push('VideoTurboMultiPass');
-	if (family.name === 'x264') wanted.push('x264UseAdvancedOptions');
-	wanted.push('VideoOptionExtra');
-	return wanted.map((name) => schema.keys.find((k) => k.name === name)).filter((k): k is SlimKey => k !== undefined);
+	const names = schema.encoder_specific_keys.filter((name) => FAMILY_GATES[name]?.(family) ?? true);
+	return names
+		.map((name) => schema.keys.find((k) => k.name === name))
+		.filter((k): k is SlimKey => k !== undefined)
+		.sort((a, b) => rank(a.name) - rank(b.name));
 }
 
 export function showsAmdNote(encoderId: string, availability: EncoderAvailabilityView[]): boolean {

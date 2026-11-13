@@ -196,7 +196,11 @@ describe('which settings show', () => {
 		expect(screen.getByLabelText('Rate control mode')).toBeInTheDocument();
 		await waitFor(() => expect(screen.getByRole('region', { name: 'NVIDIA H.264' })).toBeInTheDocument());
 		expect(screen.getByRole('region', { name: 'x264' })).toBeInTheDocument();
-		expect(screen.getByText(/AMD devices run ffmpeg and cannot apply these settings/)).toBeInTheDocument();
+		expect(
+			screen.getByText(
+				'AMD devices encode with ffmpeg, which cannot apply these settings. Because this preset has HandBrake settings, it skips AMD devices and uses another GPU or the CPU.'
+			)
+		).toBeInTheDocument();
 	});
 
 	it('Changed only hides fields and cards with nothing stored', async () => {

@@ -40,7 +40,9 @@ export interface Draft {
 export const CPU_HERE_NOTE = 'Encodes on CPU on this host: no verified non-AMD GPU for this codec';
 export const VAAPI_NOTE =
 	'HandBrake settings do not apply to AMD VAAPI encoders. Only the container and extra args are used.';
-export const AMD_NOTE = 'AMD devices run ffmpeg and cannot apply these settings, so a preset that has any skips them.';
+export const AMD_NOTE =
+	'AMD devices encode with ffmpeg, which cannot apply these settings. Because this preset has HandBrake settings, it skips AMD devices and uses another GPU or the CPU.';
+export const CLEARED_NOTE = "This preset's HandBrake settings will be cleared when you save.";
 export const MARKED_ISSUES_MESSAGE = 'Fix the marked settings and save again.';
 
 const PRESET_ENCODER = 'preset';
@@ -53,32 +55,6 @@ const TITLES: Record<SidebarMode, string> = {
 	edit: 'Edit transcode preset',
 	view: 'View transcode preset'
 };
-// Mirrors arm_common.handbrake_schema.overlay: keys ARM sets itself, and keys
-// that live in a per-encoder block. Neither is a common field.
-const ARM_OWNED_KEYS = new Set([
-	'PresetName',
-	'PresetDescription',
-	'Type',
-	'Default',
-	'Folder',
-	'FolderOpen',
-	'ChildrenArray',
-	'PresetDisabled',
-	'VideoEncoder',
-	'FileFormat',
-	'VideoHWDecode'
-]);
-const ENCODER_SPECIFIC_KEYS = new Set([
-	'VideoPreset',
-	'VideoTune',
-	'VideoProfile',
-	'VideoLevel',
-	'VideoOptionExtra',
-	'VideoQualitySlider',
-	'VideoMultiPass',
-	'VideoTurboMultiPass',
-	'x264UseAdvancedOptions'
-]);
 const PRESET_FIELDS = new Set(['name', 'media_type', 'tool', 'preset_ref', 'container', 'encoder', 'extra_args']);
 
 function settingsOf(s: HandbrakeSettings | null): Required<HandbrakeSettings> {
@@ -98,8 +74,18 @@ export function initialDraft(preset: TranscodePresetView | null): Draft {
 	};
 }
 
+// vaapi_* catalog ids are the ffmpeg_vaapi engine: HandBrake settings do not apply to them.
+export function isVaapiEncoder(encoderId: string): boolean {
+	return encoderId.startsWith('vaapi_');
+}
+
 export function showTabs(d: Draft): boolean {
-	return d.tool === 'handbrake' && !d.encoder.startsWith('vaapi_');
+	return d.tool === 'handbrake' && !isVaapiEncoder(d.encoder);
+}
+
+// The draft holds settings the save will drop because the tabs no longer apply.
+export function clearsSettings(d: Draft): boolean {
+	return !showTabs(d) && settingsCount(d.settings) > 0;
 }
 
 // Settings the tabs cannot show are not sent: the encoder would ignore them.
@@ -107,7 +93,7 @@ function settingsPayload(d: Draft): HandbrakeSettings | null {
 	return showTabs(d) ? toPayload(d.settings) : null;
 }
 
-export function draftToUpdate(d: Draft): TranscodePresetUpdateRequest {
+function presetFields(d: Draft) {
 	return {
 		name: d.name,
 		tool: d.tool,
@@ -119,15 +105,12 @@ export function draftToUpdate(d: Draft): TranscodePresetUpdateRequest {
 	};
 }
 
+export function draftToUpdate(d: Draft): TranscodePresetUpdateRequest {
+	return presetFields(d);
+}
+
 export function draftToCreate(d: Draft): TranscodePresetCreateRequest {
-	return {
-		...draftToUpdate(d),
-		name: d.name,
-		media_type: d.media_type,
-		tool: d.tool,
-		container: d.container,
-		encoder: d.encoder
-	};
+	return { ...presetFields(d), media_type: d.media_type };
 }
 
 // abcde and none run their own encoder, so a codec encoder would 422.
@@ -231,12 +214,13 @@ export function inheritedDepth(family: SlimFamily, base: BaseValues): { depth: n
 	return variant ? { depth: variant.depth, source: 'base' } : { depth: DEFAULT_DEPTH, source: 'default' };
 }
 
-function isCommonKey(name: string): boolean {
-	return !ARM_OWNED_KEYS.has(name) && !ENCODER_SPECIFIC_KEYS.has(name);
+// Neither ARM-owned nor encoder-specific: a field of the preset's common settings.
+function isCommonKey(schema: HandbrakeSchemaSlimView, name: string): boolean {
+	return !schema.arm_owned_keys.includes(name) && !schema.encoder_specific_keys.includes(name);
 }
 
 export function commonKeys(schema: HandbrakeSchemaSlimView, tab: TabId): SlimKey[] {
-	return keysForTab(schema, tab).filter((k) => isCommonKey(k.name));
+	return keysForTab(schema, tab).filter((k) => isCommonKey(schema, k.name));
 }
 
 function textMatch(key: SlimKey, text: string, schema?: HandbrakeSchemaSlimView): boolean {
@@ -281,17 +265,18 @@ export function issuesFor(
 	return issues.find((i) => i.key === key && (i.encoder ?? null) === encoder);
 }
 
-function isPlaced(i: SettingIssue, rendered: Set<string>): boolean {
-	if (i.encoder) return rendered.size > 0 && ENCODER_SPECIFIC_KEYS.has(i.key);
+function isPlaced(i: SettingIssue, rendered: Set<string>, blockKeys: string[]): boolean {
+	if (i.encoder) return blockKeys.includes(i.key);
 	return PRESET_FIELDS.has(i.key) || rendered.has(i.key);
 }
 
 // Issues no field shows (the whole settings object, unknown keys, bit depth):
 // the sidebar lists these in its banner instead.
 export function unplacedIssues(issues: SettingIssue[], schema: HandbrakeSchemaSlimView | null): SettingIssue[] {
-	const keys = schema ? [...schema.keys, ...schema.audio_item_keys] : [];
-	const rendered = new Set(keys.map((k) => k.name).filter(isCommonKey));
-	return issues.filter((i) => !isPlaced(i, rendered));
+	if (!schema) return issues.filter((i) => !isPlaced(i, new Set(), []));
+	const keys = [...schema.keys, ...schema.audio_item_keys].map((k) => k.name);
+	const rendered = new Set(keys.filter((name) => isCommonKey(schema, name)));
+	return issues.filter((i) => !isPlaced(i, rendered, schema.encoder_specific_keys));
 }
 
 // What LoadState shows while the schema store is unavailable; null otherwise.

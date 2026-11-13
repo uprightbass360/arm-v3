@@ -123,6 +123,27 @@ describe('fields', () => {
 	});
 });
 
+describe('settings that will be cleared', () => {
+	const note = "This preset's HandBrake settings will be cleared when you save.";
+	const settings = { common: { ChapterMarkers: true }, encoders: {} };
+
+	it('says so when the tabs no longer apply and settings are stored', () => {
+		mount({ tool: 'none', settings });
+		expect(screen.getByText(note)).toBeInTheDocument();
+		cleanup();
+		mount({ encoder: 'vaapi_h264', settings });
+		expect(screen.getByText(note)).toBeInTheDocument();
+	});
+
+	it('says nothing while the tabs apply or nothing is stored', () => {
+		mount({ encoder: 'any_h265', settings });
+		expect(screen.queryByText(note)).not.toBeInTheDocument();
+		cleanup();
+		mount({ tool: 'none' });
+		expect(screen.queryByText(note)).not.toBeInTheDocument();
+	});
+});
+
 describe('base preset', () => {
 	it('is a select of built-in names with a None choice', async () => {
 		const onfield = mount({ preset_ref: null });

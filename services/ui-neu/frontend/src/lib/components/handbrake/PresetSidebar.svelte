@@ -99,7 +99,7 @@
 	}
 </script>
 
-<SlideOver bind:open title={sidebarTitle(mode)} width="preset-sidebar-panel" {onclose}>
+<SlideOver bind:open title={sidebarTitle(mode)} width="preset-sidebar-panel" stacked {onclose}>
 	{#snippet headerActions()}
 		<!-- The import flow arrives with the next task; until then the button is shown disabled. -->
 		<button type="button" class="btn btn-sm" disabled>Import HandBrake preset</button>

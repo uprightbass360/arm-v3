@@ -6,7 +6,15 @@
 	import { onMount } from 'svelte';
 	import { encodersStore, PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';
 	import { encoderGroups } from '$lib/utils/encoder-groups';
-	import { issuesFor, showTabs, type Draft, type PresetField } from '$lib/handbrake/sidebarModel';
+	import {
+		CLEARED_NOTE,
+		clearsSettings,
+		isVaapiEncoder,
+		issuesFor,
+		showTabs,
+		type Draft,
+		type PresetField
+	} from '$lib/handbrake/sidebarModel';
 	import type { SettingIssue } from '$lib/types/api.gen';
 
 	// A HandBrake preset name that names a hardware encoder (a common
@@ -39,17 +47,13 @@
 	const encoderLocked = $derived(draft.tool === 'abcde' || draft.tool === 'none');
 	// vaapi_* encoders run over ffmpeg directly; the HandBrake base preset plays
 	// no part, and extra args are ffmpeg CLI flags, not HandBrake ones.
-	const usesFfmpegVaapi = $derived(isVaapi(draft.encoder));
+	const usesFfmpegVaapi = $derived(isVaapiEncoder(draft.encoder));
 	const encoderHint = $derived(
 		draft.encoder === PRESET_ENCODER_ID && HARDWARE_HINT_PATTERN.test(draft.preset_ref ?? '')
 			? 'This HandBrake preset uses a hardware encoder; choose the matching encoder above or ARM will not attach a GPU.'
 			: null
 	);
 	const refIssue = $derived(issuesFor(issues, 'preset_ref'));
-
-	function isVaapi(id: string): boolean {
-		return encoders.find((e) => e.id === id)?.engine === 'ffmpeg_vaapi';
-	}
 
 	// A stored name this HandBrake build does not have stays listed, so it is not lost on save.
 	function withStoredName(names: string[], stored: string | null): string[] {
@@ -65,7 +69,7 @@
 	function onEncoder(e: Event) {
 		const id = value(e);
 		onfield('encoder', id);
-		if (isVaapi(id) && draft.container === 'webm') onfield('container', 'mkv');
+		if (isVaapiEncoder(id) && draft.container === 'webm') onfield('container', 'mkv');
 	}
 </script>
 
@@ -205,6 +209,10 @@
 			<p class="field-help">Flags here are added last and override the settings below.</p>
 		{/if}
 	</label>
+
+	{#if clearsSettings(draft)}
+		<p class="alert alert-warning preset-block-wide" role="status">{CLEARED_NOTE}</p>
+	{/if}
 </div>
 
 {#snippet refNotes()}

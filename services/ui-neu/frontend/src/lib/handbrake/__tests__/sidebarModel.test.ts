@@ -16,6 +16,8 @@ import {
 	applyField,
 	baseVideoEncoder,
 	cardFamilies,
+	clearsSettings,
+	isVaapiEncoder,
 	cardShown,
 	commonKeys,
 	draftToCreate,
@@ -227,6 +229,28 @@ describe('showTabs', () => {
 		expect(showTabs(draft({ encoder: 'any_h264' }))).toBe(true);
 		expect(showTabs(draft({ encoder: 'vaapi_h265' }))).toBe(false);
 		expect(showTabs(draft({ tool: 'abcde' }))).toBe(false);
+	});
+});
+
+describe('isVaapiEncoder and clearsSettings', () => {
+	it('detects VAAPI catalog ids', () => {
+		expect(isVaapiEncoder('vaapi_av1')).toBe(true);
+		expect(isVaapiEncoder('any_h264')).toBe(false);
+	});
+
+	it('warns only when hidden tabs would drop stored settings', () => {
+		const stored = { common: { A: 1 }, encoders: {} };
+		expect(clearsSettings(draft({ tool: 'none', settings: stored }))).toBe(true);
+		expect(clearsSettings(draft({ encoder: 'vaapi_h264', settings: stored }))).toBe(true);
+		expect(clearsSettings(draft({ tool: 'none' }))).toBe(false);
+		expect(clearsSettings(draft({ encoder: 'any_h264', settings: stored }))).toBe(false);
+	});
+});
+
+describe('commonKeys reads the schema', () => {
+	it('drops a key the schema calls ARM-owned', () => {
+		const slim = { ...schema, arm_owned_keys: [...schema.arm_owned_keys, 'ChapterMarkers'] };
+		expect(commonKeys(slim, 'chapters')).toEqual([]);
 	});
 });
 
