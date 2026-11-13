@@ -347,3 +347,27 @@ def test_build_handbrake_command_extra_args_split_and_last() -> None:
 @pytest.mark.parametrize("extra_args", [None, ""])
 def test_build_handbrake_command_empty_extra_args_add_nothing(extra_args: str | None) -> None:
     assert _build(extra_args=extra_args) == _BASE_ARGV
+
+
+def test_build_handbrake_command_without_settings_is_todays_argv() -> None:
+    """M11: a settings-less preset keeps today's argv byte for byte."""
+    assert build_handbrake_command(
+        input_path=Path("/raw/title_t00.mkv"),
+        output_path=Path("/out/Movie.mkv.arm-inprogress"),
+        preset_ref="H.265 MKV 1080p30",
+        extra_args="--quality 20 --all-audio",
+        encoder_args=["--encoder", "x265"],
+    ) == [
+        "HandBrakeCLI",
+        "-i",
+        "/raw/title_t00.mkv",
+        "-o",
+        "/out/Movie.mkv.arm-inprogress",
+        "--preset",
+        "H.265 MKV 1080p30",
+        "--encoder",
+        "x265",
+        "--quality",
+        "20",
+        "--all-audio",
+    ]
