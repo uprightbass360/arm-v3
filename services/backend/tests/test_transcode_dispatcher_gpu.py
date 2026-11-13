@@ -1238,10 +1238,16 @@ async def test_without_a_loaded_schema_settings_are_not_checked(store: Any) -> N
     assert assignment.encoder is not None and assignment.encoder.id == "nvenc_h265"
 
 
-async def test_without_a_loaded_schema_a_settings_preset_still_lands_on_vaapi() -> None:
+@pytest.mark.parametrize("store", [None, "empty"])
+async def test_without_a_loaded_schema_a_settings_preset_never_lands_on_vaapi(store: Any) -> None:
+    """M4 needs no schema: the ffmpeg VAAPI engine cannot apply HandBrake settings (spec 7 DoD)."""
+    from arm_backend.handbrake_schema_store import SchemaStore
+
     db = _settings_db(_invalid_blocks("x265"), gpus=_AMD_ONLY)
-    assignment = await _settings_claim(db, None)
-    assert assignment.gpu is db.rows["gpus"][0]
+    assignment = await _settings_claim(db, SchemaStore() if store == "empty" else None)
+    assert assignment == GpuAssignment(gpu=None, encoder=assignment.encoder, action="spawn")
+    assert assignment.encoder is not None and assignment.encoder.id == "cpu_h265"
+    assert db.rows["gpus"][0].status == GpuStatus.AVAILABLE
 
 
 async def test_settings_on_an_amd_only_host_spawn_on_cpu_never_vaapi() -> None:

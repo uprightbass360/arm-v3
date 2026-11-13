@@ -636,7 +636,8 @@ class TranscodeDispatcher:
           families those settings make invalid are skipped under `any_<codec>`
           (other devices, then CPU; the task fails only when none is valid)
           and fail a single-family encoder; an unknown base preset fails the
-          task; VAAPI devices (ffmpeg engine) are never claimed.
+          task. A preset carrying HandBrake settings never claims a VAAPI
+          device (ffmpeg engine), schema or not.
 
         Eligibility (enabled, probed, codec verified) is `gpu_is_eligible`;
         a device in `probing_gpu_ids` is never claimed.
@@ -699,11 +700,10 @@ class TranscodeDispatcher:
     def _exclude_for_settings(
         self, gpus: list[Gpu], preset: TranscodePreset, codec: str, invalid: dict[str, list[SettingIssue]]
     ) -> list[Gpu]:
-        """With a schema loaded, drop the devices the preset's HandBrake
-        settings rule out: the ffmpeg VAAPI engine (M4) and the families the
-        claim-time check found invalid (R1). With none, every device stays."""
-        if self._current_schema() is None:
-            return gpus
+        """Drop the devices the preset's HandBrake settings rule out: the
+        ffmpeg VAAPI engine whenever it has settings, schema or not (M4), and
+        the families the claim-time check found invalid (R1; `invalid` is
+        empty without a loaded schema)."""
         return exclude_invalid_families(exclude_ffmpeg_engine(gpus, preset), codec, invalid)
 
     def _log_skipped_families(
