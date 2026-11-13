@@ -7,12 +7,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel
 
 from arm_backend.auth import require_jwt, require_writer
 from arm_backend.handbrake_schema_runner import HandbrakeSchemaRunner
 from arm_backend.handbrake_schema_store import SchemaStore, get_schema_store
+from arm_backend.routers._deps import get_schema_runner
 from arm_common import User
 from arm_common.handbrake_schema.slim import slim_view
 from arm_common.handbrake_schema.types import HandbrakeSchema
@@ -24,11 +25,6 @@ router = APIRouter(prefix="/api/handbrake-schema", tags=["handbrake-schema"])
 class HandbrakeSchemaRefreshResult(BaseModel):
     ok: bool
     error: str | None = None
-
-
-def get_schema_runner(request: Request) -> HandbrakeSchemaRunner:
-    runner: HandbrakeSchemaRunner = request.app.state.handbrake_schema_runner
-    return runner
 
 
 def _loaded(store: SchemaStore) -> HandbrakeSchema:
@@ -84,7 +80,9 @@ async def get_builtin(
 @router.post("/refresh", response_model=HandbrakeSchemaRefreshResult)
 async def refresh(
     _user: User = Depends(require_writer),
-    runner: HandbrakeSchemaRunner = Depends(get_schema_runner),
+    runner: HandbrakeSchemaRunner | None = Depends(get_schema_runner),
 ) -> HandbrakeSchemaRefreshResult:
+    if runner is None:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "No HandBrake schema runner in this Backend")
     error = await runner.refresh()
     return HandbrakeSchemaRefreshResult(ok=error is None, error=error)

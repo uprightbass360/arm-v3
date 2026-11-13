@@ -134,3 +134,12 @@ def test_refresh_needs_a_writer() -> None:
         r = c.post("/api/handbrake-schema/refresh", headers=_auth(token))
     assert r.status_code == 403
     assert runner.calls == 0
+
+
+def test_refresh_without_a_runner_is_503() -> None:
+    app, token = _app()
+    del app.state.handbrake_schema_runner
+    with TestClient(app) as c:
+        r = c.post("/api/handbrake-schema/refresh", headers=_auth(token))
+    assert r.status_code == 503
+    assert r.json() == {"detail": "No HandBrake schema runner in this Backend"}
