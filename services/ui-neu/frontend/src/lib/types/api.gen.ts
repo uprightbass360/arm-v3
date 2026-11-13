@@ -1854,6 +1854,28 @@ export type HttpValidationError = {
 };
 
 /**
+ * HandbrakeSettings
+ *
+ * Settings every encoder shares (``common``) plus one block per encoder family (``encoders``).
+ */
+export type HandbrakeSettings = {
+    /**
+     * Common
+     */
+    common?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Encoders
+     */
+    encoders?: {
+        [key: string]: {
+            [key: string]: unknown;
+        };
+    };
+};
+
+/**
  * HardwareCaps
  *
  * Self-reported transcoder capabilities. Phase 7 (CPU-only) ignores these;
@@ -4594,6 +4616,30 @@ export type SessionView = {
 };
 
 /**
+ * SettingIssue
+ *
+ * One reason a setting is rejected. ``encoder`` names the block it sits in; None for ``common``.
+ */
+export type SettingIssue = {
+    /**
+     * Key
+     */
+    key: string;
+    /**
+     * Encoder
+     */
+    encoder?: string | null;
+    /**
+     * Code
+     */
+    code: 'unknown_key' | 'not_allowed_here' | 'wrong_type' | 'not_in_list' | 'out_of_range' | 'encoder_not_reachable' | 'engine_ignores_settings' | 'not_supported_by_encoder';
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
  * SettingsGroup
  *
  * A named section of the settings page (e.g. Metadata, Ripping, System).
@@ -5289,12 +5335,7 @@ export type TranscodePresetCreateRequest = {
      * Preset Ref
      */
     preset_ref?: string | null;
-    /**
-     * Preset Json
-     */
-    preset_json?: {
-        [key: string]: unknown;
-    } | null;
+    handbrake_settings?: HandbrakeSettings | null;
     container: ContainerFormat;
     /**
      * Encoder
@@ -5319,12 +5360,7 @@ export type TranscodePresetUpdateRequest = {
      * Preset Ref
      */
     preset_ref?: string | null;
-    /**
-     * Preset Json
-     */
-    preset_json?: {
-        [key: string]: unknown;
-    } | null;
+    handbrake_settings?: HandbrakeSettings | null;
     container?: ContainerFormat | null;
     /**
      * Encoder
@@ -5358,12 +5394,15 @@ export type TranscodePresetView = {
      * Preset Ref
      */
     preset_ref: string | null;
+    handbrake_settings: HandbrakeSettings | null;
     /**
-     * Preset Json
+     * Issues
      */
-    preset_json: {
-        [key: string]: unknown;
-    } | null;
+    issues?: Array<SettingIssue>;
+    /**
+     * Host Notes
+     */
+    host_notes?: Array<'encodes_on_cpu_here'>;
     container: ContainerFormat;
     /**
      * Encoder

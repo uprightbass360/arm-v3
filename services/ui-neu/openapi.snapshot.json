@@ -11250,6 +11250,26 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HandbrakeSettings": {
+        "properties": {
+          "common": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Common"
+          },
+          "encoders": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "object",
+            "title": "Encoders"
+          }
+        },
+        "type": "object",
+        "title": "HandbrakeSettings",
+        "description": "Settings every encoder shares (``common``) plus one block per encoder family (``encoders``)."
+      },
       "HardwareCaps": {
         "properties": {
           "cpu_count": {
@@ -16276,6 +16296,51 @@
         ],
         "title": "SessionView"
       },
+      "SettingIssue": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "encoder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encoder"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "unknown_key",
+              "not_allowed_here",
+              "wrong_type",
+              "not_in_list",
+              "out_of_range",
+              "encoder_not_reachable",
+              "engine_ignores_settings",
+              "not_supported_by_encoder"
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "code",
+          "message"
+        ],
+        "title": "SettingIssue",
+        "description": "One reason a setting is rejected. ``encoder`` names the block it sits in; None for ``common``."
+      },
       "SettingsGroup": {
         "properties": {
           "name": {
@@ -17628,17 +17693,15 @@
             ],
             "title": "Preset Ref"
           },
-          "preset_json": {
+          "handbrake_settings": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/HandbrakeSettings"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Preset Json"
+            ]
           },
           "container": {
             "$ref": "#/components/schemas/ContainerFormat"
@@ -17705,17 +17768,15 @@
             ],
             "title": "Preset Ref"
           },
-          "preset_json": {
+          "handbrake_settings": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/HandbrakeSettings"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Preset Json"
+            ]
           },
           "container": {
             "anyOf": [
@@ -17785,17 +17846,30 @@
             ],
             "title": "Preset Ref"
           },
-          "preset_json": {
+          "handbrake_settings": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/HandbrakeSettings"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Preset Json"
+            ]
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SettingIssue"
+            },
+            "type": "array",
+            "title": "Issues"
+          },
+          "host_notes": {
+            "items": {
+              "type": "string",
+              "const": "encodes_on_cpu_here"
+            },
+            "type": "array",
+            "title": "Host Notes"
           },
           "container": {
             "$ref": "#/components/schemas/ContainerFormat"
@@ -17859,7 +17933,7 @@
           "is_builtin",
           "tool",
           "preset_ref",
-          "preset_json",
+          "handbrake_settings",
           "container",
           "encoder",
           "extra_args",

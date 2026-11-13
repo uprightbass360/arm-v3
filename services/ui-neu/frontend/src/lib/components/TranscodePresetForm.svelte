@@ -3,7 +3,7 @@
 	// match the sibling RipPresetForm.svelte (T2a). Inline (no-route) form
 	// driven by props. media_type is immutable on edit; built-in presets are
 	// name-only; nullable fields submit `value || null`. `encoder` is one
-	// arm_common.encoders catalog id. preset_json is not exposed.
+	// arm_common.encoders catalog id. handbrake_settings is not edited here.
 	import { onMount } from 'svelte';
 	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcodePresets';
 	import { encodersStore, PRESET_ENCODER_ID } from '$lib/stores/encoders.svelte';

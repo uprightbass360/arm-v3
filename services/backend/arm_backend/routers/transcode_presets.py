@@ -79,7 +79,7 @@ async def create_transcode_preset(
         is_builtin=False,
         tool=req.tool,
         preset_ref=req.preset_ref,
-        preset_json=req.preset_json,
+        handbrake_settings=req.handbrake_settings.model_dump() if req.handbrake_settings else None,
         container=req.container,
         encoder=req.encoder,
         extra_args=req.extra_args,

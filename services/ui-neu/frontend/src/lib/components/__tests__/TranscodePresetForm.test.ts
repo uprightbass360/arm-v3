@@ -113,7 +113,7 @@ function makePreset(overrides: Partial<TranscodePresetView> = {}): TranscodePres
 		is_builtin: false,
 		tool: 'handbrake',
 		preset_ref: null,
-		preset_json: null,
+		handbrake_settings: null,
 		container: 'mkv',
 		encoder: 'preset',
 		extra_args: null,
