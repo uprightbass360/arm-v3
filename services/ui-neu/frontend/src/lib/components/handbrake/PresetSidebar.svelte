@@ -3,9 +3,9 @@
 	// the schema-driven HandBrake settings below it, and one Save that writes
 	// both. Built-in presets open read-only.
 	import { onMount } from 'svelte';
-	import EditorSidebar from '$lib/components/EditorSidebar.svelte';
-	import EditorFormFooter from '$lib/components/EditorFormFooter.svelte';
-	import LoadState from '$lib/components/LoadState.svelte';
+	import EditorSidebar from '$lib/components/shared/EditorSidebar.svelte';
+	import EditorFormFooter from '$lib/components/shared/EditorFormFooter.svelte';
+	import LoadState from '$lib/components/shared/LoadState.svelte';
 	import PresetBlock from './PresetBlock.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import ImportPanel from './ImportPanel.svelte';
