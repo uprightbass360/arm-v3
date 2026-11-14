@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { errorMessage } from '$lib/utils/errors';
 	import type { MediaType, SessionView, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
-	import type { JoinedSession } from './sessionsData.svelte';
+	import type { JoinedSession } from '../../stores/sessions-data.svelte';
 	import { createSession, updateSession } from '$lib/api/sessions';
-	import type { EditorStatus } from '$lib/components/editorStatus';
+	import type { EditorStatus } from '$lib/ui/editor-status';
 	import OutputPathField from './OutputPathField.svelte';
-	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from './sessionForm';
+	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from '../../sessions/session-form';
 
 	interface Props {
 		session?: JoinedSession | null;
@@ -129,7 +130,7 @@
 				: await createSession(sessionCreate(form));
 			onsaved(result);
 		} catch (err) {
-			submitError = err instanceof Error ? err.message : 'Failed to save session';
+			submitError = errorMessage(err, 'Failed to save session');
 		} finally {
 			submitting = false;
 		}

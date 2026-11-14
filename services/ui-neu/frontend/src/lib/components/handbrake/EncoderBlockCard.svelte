@@ -10,8 +10,8 @@
 		cardStatusLine,
 		VARIANT_LISTS,
 		type EncoderCard
-	} from '$lib/handbrake/encoderCards';
-	import type { BaseValues } from '$lib/handbrake/sidebarModel';
+	} from '$lib/handbrake/encoder-cards';
+	import type { BaseValues } from '$lib/handbrake/base-values';
 	import TunableField from './TunableField.svelte';
 
 	interface Props {

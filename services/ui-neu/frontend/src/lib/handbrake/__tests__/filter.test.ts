@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { HandbrakeSchemaSlimView, SlimKey } from '$lib/types/api.gen';
 import fixture from './fixtures/slim-schema.json';
-import { firstTabWithMatch, matchesFilter, tabMatchCounts } from '../filter';
-import { storedCount } from '../settingsEdit';
+import { firstTabWithMatch, matchesKeyFilter, tabMatchCounts } from '../filter';
+import { storedCount } from '../settings-edit';
 import { TABS, type TabId } from '../fields';
 
 const schema = fixture as unknown as HandbrakeSchemaSlimView;
@@ -15,15 +15,15 @@ const settings = {
 	encoders: { x264: { VideoPreset: 'slow', bit_depth: 10 } }
 };
 
-describe('matchesFilter', () => {
+describe('matchesKeyFilter', () => {
 	it('matches the label, case-insensitively', () => {
-		expect(matchesFilter(key('AlignAVStart'), 'ALIGN AUDIO')).toBe(true);
+		expect(matchesKeyFilter(key('AlignAVStart'), 'ALIGN AUDIO')).toBe(true);
 	});
 	it('matches the key name', () => {
-		expect(matchesFilter(key('AlignAVStart'), 'avstart')).toBe(true);
+		expect(matchesKeyFilter(key('AlignAVStart'), 'avstart')).toBe(true);
 	});
 	it('does not match something else', () => {
-		expect(matchesFilter(key('AlignAVStart'), 'zzz')).toBe(false);
+		expect(matchesKeyFilter(key('AlignAVStart'), 'zzz')).toBe(false);
 	});
 });
 

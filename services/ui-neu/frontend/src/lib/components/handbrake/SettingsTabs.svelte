@@ -4,7 +4,7 @@
 	// tabs with an issue, a count of zero dimmed. The body renders through children, handed the current filter.
 	import type { Snippet } from 'svelte';
 	import type { HandbrakeSchemaSlimView, HandbrakeSettings, SettingIssue } from '$lib/types/api.gen';
-	import Glyph from '$lib/components/Glyph.svelte';
+	import Glyph from '$lib/components/shared/Glyph.svelte';
 	import { TABS, type TabId } from '$lib/handbrake/fields';
 	import { firstTabWithMatch, tabMatchCounts } from '$lib/handbrake/filter';
 

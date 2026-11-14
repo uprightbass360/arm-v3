@@ -3,36 +3,30 @@
 	// the schema-driven HandBrake settings below it, and one Save that writes
 	// both. Built-in presets open read-only.
 	import { onMount } from 'svelte';
-	import EditorSidebar from '$lib/components/EditorSidebar.svelte';
-	import EditorFormFooter from '$lib/components/EditorFormFooter.svelte';
-	import LoadState from '$lib/components/LoadState.svelte';
+	import EditorSidebar from '$lib/components/shared/EditorSidebar.svelte';
+	import EditorFormFooter from '$lib/components/shared/EditorFormFooter.svelte';
+	import LoadState from '$lib/components/shared/LoadState.svelte';
 	import PresetBlock from './PresetBlock.svelte';
 	import SettingsPanel from './SettingsPanel.svelte';
 	import ImportPanel from './ImportPanel.svelte';
-	import { fetchBuiltinPreset } from '$lib/api/handbrakeSchema';
-	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcodePresets';
-	import { handbrakeSchema } from '$lib/stores/handbrakeSchema.svelte';
+	import { fetchBuiltinPreset } from '$lib/api/handbrake-schema';
+	import { createTranscodePreset, updateTranscodePreset } from '$lib/api/transcode-presets';
+	import { handbrakeSchema } from '$lib/stores/handbrake-schema.svelte';
 	import { encodersStore } from '$lib/stores/encoders.svelte';
-	import { presetSidebarView } from '$lib/handbrake/panelView';
+	import { presetSidebarView } from '$lib/handbrake/panel-view';
 	import {
 		VAAPI_NOTE,
-		applyField,
-		draftToCreate,
-		draftToUpdate,
 		footerNote,
-		initialDraft,
-		onBaseChange,
-		saveFailure,
 		schemaLoadError,
 		sidebarTitle,
 		unplacedIssues,
 		usageLabel,
-		type Bases,
-		type PresetField,
-		type SaveFailure,
 		type SidebarMode
-	} from '$lib/handbrake/sidebarModel';
-	import { applyProposal } from '$lib/handbrake/importReview';
+	} from '$lib/handbrake/display';
+	import { applyField, onBaseChange, type Bases } from '$lib/handbrake/draft-rules';
+	import { draftToCreate, draftToUpdate, initialDraft, type PresetField } from '$lib/handbrake/draft';
+	import { saveFailure, type SaveFailure } from '$lib/api/save-failure';
+	import { applyProposal } from '$lib/handbrake/import-review';
 	import type {
 		HandbrakeSchemaSlimView,
 		ImportedPresetView,

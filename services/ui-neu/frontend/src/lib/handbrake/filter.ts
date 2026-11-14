@@ -3,7 +3,7 @@
 
 import type { HandbrakeSchemaSlimView, HandbrakeSettings, SlimKey } from '$lib/types/api.gen';
 import { TABS, type TabId } from './fields';
-import { storedCount } from './settingsEdit';
+import { storedCount } from './settings-edit';
 
 type Candidate = { name: string; label: string; tab: TabId; stored: boolean };
 
@@ -12,7 +12,7 @@ function textMatches(name: string, label: string, text: string): boolean {
 	return name.toLowerCase().includes(needle) || label.toLowerCase().includes(needle);
 }
 
-export function matchesFilter(key: SlimKey, text: string): boolean {
+export function matchesKeyFilter(key: SlimKey, text: string): boolean {
 	return textMatches(key.name, key.label, text);
 }
 
