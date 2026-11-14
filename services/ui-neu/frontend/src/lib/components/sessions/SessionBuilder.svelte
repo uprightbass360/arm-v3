@@ -2,6 +2,7 @@
 	import type { MediaType, SessionView, RipPresetView, TranscodePresetView } from '$lib/types/api.gen';
 	import type { JoinedSession } from './sessionsData.svelte';
 	import { createSession, updateSession } from '$lib/api/sessions';
+	import type { EditorStatus } from '$lib/components/editorStatus';
 	import OutputPathField from './OutputPathField.svelte';
 	import { parseOverrides, sessionUpdate, sessionCreate, type SessionForm } from './sessionForm';
 
@@ -12,9 +13,12 @@
 		oncreaterip: () => void;
 		oncreatetranscode: () => void;
 		onsaved: (s: SessionView) => void;
-		oncancel: () => void;
 		preselectRipId?: string;
 		preselectTranscodeId?: string;
+		/** The hosting EditorSidebar's footer owns the buttons and submits this form by id. */
+		formId: string;
+		/** Reports the Save button's state to the hosting footer, whenever it changes. */
+		onstatus?: (status: EditorStatus) => void;
 	}
 
 	let {
@@ -24,9 +28,10 @@
 		oncreaterip,
 		oncreatetranscode,
 		onsaved,
-		oncancel,
 		preselectRipId,
-		preselectTranscodeId
+		preselectTranscodeId,
+		formId,
+		onstatus
 	}: Props = $props();
 
 	const MEDIA_TYPES: { value: MediaType; label: string }[] = [
@@ -68,6 +73,10 @@
 	// Built-in sessions are read-only — every field is locked, no save path.
 	const readOnly = $derived(session?.is_builtin ?? false);
 	const canSubmit = $derived(!readOnly && !!(name && ripId && template));
+
+	$effect(() => {
+		onstatus?.({ canSubmit, submitting, note: tcId ? '' : 'Rips only, no transcode step.' });
+	});
 
 	function switchMediaType(mt: MediaType) {
 		if (isEdit || readOnly) return; // immutable on edit / locked when built-in
@@ -127,8 +136,8 @@
 	}
 </script>
 
-<div role="dialog" aria-modal="true" aria-label={isEdit ? 'Edit session' : 'Create session'} class="stack stack-lg">
-	<form onsubmit={handleSubmit} class="stack stack-lg">
+<div class="stack stack-lg">
+	<form id={formId} onsubmit={handleSubmit} class="stack stack-lg">
 		{#if readOnly}
 			<div class="alert alert-warning" data-testid="sb-builtin-note" role="status">
 				This is a built-in session and can't be edited. Clone it to make an editable copy.
@@ -226,25 +235,6 @@
 		{#if submitError}
 			<p class="field-error">{submitError}</p>
 		{/if}
-
-		<!-- Footer -->
-		<div class="session-builder-footer">
-			<div class="session-builder-footer-note">
-				{#if !tcId}
-					Rips only, no transcode step.
-				{/if}
-			</div>
-			<div class="cluster">
-				<button type="button" onclick={oncancel} class="btn">
-					{readOnly ? 'Close' : 'Cancel'}
-				</button>
-				{#if !readOnly}
-					<button type="submit" disabled={!canSubmit || submitting} class="btn btn-primary session-builder-submit-btn">
-						{isEdit ? 'Save changes' : 'Create session'}
-					</button>
-				{/if}
-			</div>
-		</div>
 	</form>
 </div>
 
@@ -319,27 +309,5 @@
 		line-height: 1rem;
 		font-weight: 500;
 		color: var(--color-text-secondary);
-	}
-	.session-builder-footer {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.75rem;
-		border-top: 1px solid var(--color-border);
-		padding-top: 1rem;
-	}
-	.session-builder-footer-note {
-		font-size: 0.75rem;
-		line-height: 1rem;
-		color: var(--color-text-faint);
-	}
-	/* original submit button: rounded-md bg-primary ... - no border/ring class
-	   at all. .btn-primary's own 1px border is invisible (same colour as the
-	   fill) but still occupies 2px of layout height, and its default radius
-	   is --radius-lg, not the original's smaller --radius-md (Task 9/10
-	   finding: a bare fill button with no border class needs border: 0). */
-	.session-builder-submit-btn {
-		border: 0;
-		border-radius: var(--radius-md);
 	}
 </style>

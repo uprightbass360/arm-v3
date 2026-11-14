@@ -6,7 +6,7 @@ vi.mock('$lib/api/sessions', () => ({
 	previewTemplate: vi.fn().mockResolvedValue({ resolved: 'p', error: null })
 }));
 import { createSession } from '$lib/api/sessions';
-import SessionBuilder from '../SessionBuilder.svelte';
+import SessionBuilder from './SessionBuilderHarness.svelte';
 
 const rip = (id: string, mt = 'movie') => ({ id, name: `rip ${id}`, media_type: mt }) as any;
 const props = (over = {}) => ({
@@ -16,7 +16,6 @@ const props = (over = {}) => ({
 	oncreaterip: vi.fn(),
 	oncreatetranscode: vi.fn(),
 	onsaved: vi.fn(),
-	oncancel: vi.fn(),
 	...over
 });
 
@@ -24,7 +23,7 @@ afterEach(cleanup);
 
 it('create is disabled until name + rip preset + template are set', async () => {
 	renderComponent(SessionBuilder, props());
-	const submit = () => screen.getByRole('button', { name: /create session/i }) as HTMLButtonElement;
+	const submit = () => screen.getByRole('button', { name: /^save$/i }) as HTMLButtonElement;
 	expect(submit().disabled).toBe(true);
 	await fireEvent.input(screen.getByLabelText(/session name/i), { target: { value: 'My Movies' } });
 	// movie is default media type; pick rip preset r1
@@ -55,7 +54,7 @@ it('submits createSession with the assembled body', async () => {
 	await fireEvent.input(screen.getByLabelText(/session name/i), { target: { value: 'My Movies' } });
 	await fireEvent.change(screen.getByLabelText(/rip preset/i), { target: { value: 'r1' } });
 	await fireEvent.input(screen.getByLabelText(/output path/i), { target: { value: 'movies/{title}.{ext}' } });
-	await fireEvent.click(screen.getByRole('button', { name: /create session/i }));
+	await fireEvent.click(screen.getByRole('button', { name: /^save$/i }));
 	await waitFor(() =>
 		expect(createSession).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -106,4 +105,10 @@ it('edit mode seeds overrides_json into the textarea', async () => {
 	await fireEvent.click(screen.getByText(/^Advanced$/i));
 	const textarea = screen.getByLabelText(/overrides json/i) as HTMLTextAreaElement;
 	expect(textarea.value).toContain('"foo"');
+});
+
+it('a built-in session offers Close and no save button', () => {
+	renderComponent(SessionBuilder, props({ session: { id: 's', name: 'b', media_type: 'movie', is_builtin: true } }));
+	expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+	expect(screen.queryByRole('button', { name: /^save/i })).toBeNull();
 });

@@ -5,6 +5,7 @@
 	// submit-body shapes follow the Vue source faithfully.
 	import { createRipPreset, updateRipPreset } from '$lib/api/ripPresets';
 	import { PresetSave } from '$lib/stores/presetSave.svelte';
+	import type { EditorStatus } from './editorStatus';
 	import TrackFiltersEditor from './TrackFiltersEditor.svelte';
 	import { trackFiltersBody, type TrackFilters } from '$lib/utils/track-filters';
 	import type { IdentificationMode, MediaType, OutputMode, RipPresetView, TrackSelection } from '$lib/types/api.gen';
@@ -12,11 +13,15 @@
 	let {
 		preset = null,
 		onsaved,
-		oncancel
+		formId,
+		onstatus
 	}: {
 		preset?: RipPresetView | null;
 		onsaved: (p: RipPresetView) => void;
-		oncancel: () => void;
+		/** The hosting EditorSidebar's footer owns the title and the buttons, and submits this form by id. */
+		formId: string;
+		/** Reports the Save button's state to the hosting footer, whenever it changes. */
+		onstatus?: (status: EditorStatus) => void;
 	} = $props();
 
 	const editing = $derived(!!preset);
@@ -34,6 +39,10 @@
 
 	const showFilters = $derived(trackSelection === 'custom' && !isBuiltin);
 	const canSubmit = $derived(!save.submitting && name.trim().length > 0);
+
+	$effect(() => {
+		onstatus?.({ canSubmit: !isBuiltin && canSubmit, submitting: save.submitting, note: '' });
+	});
 
 	function savePreset(): Promise<RipPresetView> {
 		// Custom edit: no media_type (immutable after create).
@@ -66,11 +75,7 @@
 	// wrappers now, styled by field.css's descendant rule.
 </script>
 
-<form class="stack rip-preset-form" onsubmit={submit}>
-	<h3 class="rip-preset-form-title">
-		{isBuiltin ? 'View rip preset' : editing ? 'Edit rip preset' : 'New rip preset'}
-	</h3>
-
+<form id={formId} class="stack rip-preset-form" onsubmit={submit}>
 	{#if isBuiltin}
 		<div class="alert alert-warning" data-testid="preset-builtin-note" role="status">
 			This is a built-in preset and can't be edited. Clone it to make an editable copy.
@@ -146,30 +151,4 @@
 	{#if showFilters}
 		<TrackFiltersEditor value={filters} onchange={(v) => (filters = v)} />
 	{/if}
-
-	<div class="rip-preset-form-actions">
-		<button type="button" onclick={oncancel} disabled={save.submitting} class="btn btn-ghost">
-			{isBuiltin ? 'Close' : 'Cancel'}
-		</button>
-		{#if !isBuiltin}
-			<button type="submit" disabled={!canSubmit} data-testid="preset-submit" class="btn btn-primary">
-				{save.submitting ? 'Saving...' : 'Save'}
-			</button>
-		{/if}
-	</div>
 </form>
-
-<style>
-	.rip-preset-form-title {
-		font-size: 1.125rem;
-		line-height: 1.75rem;
-		font-weight: 600;
-		color: var(--color-text);
-	}
-	.rip-preset-form-actions {
-		display: flex;
-		justify-content: flex-end;
-		gap: 0.75rem;
-		padding-top: 0.5rem;
-	}
-</style>
