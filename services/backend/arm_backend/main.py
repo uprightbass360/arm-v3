@@ -65,6 +65,7 @@ from arm_backend.routers import (
 )
 from arm_backend.constants import CONFIG_SINGLETON_ID
 from arm_backend.seeders import run_seeders
+from arm_backend import release_check
 from arm_backend.thediscdb_schedule import thediscdb_refresh_loop
 from arm_backend.transcode_dispatcher import TranscodeDispatcher, set_active_dispatcher
 from arm_backend.utils import ensure_roots, default_roots
@@ -130,6 +131,7 @@ class _BackendServices:
     order and `stop` runs their shutdown steps in order."""
 
     _thediscdb_refresh_task: asyncio.Task[None]
+    _release_check_task: asyncio.Task[None]
     _dispatcher_task: asyncio.Task[None]
     _iso_watchdog_task: asyncio.Task[None] | None
     _notification_task: asyncio.Task[None]
@@ -160,6 +162,8 @@ class _BackendServices:
         self._attach_request_services()
 
         self._start_thediscdb()
+
+        self._start_release_check()
 
         # GPU inventory — seed the gpus table from ARM_GPUS only when empty
         # (DB-authoritative thereafter). Runs before the dispatcher starts.
@@ -213,6 +217,7 @@ class _BackendServices:
 
         self._shutdown_steps = [
             ("thediscdb refresh", self._stop_thediscdb_refresh),
+            ("release check", self._stop_release_check),
             ("disk refresher", self._stop_disk_refresher),
             ("log tailer", self._stop_log_tailer),
             ("drive scanner", self._stop_drive_scanner),
@@ -246,6 +251,12 @@ class _BackendServices:
 
         self._app.state.thediscdb = SnapshotStore(Path(settings.ARM_THEDISCDB_PATH))
         self._thediscdb_refresh_task = asyncio.create_task(thediscdb_refresh_loop(self._app))
+
+    def _start_release_check(self) -> None:
+        """Start the six-hourly latest-release check the version endpoint reads."""
+        self._release_check_task = asyncio.create_task(
+            release_check.release_check_loop(self._app.state.http, release_check.release_repo())
+        )
 
     def _build_transcode_dispatcher(self) -> TranscodeDispatcher:
         """Build the transcode dispatcher, with a docker client only when this
@@ -387,6 +398,13 @@ class _BackendServices:
         self._thediscdb_refresh_task.cancel()
         try:
             await asyncio.wait_for(self._thediscdb_refresh_task, timeout=10.0)
+        except TimeoutError, asyncio.CancelledError:  # pragma: no cover, cancellation is the expected path
+            pass
+
+    async def _stop_release_check(self) -> None:
+        self._release_check_task.cancel()
+        try:
+            await asyncio.wait_for(self._release_check_task, timeout=10.0)
         except TimeoutError, asyncio.CancelledError:  # pragma: no cover, cancellation is the expected path
             pass
 
