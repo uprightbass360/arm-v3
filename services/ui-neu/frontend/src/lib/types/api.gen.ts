@@ -4926,6 +4926,10 @@ export type SystemVersionResponse = {
      * Release Url
      */
     release_url?: string | null;
+    /**
+     * Repo Url
+     */
+    repo_url?: string | null;
 };
 
 /**

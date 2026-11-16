@@ -10,7 +10,7 @@
 	import { resources } from '$lib/stores/resources.svelte';
 	import { barColor, filesHref } from '$lib/utils/resource-bars';
 	import { fetchSystemVersion } from '$lib/api/system';
-	import { versionChipView, withV, type VersionChipView } from '$lib/utils/versionChip';
+	import { versionChipView, type VersionChipView } from '$lib/utils/versionChip';
 
 	let chip = $state<VersionChipView | null>(null);
 
@@ -91,7 +91,14 @@
 	{/if}
 
 	{#if chip}
-		<div class="version-chip" data-version-chip>
+		<a
+			class="version-chip"
+			data-version-chip
+			href={chip.href}
+			target="_blank"
+			rel="noopener noreferrer"
+			aria-label={chip.label}
+		>
 			<span class="version-chip-id">
 				<svg
 					class="version-chip-mark"
@@ -108,19 +115,11 @@
 				<span class="version-chip-text">{chip.version}</span>
 			</span>
 			{#if chip.state === 'update'}
-				<a
-					class="version-chip-update"
-					href={chip.releaseUrl}
-					target="_blank"
-					rel="noopener noreferrer"
-					aria-label="Update available: {withV(chip.latestVersion)} (opens in a new tab)"
-				>
-					Update available
-				</a>
+				<span class="version-chip-update">Update available</span>
 			{:else if chip.state === 'up-to-date'}
 				<span class="version-chip-status"><span class="version-chip-dot" aria-hidden="true"></span>Up to date</span>
 			{/if}
-		</div>
+		</a>
 	{/if}
 </div>
 
@@ -136,6 +135,15 @@
 		border-radius: var(--radius-sm);
 		font-size: 0.6875rem;
 		color: var(--color-text-muted);
+		text-decoration: none;
+		transition:
+			border-color var(--motion-fast) var(--ease),
+			color var(--motion-fast) var(--ease);
+	}
+	.version-chip:hover,
+	.version-chip:focus-visible {
+		border-color: var(--color-border-strong);
+		color: var(--color-text);
 	}
 	.version-chip-id {
 		display: inline-flex;
@@ -167,7 +175,6 @@
 	.version-chip-update {
 		white-space: nowrap;
 		color: var(--color-success);
-		text-decoration: underline;
 	}
 	.stats-bar-side {
 		font-variant-numeric: tabular-nums;
