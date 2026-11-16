@@ -8,8 +8,10 @@ import { get, patch, post } from './client';
 // v3 notifications inbox. The BFF's flat /api/notifications + numeric ids are
 // gone; v3 exposes an inbox of NotificationInboxView rows keyed by string id.
 
-export function fetchNotifications(): Promise<NotificationInboxView[]> {
-	return get<NotificationInboxView[]>('/api/notifications/inbox');
+/** The inbox rows; dismissed (cleared) rows only when includeCleared is set. */
+export function fetchNotifications(includeCleared = false): Promise<NotificationInboxView[]> {
+	const query = includeCleared ? '?include_cleared=true' : '';
+	return get<NotificationInboxView[]>(`/api/notifications/inbox${query}`);
 }
 
 export function fetchNotificationCount(): Promise<NotificationInboxCountView> {
